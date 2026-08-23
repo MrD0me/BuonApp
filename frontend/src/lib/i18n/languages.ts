@@ -44,6 +44,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/pt.json'),
   },
+  it: {
+    locale: 'it',
+    nativeName: 'Italiano',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/it.json'),
+  },
   fa: {
     locale: 'fa-IR',
     nativeName: 'فارسی',
