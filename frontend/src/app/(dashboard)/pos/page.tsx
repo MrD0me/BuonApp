@@ -76,7 +76,7 @@ export default function POSPage() {
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
-  const { customerMandatory, autoPrintKot, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
+  const { customerMandatory, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const tSupport = useTranslations('support');
@@ -253,16 +253,36 @@ export default function POSPage() {
   const billingIsPrepaid = billingType === 'prepaid';
   const shouldTakePaymentNow = billingIsPrepaid;
 
-  const printKotIfEnabled = async (order: Order) => {
-    // kot_printing_enabled is coarser than auto_print_kot: when it's off, no
-    // KOT print command should go out at all, regardless of the auto-print
-    // preference (issue #133).
+  /**
+   * Sends the rows that have not been to the kitchen yet. The backend decides
+   * which those are and stamps them with a round number, so calling this after
+   * an append prints the new dishes only — never the whole check again.
+   *
+   * Placing or extending an order IS the act of firing the ticket, the same as
+   * on a handheld, so this is not gated on a preference: a send that silently
+   * does nothing leaves the kitchen unaware of food the floor believes it
+   * ordered. `kot_printing_enabled` remains the one switch, for businesses
+   * that print no kitchen tickets at all (issue #133).
+   *
+   * `auto` only decides how talkative the result is: calls that fire on their
+   * own after an order write stay quiet on success, while the explicit "send
+   * to kitchen" button confirms what it did.
+   */
+  const sendKotToKitchen = async (order: Order, { auto }: { auto: boolean }) => {
     if (!kotPrintingEnabled) return;
-    if (!autoPrintKot) return;
 
     try {
-      const printWarnings = await printKot(order);
-      showPrintWarningsToast(printWarnings);
+      const result = await printKot(order);
+      showPrintWarningsToast(result.warnings);
+      if (!result.printed) {
+        // Nothing pending is a normal outcome (double tap, or every dish has
+        // already gone out) — say so instead of implying a ticket printed.
+        if (!auto) toast(t('kotNothingPending'), { icon: 'ℹ️' });
+        return;
+      }
+      if (!auto) {
+        toast.success(result.batch ? t('kotSentBatch', { batch: result.batch }) : t('kotSent'));
+      }
     } catch (err) {
       console.error('[POS] KOT print failed:', err);
       const msg = err instanceof Error ? err.message : 'print failed';
@@ -275,6 +295,8 @@ export default function POSPage() {
       toast.error(t('kotPrintFailed'));
     }
   };
+
+  const printKotIfEnabled = async (order: Order) => sendKotToKitchen(order, { auto: true });
 
   const fetchLatestBill = async (billId: number): Promise<Bill> => {
     const { data } = await api.get(`/bills/${billId}`);
@@ -859,6 +881,10 @@ export default function POSPage() {
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();
+      // This path used to append silently: the kitchen never heard about a
+      // second round added from the table sheet. It now goes through the same
+      // pending-rows send as every other write.
+      await printKotIfEnabled(order);
     } catch {
       toast.error(t('addItemsFailed'));
     } finally {
@@ -1041,6 +1067,7 @@ export default function POSPage() {
           onAddItems={handleAddItemsToOrder}
           onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
           onAddCartToOrder={handleAddCartToOrder}
+          onSendToKitchen={(order) => sendKotToKitchen(order, { auto: false })}
         />
       )}
 

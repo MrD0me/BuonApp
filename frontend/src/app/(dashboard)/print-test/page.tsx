@@ -85,9 +85,9 @@ export default function PrintTestPage() {
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));
           } else {
-            const printWarnings = await printKot(testOrder, { paperWidth });
+            const kotResult = await printKot(testOrder, { paperWidth });
             toast.success(t('kotPrinted'));
-            showPrintWarningsToast(printWarnings);
+            showPrintWarningsToast(kotResult.warnings);
           }
           break;
         case 'web-print':

@@ -185,6 +185,8 @@ export interface OrderItem {
   addons: { id?: number | string | null; name: string; price?: number; quantity?: number }[] | null;
   special_instructions: string | null;
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided' | 'void_adjustment';
+  /** Kitchen-ticket round this row went out on. null = still waiting to be sent. */
+  kot_batch?: number | null;
 }
 
 export interface Bill {

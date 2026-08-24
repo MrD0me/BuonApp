@@ -16,7 +16,25 @@ Set the paper width to match the printer: 58 mm or 80 mm. The first configured p
 
 FloCafe can print kitchen order tickets to the default printer or route items to configured kitchen stations. A station needs an active printer and the product categories it handles. Items without a matching station fall back to the default kitchen route.
 
+Each send carries only the order rows that have not been to the kitchen yet, numbered as a sequential round on the ticket header. Adding a course to an open table and sending again prints that course alone, never the whole check a second time. Rows still waiting are marked in the table sheet, where **Send to kitchen** dispatches them. If a print fails, the rows stay queued so the send can be repeated.
+
+Placing or extending an order sends that ticket on its own: it is the same gesture, not a separate preference. **KOT Ticket Printing** in Settings is the one switch, for businesses that print no kitchen tickets at all.
+
+On the Server App (the handheld waiters carry), sending an order is itself the act of firing the ticket, the same as on the POS. A drink added to an open table from a handheld prints at the bar station and nowhere else. If the kitchen ticket fails to print, the waiter is told so explicitly: the order is already saved, and only the paper is missing.
+
 KOT printing can be disabled for the business. When it is disabled, neither automatic nor manual KOT print requests are sent.
+
+### What a kitchen ticket looks like
+
+Tickets lead with the table in the largest type the paper allows, then the round number, then a single condensed line carrying the send time, the covers, and the station. Dishes follow with the quantity in its own column and the name in double height; add-ons are marked `+`, item notes `>>` and printed in bold. A thin rule separates one dish from the next, and where a station cooks more than one category the dishes are grouped under a labelled rule per category. The ticket closes with a line and piece count plus the order number, so the pass can check nothing is missing and the ticket can still be traced back to its order.
+
+### Receipt language
+
+Receipts render their labels from the store's UI language setting, in English or Italian; any other language falls back to English rather than printing a half-translated bill. The two core templates keep their own wording for the number line (`Invoice #` on classic, `Bill #` on compact).
+
+### Accented characters
+
+Printer profiles declare a `codePage` (WPC1252) so Western European text prints as written. WPC1252 matches Latin-1 except at `0x80`-`0x9F`, where it carries the euro sign and typographic punctuation; those are encoded from an explicit table, which is also what lets a currency symbol print instead of falling back to a three-letter code. Run **Test Print** before service: the test page includes an accent probe line and reports the code page in use. If those characters print as garbage or come out blank, the profile's code page does not match the hardware — report it, and in the meantime a profile with no declared code page transliterates accents to plain letters rather than dropping the line.
 
 ## Troubleshooting
 

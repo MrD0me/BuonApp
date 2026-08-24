@@ -1078,7 +1078,7 @@ export default function SettingsPage() {
   type PrintingForm = {
     printerEnabled: boolean; printerPaperSize: PaperSize;
     printMethod: 'escpos' | 'browser';
-    autoPrintKot: boolean; autoPrintBill: boolean;
+    autoPrintBill: boolean;
     whatsappShareEnabled: boolean;
     printerUseUnicode: boolean;
     printerTrimDecimals: boolean;
@@ -1089,7 +1089,6 @@ export default function SettingsPage() {
     printerEnabled: posSettings.printerEnabled,
     printerPaperSize: posSettings.printerPaperSize,
     printMethod: printMethod as 'escpos' | 'browser',
-    autoPrintKot: posSettings.autoPrintKot,
     autoPrintBill: posSettings.autoPrintBill,
     whatsappShareEnabled: posSettings.whatsappShareEnabled,
     printerUseUnicode: posSettings.printerUseUnicode,
@@ -1109,7 +1108,6 @@ export default function SettingsPage() {
     posSettings.setPrinterEnabled(printingForm.printerEnabled);
     posSettings.setPrinterPaperSize(printingForm.printerPaperSize);
     setPrintMethod(printingForm.printMethod);
-    posSettings.setAutoPrintKot(printingForm.autoPrintKot);
     posSettings.setAutoPrintBill(printingForm.autoPrintBill);
     posSettings.setWhatsappShareEnabled(printingForm.whatsappShareEnabled);
     posSettings.setPrinterUseUnicode(printingForm.printerUseUnicode);
@@ -3781,20 +3779,6 @@ export default function SettingsPage() {
                     <p className="text-sm text-gray-500">{t('kotPrintingEnabledToggleHint')}</p>
                   </div>
                   <Toggle value={kotPrintingEnabledSetting} onChange={(v) => { if (!savingKotPrintingEnabled) saveKotPrintingEnabled(v); }} />
-                </div>
-                <div className={`flex items-center justify-between gap-4 ${!kotPrintingEnabledSetting ? 'opacity-50' : ''}`}>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('autoPrintKot')}</p>
-                    <p className="text-sm text-gray-500">
-                      {kotPrintingEnabledSetting
-                        ? t('autoPrintKotHint')
-                        : t('autoPrintKotDisabledHint')}
-                    </p>
-                  </div>
-                  <Toggle
-                    value={printingForm.autoPrintKot && kotPrintingEnabledSetting}
-                    onChange={(v) => { if (kotPrintingEnabledSetting) setPrintingForm((p) => ({ ...p, autoPrintKot: v })); }}
-                  />
                 </div>
                 {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
                   <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">

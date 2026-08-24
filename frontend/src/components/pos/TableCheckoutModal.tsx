@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart, Users } from 'lucide-react';
+import { X, ShoppingCart, Users, ChefHat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -10,6 +10,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import toast from 'react-hot-toast';
 import type { Table, Order, Bill, OrderItem } from '@/lib/types';
 import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
+import { usePosSettingsStore } from '@/store/pos-settings';
 
 interface Props {
   table: Table;
@@ -19,6 +20,7 @@ interface Props {
   onAddItems: (table: Table, order: Order) => void;
   onPayment: (bill: Bill) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
+  onSendToKitchen?: (order: Order) => Promise<void>;
 }
 
 export default function TableCheckoutModal({
@@ -28,7 +30,8 @@ export default function TableCheckoutModal({
   onClose,
   onAddItems,
   onPayment,
-  onAddCartToOrder
+  onAddCartToOrder,
+  onSendToKitchen
 }: Props) {
   const t = useTranslations('pos');
   const fmt = useFormatCurrency();
@@ -44,6 +47,8 @@ export default function TableCheckoutModal({
   const [addingItems, setAddingItems] = useState(false);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
   const [splitBill, setSplitBill] = useState<Bill | null>(null);
+  const [sendingToKitchen, setSendingToKitchen] = useState(false);
+  const { kotPrintingEnabled } = usePosSettingsStore();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -100,6 +105,21 @@ export default function TableCheckoutModal({
     finally { setGenerating(false); }
   };
 
+  const handleSendToKitchen = async () => {
+    if (!order || !onSendToKitchen) return;
+    setSendingToKitchen(true);
+    try {
+      await onSendToKitchen(order);
+      // Re-read the order so the rows just sent stop counting as pending.
+      const { data } = await api.get(`/orders/${order.id}`);
+      setOrder(data.order);
+    } catch {
+      // sendKotToKitchen already surfaces printer failures to the cashier.
+    } finally {
+      setSendingToKitchen(false);
+    }
+  };
+
   const handleAddCartToOrder = async () => {
     if (!order || !onAddCartToOrder) return;
     setAddingItems(true);
@@ -135,6 +155,10 @@ export default function TableCheckoutModal({
 
   // Filter active items (not cancelled)
   const activeItems = (order.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
+  // Rows still waiting for a kitchen ticket — what the send button will carry.
+  const pendingKotItems = activeItems.filter(
+    (item: OrderItem) => item.status !== 'voided' && (item.kot_batch === null || item.kot_batch === undefined),
+  );
   const splitBills = (order.bills || []).filter((bill) => Boolean(bill.split_group_id));
 
   return (
@@ -170,6 +194,11 @@ export default function TableCheckoutModal({
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-gray-700 font-medium">
                       {item.quantity}x {item.product_name}
+                      {(item.kot_batch === null || item.kot_batch === undefined) && (
+                        <span className="ms-2 px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px] font-semibold align-middle">
+                          {t('kotPending')}
+                        </span>
+                      )}
                     </p>
                     {item.special_instructions && (
                       <p className="text-xs text-gray-400 italic">{item.special_instructions}</p>
@@ -206,6 +235,20 @@ export default function TableCheckoutModal({
           )}
 
           {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-gray-500">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pay')}</Button>}</div>)}</div>}
+
+          {/* Sending to the kitchen is its own step, separate from billing:
+              it carries the rows that have never been on a ticket. */}
+          {kotPrintingEnabled && onSendToKitchen && pendingKotItems.length > 0 && (
+            <Button
+              onClick={handleSendToKitchen}
+              disabled={sendingToKitchen}
+              className="w-full"
+              size="lg"
+            >
+              <ChefHat size={16} className="me-2" />
+              {sendingToKitchen ? t('kotSending') : t('sendToKitchen', { count: pendingKotItems.length })}
+            </Button>
+          )}
 
           {/* Show different buttons based on cart state */}
           {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}

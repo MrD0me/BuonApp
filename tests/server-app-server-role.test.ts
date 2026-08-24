@@ -1,4 +1,8 @@
-/** Server App auth must be limited to service staff (server role). */
+/**
+ * Server App auth must be limited to service staff (server role), and the
+ * handheld must be able to fire kitchen tickets: sending an order from a
+ * palmare has to reach the station printers, not only the KDS.
+ */
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
@@ -93,6 +97,18 @@ async function main() {
     const me = await getJson(baseUrl, '/api/auth/me', serverLogin.body.access_token);
     assert.equal(me.status, 200, 'server token remains valid on /api/auth/me');
     assert.equal(me.body.user.role, 'server', '/api/auth/me returns server role');
+
+    // The kitchen-ticket route must be exposed on the Server App and pass its
+    // role gate. What the main API answers downstream is that layer's business
+    // (covered by issue-133-kds-kot-toggles) and is not asserted here: this
+    // test does not start the main API, so the forward's outcome depends on
+    // whether anything happens to be listening on the main port.
+    const kot = await postJson(baseUrl, '/api/printers/print-kot', { orderId: 999999 }, serverLogin.body.access_token);
+    assert.notEqual(kot.status, 404, 'print-kot is exposed on the Server App');
+    assert.notEqual(kot.status, 403, 'the Server App role gate lets a server through to print-kot');
+
+    const unauthenticatedKot = await postJson(baseUrl, '/api/printers/print-kot', { orderId: 999999 });
+    assert.equal(unauthenticatedKot.status, 401, 'print-kot on the Server App still requires a token');
   } finally {
     await stopServerApp();
     closeDatabase();

@@ -13,7 +13,6 @@ import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { safePrinterText, type PrintWarning } from './warnings';
-import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 
 export interface TaxBillOptions {
   /** 58 mm (2.5", 42 chars) or 80 mm (3.5", 48 chars). Default: 58 */
@@ -48,18 +47,6 @@ export interface TaxBillOptions {
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
 const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
-
-function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
-  enc
-    .align('center')
-    .size('small')
-    .text(RECEIPT_BRANDING_NAME)
-    .newline()
-    .text(RECEIPT_BRANDING_URL)
-    .newline()
-    .size('normal')
-    .align('left');
-}
 
 /**
  * Mask phone number for receipt display — shows only last 4 digits.
@@ -259,7 +246,6 @@ export function buildTaxBillBytes(
       enc.text('Tax included where applicable').newline();
     }
   }
-  printPoweredByFooter(enc);
 
   enc.newline().newline().newline().cut();
 

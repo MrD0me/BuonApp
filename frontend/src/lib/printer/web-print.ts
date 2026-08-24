@@ -21,7 +21,6 @@ import {
   formatDateForTenant,
 } from '@/lib/countries';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
-import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 import { createTranslator } from 'use-intl/core';
 import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
@@ -407,7 +406,6 @@ export function generateBillHtml(
     <div class="footer">
       ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : `<p>${escapeHtml(L.thankYou)}</p>`}
       ${hasTax ? `<p>${escapeHtml(L.taxIncluded)}</p>` : ''}
-      <p class="powered-by">${escapeHtml(RECEIPT_BRANDING_NAME)}<br>${escapeHtml(RECEIPT_BRANDING_URL)}</p>
     </div>
   </div>
 
@@ -443,7 +441,6 @@ function getPaperStyles(size: PaperSize): string {
     .totals-table td { padding: 6px 8px; }
     .total-row { border-top: 2px solid #333; font-size: 16px; }
     .footer { text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid #ccc; }
-    .powered-by { font-size: 10px; margin-top: 8px; color: #555; }
     .text-end { text-align: end !important; }
     .num { unicode-bidi: isolate; white-space: nowrap; }
     .ltr { direction: ltr; unicode-bidi: isolate; }

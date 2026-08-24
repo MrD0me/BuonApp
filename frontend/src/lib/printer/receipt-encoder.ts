@@ -19,7 +19,6 @@ import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { safePrinterText, type PrintWarning } from './warnings';
-import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 
 export interface ReceiptOptions {
   /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
@@ -63,18 +62,6 @@ function printReprintBanner(enc: ReceiptPrinterEncoder): void {
     .height(1)
     .bold(false)
     .newline()
-    .align('left');
-}
-
-function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
-  enc
-    .align('center')
-    .size('small')
-    .text(RECEIPT_BRANDING_NAME)
-    .newline()
-    .text(RECEIPT_BRANDING_URL)
-    .newline()
-    .size('normal')
     .align('left');
 }
 
@@ -369,7 +356,6 @@ export function buildClassicReceiptBytes(
       safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
     }
   }
-  printPoweredByFooter(enc);
 
   enc.newline().newline().newline().cut();
 
@@ -497,7 +483,6 @@ export function buildCompactReceiptBytes(
   if (footerNote) {
     safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
   }
-  printPoweredByFooter(enc);
 
   enc.newline().newline().newline().cut();
 
@@ -668,7 +653,6 @@ export function buildDetailedReceiptBytes(
   if (footerNote) {
     safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
   }
-  printPoweredByFooter(enc);
 
   enc.newline().newline().newline().cut();
 

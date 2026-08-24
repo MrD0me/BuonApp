@@ -711,10 +711,11 @@ export function isServerAppEnabled(): boolean {
 }
 
 /**
- * KOT ticket printing on/off switch (issue #133) — coarser than
- * `auto_print_kot` (which only gates *automatic* printing on order
- * placement). When this is off, no KOT print command may be sent,
- * automatic or manual. Defaults to enabled, same reasoning as isKdsEnabled.
+ * KOT ticket printing on/off switch (issue #133), and the only one: sending a
+ * kitchen ticket is intrinsic to placing or extending an order, on the POS and
+ * on the handheld alike, rather than a separate auto-print preference. When
+ * this is off, no KOT print command may be sent, automatic or manual.
+ * Defaults to enabled, same reasoning as isKdsEnabled.
  */
 export function isKotPrintingEnabled(): boolean {
   return getSettingValue('kot_printing_enabled') !== 'false';
@@ -3948,6 +3949,23 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 72,
+    name: 'add_order_item_kot_batch',
+    up: () => {
+      if (!getColumns(db, 'order_items').includes('kot_batch')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN kot_batch INTEGER`);
+      }
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_order_items_kot_batch
+          ON order_items(order_id, kot_batch);
+      `);
+      // Every row that already exists predates batch tracking. Treat it as
+      // already sent (batch 1) so upgrading mid-service cannot make open
+      // orders look unsent and fire duplicate tickets at the kitchen.
+      db.prepare(`UPDATE order_items SET kot_batch = 1 WHERE kot_batch IS NULL`).run();
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4296,6 +4314,9 @@ function createSchema(): void {
       addons TEXT,
       special_instructions TEXT,
       status TEXT DEFAULT 'pending',
+      -- Sequential kitchen-ticket batch. NULL = not yet sent to the kitchen;
+      -- 1 = first ticket for this order, 2 = the next round, and so on.
+      kot_batch INTEGER,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id)

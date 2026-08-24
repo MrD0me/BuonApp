@@ -249,6 +249,10 @@ export function startServerApp(): Promise<void> {
     app.get('/api/customers-search', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers-search'));
     app.get('/api/crm/lookup', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/crm/lookup'));
     app.post('/api/customers', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers'));
+    // Sending an order from a handheld has to reach the kitchen printers, not
+    // just the KDS. The main API still enforces kot_printing_enabled and the
+    // role check, and only ever prints the rows that have not gone out yet.
+    app.post('/api/printers/print-kot', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/printers/print-kot'));
 
     const staticDir = getStaticDir();
     if (staticDir) {

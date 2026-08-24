@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
-import { getDatabase, parseDbTimestamp } from '../db';
+import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
@@ -86,8 +86,6 @@ const isMasBuild =
   (process as NodeJS.Process & { mas?: boolean }).mas === true;
 const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
-const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
-const RECEIPT_BRANDING_URL = 'https://flopos.com';
 export type PrinterColumnWidth = 36 | 42 | 48;
 
 export interface PrinterInfo {
@@ -600,7 +598,7 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
   }
 }
 
-export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false, targetPrinter?: any, signal?: AbortSignal): Promise<DispatchResult> {
+export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false, targetPrinter?: any, signal?: AbortSignal, batch?: number, isReprint: boolean = false): Promise<DispatchResult> {
   try {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     console.log('[Printer] printKOT called, items count:', items?.length || 0, 'useUnicode:', useUnicode, 'station:', stationName);
@@ -614,13 +612,17 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const profile = resolvePrinterProfile(printer);
     const cols = getColumnsForPrinter(printer, profile);
 
-    const db = getDatabase();
-    const biz = db.prepare('SELECT * FROM settings LIMIT 1').get() as any;
-    const locale = biz?.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
-    const tzOptions = biz?.timezone ? { timeZone: biz.timezone } : undefined;
+    // `settings` is a key/value table, so the old `SELECT * FROM settings
+    // LIMIT 1` returned one arbitrary row and left country/timezone undefined —
+    // every kitchen ticket silently fell back to en-US and the machine clock.
+    const country = getSettingValue('country');
+    const timezone = getSettingValue('timezone');
+    const locale = country ? getCountryByCode(country)?.locale ?? 'en-US' : 'en-US';
+    const tzOptions = timezone ? { timeZone: timezone } : undefined;
 
     const warnings: PrintWarning[] = [];
-    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, profile.arabicShaping ?? false);
+    const language = getSettingValue('language') || 'en';
+    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, profile.arabicShaping ?? false, batch, language, isReprint, profile.codePage);
     console.log('[Printer] KOT data length:', data.length, 'bytes');
     const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
@@ -814,11 +816,11 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   const profile = resolvePrinterProfile(printer);
   const columns = getColumnsForPrinter(printer, profile);
   const warnings: PrintWarning[] = [];
-  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, profile.arabicShaping ?? false);
+  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, profile.arabicShaping ?? false, getPrintLanguage(), profile.codePage);
   return { printer, data, warnings, columns };
 }
 
-export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
+export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language: string = 'en', codePage?: number): Buffer {
   console.log('[Printer] formatReceipt - template:', template);
   console.log('[Printer] formatReceipt - order:', order?.order_number, 'bill:', bill?.bill_number);
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
@@ -826,16 +828,16 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
   const pluginTemplate = loadInstalledPrintTemplate(String(template || ''));
   if (pluginTemplate) {
-    return renderPluginReceipt(pluginTemplate, order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping);
+    return renderPluginReceipt(pluginTemplate, order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, codePage);
   }
   const tpl = normalizeReceiptTemplate(template);
 
   try {
     switch (tpl) {
       case 'classic':
-        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping);
+        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, language, codePage);
       default:
-        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping);
+        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, language, codePage);
     }
   } catch (err) {
     console.error('[Printer] formatReceipt error:', err);
@@ -849,8 +851,8 @@ function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' {
   return 'classic';
 }
 
-function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTemplate>, order: any, bill: any, biz: any, cols: number, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
-  if (!template) return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping);
+function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTemplate>, order: any, bill: any, biz: any, cols: number, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, codePage?: number): Buffer {
+  if (!template) return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, getPrintLanguage(), codePage);
   const renderer = parseJson(template.renderer_json, {}) as { id?: string; version?: number };
   const payload = parseJson(template.template_payload_json, {}) as any;
   if (renderer.id !== 'flocafe-thermal-receipt-template'
@@ -859,7 +861,7 @@ function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTempl
     throw new Error(`Unsupported receipt plugin renderer for template ${template.template_id}`);
   }
   const profile = selectTemplateWidthProfile(payload, cols, warnings);
-  return renderEscposLineTemplateV1(payload, profile, order, bill, biz, useUnicode, isReprint, cutMode, warnings, arabicShaping);
+  return renderEscposLineTemplateV1(payload, profile, order, bill, biz, useUnicode, isReprint, cutMode, warnings, arabicShaping, codePage);
 }
 
 function parseJson(raw: string, fallback: unknown): unknown {
@@ -892,14 +894,14 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
     .sort((a: { columns: number }, b: { columns: number }) => a.columns - b.columns);
 }
 
-function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
+function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, codePage?: number): Buffer {
   const lines: string[] = [];
   const cols = profile.columns;
   const layout = profile.layout || {};
   const date = parseDbTimestamp(order.created_at);
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
+  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode, codePage);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const configuredTaxLabel = String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID');
@@ -992,25 +994,20 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (showTaxRegistration && biz.taxRegistrationNumber) pushWrapped(lines, configuredTaxLabel + ': ' + biz.taxRegistrationNumber, cols);
   if (payload?.footer?.useConfiguredFooterNote !== false && biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
   else lines.push('{CENTER}' + String(payload?.footer?.defaultMessage || 'Thank you!') + '{/CENTER}');
-  if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, codePage }, warnings);
 }
 
-function appendPoweredByFooter(lines: string[]): void {
-  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_NAME + '{/FONT_B}{/CENTER}');
-  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
-}
-
-function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
+function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language: string = 'en', codePage?: number): Buffer {
   const lines: string[] = [];
   const date = parseDbTimestamp(order.created_at);
+  const L = receiptLabels(language);
 
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
 
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
+  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode, codePage);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const amtLen = itemAmountWidth(order, prefix, locale, trimDecimals, cols);
@@ -1023,16 +1020,16 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
   lines.push('{INIT}');
-  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + L.reprint + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
   if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + biz.name + '{/BOLD}{/CENTER}');
   lines.push(bar);
-  lines.push('Bill #: ' + (bill.bill_number || order.order_number));
-  lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
-  if (biz.show_table_number !== false && order.table?.name) lines.push('Table: ' + order.table.name);
-  if (biz.show_customer_name !== false && biz.customer_name) lines.push('Customer: ' + biz.customer_name);
-  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('Customer No: ' + biz.customer_phone);
+  lines.push(L.billNo + (bill.bill_number || order.order_number));
+  lines.push(L.date + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
+  if (biz.show_table_number !== false && order.table?.name) lines.push(L.table + order.table.name);
+  if (biz.show_customer_name !== false && biz.customer_name) lines.push(L.customer + biz.customer_name);
+  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push(L.customerPhone + biz.customer_phone);
   lines.push(dash);
-  lines.push(itemHeader(itemNameLen, amtLen));
+  lines.push(itemHeader(itemNameLen, amtLen, L));
   lines.push(dash);
 
   if (order.items) {
@@ -1044,15 +1041,15 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
         lines.push(...addonRows(addon, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
       }
       if (item.special_instructions) {
-        lines.push('  Note: ' + truncate(item.special_instructions, cols - 8));
+        lines.push('  ' + L.note + truncate(item.special_instructions, cols - L.note.length - 2));
       }
     }
   }
 
   lines.push(dash);
-  lines.push(...financialRows('Subtotal', formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
+  lines.push(...financialRows(L.subtotal, formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
   if (bill.discount_amount > 0) {
-    lines.push(...financialRows('Discount', '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
+    lines.push(...financialRows(L.discount, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
   }
   if (biz.show_tax_breakdown === true && taxComponents.length > 0) {
     for (const tax of taxComponents) {
@@ -1062,9 +1059,9 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
       lines.push(...financialRows(label, formatCurrency(tax.amount, prefix, locale, trimDecimals), cols));
     }
   } else if (Number(bill.tax_amount) !== 0) {
-    lines.push(...financialRows('Tax', formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols));
+    lines.push(...financialRows(L.tax, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols));
   }
-  lines.push(...financialRows('TOTAL', formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
+  lines.push(...financialRows(L.total, formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
 
   if (bill.payment_details) {
     lines.push(dash);
@@ -1085,23 +1082,23 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   lines.push(bar);
   if (biz.show_address !== false && biz.address) pushWrapped(lines, biz.address, cols);
-  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, 'Ph: ' + biz.phone, cols);
+  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, L.phone + biz.phone, cols);
   if ((biz.show_tax_id === true || (biz.show_tax_id !== false && hasTax)) && biz.taxRegistrationNumber) pushWrapped(lines, taxIdLabel + ': ' + biz.taxRegistrationNumber, cols);
   if (biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
-  else lines.push('{CENTER}Thank you!{/CENTER}');
-  appendPoweredByFooter(lines);
+  else lines.push('{CENTER}' + L.thankYou + '{/CENTER}');
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, codePage }, warnings);
 }
 
-function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
+function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language: string = 'en', codePage?: number): Buffer {
   const lines: string[] = [];
   const date = parseDbTimestamp(order.created_at);
+  const L = receiptLabels(language);
 
   const dash = '-'.repeat(cols);
 
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
+  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode, codePage);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const amtLen = itemAmountWidth(order, prefix, locale, trimDecimals, cols);
@@ -1113,7 +1110,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
   lines.push('{INIT}');
-  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + L.reprint + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
 
   // Header: store name (Font A, big + bold), then customer name (Font B) and
   // mobile number, each only if the bill actually has that data.
@@ -1122,12 +1119,12 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('{CENTER}' + biz.customer_phone + '{/CENTER}');
 
   lines.push(dash);
-  lines.push('{CENTER}Invoice #: ' + (bill.bill_number || order.order_number) + '{/CENTER}');
+  lines.push('{CENTER}' + L.invoiceNo + (bill.bill_number || order.order_number) + '{/CENTER}');
   lines.push('{CENTER}' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions) + '{/CENTER}');
-  if (biz.show_table_number !== false && order.table?.name) lines.push('{CENTER}Table: ' + order.table.name + '{/CENTER}');
+  if (biz.show_table_number !== false && order.table?.name) lines.push('{CENTER}' + L.table + order.table.name + '{/CENTER}');
   lines.push(dash);
 
-  lines.push(itemHeader(itemNameLen, amtLen));
+  lines.push(itemHeader(itemNameLen, amtLen, L));
   lines.push(dash);
 
   if (order.items) {
@@ -1139,7 +1136,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
         lines.push(...addonRows(addon, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
       }
       if (item.special_instructions) {
-        lines.push('  Note: ' + truncate(item.special_instructions, cols - 8));
+        lines.push('  ' + L.note + truncate(item.special_instructions, cols - L.note.length - 2));
       }
     }
   }
@@ -1148,13 +1145,13 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   // Redeemed points sit above the subtotal, only if present.
   if (biz.points_redeemed > 0) {
-    const label = 'Points Redeemed';
-    lines.push(label + rightAlign('-' + biz.points_redeemed + ' pts', cols - label.length));
+    const label = L.pointsRedeemed;
+    lines.push(label + rightAlign('-' + biz.points_redeemed + ' ' + L.pointsUnit, cols - label.length));
   }
 
-  lines.push(...financialRows('Subtotal', formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
+  lines.push(...financialRows(L.subtotal, formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
   if (bill.discount_amount > 0) {
-    lines.push(...financialRows('Discount', '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
+    lines.push(...financialRows(L.discount, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
   }
   if (biz.show_tax_breakdown === true && taxComponents.length > 0) {
     for (const tax of taxComponents) {
@@ -1164,9 +1161,9 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
       lines.push(...financialRows(label, formatCurrency(tax.amount, prefix, locale, trimDecimals), cols));
     }
   } else if (Number(bill.tax_amount) !== 0) {
-    lines.push(...financialRows('Tax', formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols));
+    lines.push(...financialRows(L.tax, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols));
   }
-  lines.push(...financialRows('TOTAL', formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
+  lines.push(...financialRows(L.total, formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
 
   if (bill.payment_details) {
     try {
@@ -1189,14 +1186,14 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   const hasBalance = biz.points_balance !== null && biz.points_balance !== undefined && biz.points_balance !== 0;
   if (hasEarned || hasBalance) {
     lines.push(dash);
-    if (hasEarned) lines.push('Points Earned' + rightAlign(String(biz.points_earned), cols - 13));
-    if (hasBalance) lines.push('Points Balance' + rightAlign(String(biz.points_balance), cols - 14));
+    if (hasEarned) lines.push(L.pointsEarned + rightAlign(String(biz.points_earned), cols - L.pointsEarned.length));
+    if (hasBalance) lines.push(L.pointsBalance + rightAlign(String(biz.points_balance), cols - L.pointsBalance.length));
   }
 
   // Footer: store contact details, only the ones actually configured.
   const footerLines: string[] = [];
   if (biz.show_address !== false && biz.address) footerLines.push(biz.address);
-  if (biz.show_phone !== false && biz.phone) footerLines.push('Ph: ' + biz.phone);
+  if (biz.show_phone !== false && biz.phone) footerLines.push(L.phone + biz.phone);
   if ((biz.show_tax_id === true || (biz.show_tax_id !== false && hasTax)) && biz.taxRegistrationNumber) footerLines.push((getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID') + ': ' + biz.taxRegistrationNumber);
   if (biz.instagram_handle) footerLines.push(biz.instagram_handle);
   if (footerLines.length > 0) {
@@ -1206,10 +1203,9 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   if (biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
 
-  appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, codePage }, warnings);
 }
 
 type PluginColumnAlign = 'left' | 'right' | 'center';
@@ -1373,11 +1369,11 @@ function truncateCell(text: string, length: number, ellipsis: boolean): string {
 // oversized amount continues on full-width lines. Tax components belong in
 // the document-level breakdown, not a redundant per-item column derived from
 // deprecated product tax fields.
-function itemHeader(nameLen: number, amtLen: number): string {
+function itemHeader(nameLen: number, amtLen: number, L: ReceiptLabels = RECEIPT_LABELS.en): string {
   const qtyW = 4;
-  const item = 'Item'.slice(0, nameLen).padEnd(nameLen);
-  const qty = 'Qty'.slice(0, qtyW).padEnd(qtyW);
-  const amount = 'Amount'.slice(0, Math.max(1, amtLen - 1));
+  const item = L.itemCol.slice(0, nameLen).padEnd(nameLen);
+  const qty = L.qtyCol.slice(0, qtyW).padEnd(qtyW);
+  const amount = L.amountCol.slice(0, Math.max(1, amtLen - 1));
   return (
     item + qty + ' '.repeat(amtLen - amount.length) + amount
   );
@@ -1522,43 +1518,289 @@ function pushCenteredWrapped(lines: string[], text: string, cols: number): void 
   for (const line of wrapText(text, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
-export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
-  const lines: string[] = [];
-  const bar = '='.repeat(cols);
-
-  lines.push('{INIT}');
-  lines.push('{CENTER}{BOLD}KITCHEN ORDER TICKET{/BOLD}{/CENTER}');
-  lines.push('');
-  lines.push('Station: ' + stationName);
-  lines.push('Order: ' + order.order_number);
-  if (order.table) {
-    lines.push('Table: ' + order.table.name);
-  }
-  lines.push('Time: ' + parseDbTimestamp(order.created_at).toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
-  lines.push(bar);
-  lines.push('');
-
-  for (const item of items) {
-    lines.push('{DOUBLE_HEIGHT}{BOLD}' + item.quantity + 'x  ' + item.product_name + '{/BOLD}{/DOUBLE_HEIGHT}');
-    const addons = parseAddons(item.addons);
-    for (const addon of addons) {
-      if (addon?.name) {
-        lines.push('  + ' + truncate(String(addon.name), cols - 4));
-      }
-    }
-    if (item.special_instructions) {
-      lines.push('  ** ' + item.special_instructions + ' **');
-    }
-  }
-
-  lines.push('');
-  lines.push(bar);
-  lines.push('{CUT}');
-
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
+/**
+ * Receipt labels. Same policy as the kitchen-ticket table: only the languages
+ * this build actually prints for are spelled out, and anything else falls back
+ * to English rather than producing a half-translated bill.
+ */
+interface ReceiptLabels {
+  reprint: string;
+  /** Classic template wording. */
+  invoiceNo: string;
+  /** Compact template wording. */
+  billNo: string;
+  date: string;
+  table: string;
+  customer: string;
+  customerPhone: string;
+  itemCol: string;
+  qtyCol: string;
+  amountCol: string;
+  note: string;
+  pointsRedeemed: string;
+  pointsEarned: string;
+  pointsBalance: string;
+  pointsUnit: string;
+  subtotal: string;
+  discount: string;
+  tax: string;
+  total: string;
+  phone: string;
+  thankYou: string;
 }
 
-export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full'): Buffer {
+const RECEIPT_LABELS: Record<string, ReceiptLabels> = {
+  en: {
+    reprint: '** REPRINT **',
+    invoiceNo: 'Invoice #: ',
+    billNo: 'Bill #: ',
+    date: 'Date: ',
+    table: 'Table: ',
+    customer: 'Customer: ',
+    customerPhone: 'Customer No: ',
+    itemCol: 'Item',
+    qtyCol: 'Qty',
+    amountCol: 'Amount',
+    note: 'Note: ',
+    pointsRedeemed: 'Points Redeemed',
+    pointsEarned: 'Points Earned',
+    pointsBalance: 'Points Balance',
+    pointsUnit: 'pts',
+    subtotal: 'Subtotal',
+    discount: 'Discount',
+    tax: 'Tax',
+    total: 'TOTAL',
+    phone: 'Ph: ',
+    thankYou: 'Thank you!',
+  },
+  it: {
+    reprint: '** RISTAMPA **',
+    invoiceNo: 'Conto n.: ',
+    billNo: 'Conto n.: ',
+    date: 'Data: ',
+    table: 'Tavolo: ',
+    customer: 'Cliente: ',
+    customerPhone: 'Telefono: ',
+    itemCol: 'Articolo',
+    qtyCol: 'Qta',
+    amountCol: 'Importo',
+    note: 'Nota: ',
+    pointsRedeemed: 'Punti usati',
+    pointsEarned: 'Punti accumulati',
+    pointsBalance: 'Saldo punti',
+    pointsUnit: 'pt',
+    subtotal: 'Subtotale',
+    discount: 'Sconto',
+    tax: 'Imposte',
+    total: 'TOTALE',
+    phone: 'Tel: ',
+    thankYou: 'Grazie!',
+  },
+};
+
+function receiptLabels(language: string): ReceiptLabels {
+  return RECEIPT_LABELS[language] || RECEIPT_LABELS.en;
+}
+
+/** Store UI language, for print paths that render their own labels. */
+function getPrintLanguage(): string {
+  try {
+    return getSettingValue('language') || 'en';
+  } catch {
+    // No database (unit tests calling the formatters directly): English.
+    return 'en';
+  }
+}
+
+/**
+ * Kitchen-ticket labels. Only the languages this build actually serves in a
+ * kitchen are spelled out; anything else falls back to English rather than
+ * printing a half-translated ticket.
+ */
+interface KotLabels {
+  table: string;
+  takeaway: string;
+  ticket: string;
+  round: (n: number) => string;
+  covers: (n: number) => string;
+  reprint: string;
+  orderNote: string;
+  other: string;
+  summary: (lines: number, pieces: number) => string;
+}
+
+const KOT_LABELS: Record<string, KotLabels> = {
+  en: {
+    table: 'TABLE',
+    takeaway: 'TAKEAWAY',
+    ticket: 'KITCHEN TICKET',
+    round: (n) => `KITCHEN TICKET NO. ${n}`,
+    covers: (n) => `${n} covers`,
+    reprint: '*** RE-PRINT ***',
+    orderNote: 'ORDER NOTE',
+    other: 'OTHER',
+    summary: (lines, pieces) => `${lines} lines - ${pieces} items`,
+  },
+  it: {
+    table: 'TAVOLO',
+    takeaway: 'ASPORTO',
+    ticket: 'COMANDA',
+    round: (n) => `COMANDA N. ${n}`,
+    covers: (n) => `${n} coperti`,
+    reprint: '*** RISTAMPA ***',
+    orderNote: 'NOTA TAVOLO',
+    other: 'ALTRO',
+    summary: (lines, pieces) => `${lines} righe - ${pieces} pezzi`,
+  },
+};
+
+function kotLabels(language: string): KotLabels {
+  return KOT_LABELS[language] || KOT_LABELS.en;
+}
+
+/**
+ * A horizontal rule carrying a label at its left edge, e.g.
+ * `== ANTIPASTI ==================================`. Used to mark where one
+ * category ends and the next begins on a station that cooks more than one.
+ */
+function labelledRule(label: string, cols: number, char: string): string {
+  const head = `${char.repeat(2)} ${truncate(label, Math.max(1, cols - 6))} `;
+  return head + char.repeat(Math.max(0, cols - head.length));
+}
+
+/**
+ * Groups ticket rows by product category, preserving the order the categories
+ * first appear (which follows the order the items were added to the check).
+ */
+function groupKotItemsByCategory(items: any[]): { name: string | null; items: any[] }[] {
+  const groups: { name: string | null; items: any[] }[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const item of items) {
+    const key = String(item?.category_id ?? item?.category_name ?? '');
+    let index = indexByKey.get(key);
+    if (index === undefined) {
+      index = groups.length;
+      indexByKey.set(key, index);
+      groups.push({ name: item?.category_name ?? null, items: [] });
+    }
+    groups[index].items.push(item);
+  }
+  return groups;
+}
+
+/**
+ * A detail line under a dish - an add-on or a note. The marker only appears on
+ * the first line; continuations align under the text, so a long note reads as
+ * one block instead of a list of fragments. wrapText() collapses leading
+ * whitespace, which is why the indent is reapplied per line rather than baked
+ * into the string handed to it.
+ */
+function pushKotDetail(lines: string[], marker: string, text: string, cols: number, bold: boolean): void {
+  const indent = '    ';
+  const width = Math.max(1, cols - indent.length - marker.length - 1);
+  wrapText(text, width).forEach((part, index) => {
+    const prefix = index === 0 ? marker : ' '.repeat(marker.length);
+    const rendered = `${indent}${prefix} ${part}`;
+    lines.push(bold ? `{BOLD}${rendered}{/BOLD}` : rendered);
+  });
+}
+
+/**
+ * One dish, as the cook reads it: a right-aligned quantity column so the eye
+ * can scan quantities alone, then the name in double height. Wrapped names
+ * hang under the name column rather than restarting at the margin, which keeps
+ * the quantity column unambiguous.
+ */
+function pushKotItemName(lines: string[], quantity: unknown, name: string, cols: number): void {
+  const qty = String(Number(quantity) || 0);
+  const gutter = Math.max(4, qty.length + 3);
+  const indent = ' '.repeat(gutter);
+  const wrapped = wrapText(name.toUpperCase(), Math.max(1, cols - gutter));
+  const first = `${qty.padStart(gutter - 2, ' ')}  ${wrapped[0] ?? ''}`;
+  lines.push(`{DOUBLE_HEIGHT}{BOLD}${first}{/BOLD}{/DOUBLE_HEIGHT}`);
+  for (const continuation of wrapped.slice(1)) {
+    lines.push(`{DOUBLE_HEIGHT}{BOLD}${indent}${continuation}{/BOLD}{/DOUBLE_HEIGHT}`);
+  }
+}
+
+export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[], arabicShaping: boolean = false, batch?: number, language: string = 'en', isReprint: boolean = false, codePage?: number): Buffer {
+  const lines: string[] = [];
+  const L = kotLabels(language);
+  const rule = '='.repeat(cols);
+  const thinRule = '-'.repeat(cols);
+  // Double width halves how many characters fit on a line.
+  const wideCols = Math.max(1, Math.floor(cols / 2));
+
+  lines.push('{INIT}');
+
+  // The table is what the cook and the runner match food against, so it gets
+  // the largest type on the ticket and the top of the paper.
+  const headline = order.table?.name ? `${L.table} ${order.table.name}` : L.takeaway;
+  lines.push(`{CENTER}{DOUBLE_WIDTH}{DOUBLE_HEIGHT}{BOLD}${truncate(headline.toUpperCase(), wideCols)}{/BOLD}{/DOUBLE_HEIGHT}{/DOUBLE_WIDTH}{/CENTER}`);
+  lines.push(`{CENTER}{DOUBLE_HEIGHT}${truncate(batch ? L.round(batch) : L.ticket, wideCols)}{/DOUBLE_HEIGHT}{/CENTER}`);
+  if (isReprint) {
+    lines.push(`{CENTER}{BOLD}${L.reprint}{/BOLD}{/CENTER}`);
+  }
+
+  // Everything the kitchen rarely needs collapses into one condensed line:
+  // the send time (not the order's creation time - on a later round the two
+  // are far apart), the covers, and which station this paper came out of.
+  const sentAt = new Date().toLocaleTimeString(`${locale}-u-nu-latn`, { hour: '2-digit', minute: '2-digit', ...(tzOptions || {}) });
+  const meta = [sentAt, order.guest_count ? L.covers(order.guest_count) : '', stationName]
+    .filter((part) => Boolean(part))
+    .join(' - ');
+  lines.push(`{CENTER}{FONT_B}${truncate(meta, cols)}{/FONT_B}{/CENTER}`);
+  lines.push(rule);
+
+  const groups = groupKotItemsByCategory(items);
+  // A single-category ticket needs no headers - they would only add noise.
+  const showCategoryHeaders = groups.length > 1;
+
+  groups.forEach((group, groupIndex) => {
+    if (showCategoryHeaders) {
+      if (groupIndex > 0) lines.push('');
+      lines.push(`{BOLD}${labelledRule((group.name || L.other).toUpperCase(), cols, '=')}{/BOLD}`);
+    }
+    group.items.forEach((item, itemIndex) => {
+      // A thin rule between dishes: without it a dish carrying two lines of
+      // notes runs straight into the next one.
+      if (itemIndex > 0) lines.push(thinRule);
+      pushKotItemName(lines, item.quantity, String(item.product_name ?? ''), cols);
+      for (const addon of parseAddons(item.addons)) {
+        if (addon?.name) {
+          pushKotDetail(lines, '+', String(addon.name), cols, false);
+        }
+      }
+      if (item.special_instructions) {
+        // Notes carry a different marker from add-ons and are bold: they are
+        // the line a cook cannot afford to skim past.
+        pushKotDetail(lines, '>>', String(item.special_instructions), cols, true);
+      }
+    });
+  });
+
+  lines.push(rule);
+
+  if (order.special_instructions) {
+    lines.push(`{BOLD}${L.orderNote}{/BOLD}`);
+    for (const noteLine of wrapText(String(order.special_instructions), cols)) {
+      lines.push(`{BOLD}${noteLine}{/BOLD}`);
+    }
+    lines.push(rule);
+  }
+
+  // A closing count so the pass can check at a glance that nothing is missing,
+  // plus the order number: too rarely needed to earn large type, too useful for
+  // tracing a ticket back to its order to leave off entirely.
+  const pieces = items.reduce((total, item) => total + (Number(item?.quantity) || 0), 0);
+  const footer = [L.summary(items.length, pieces), order.order_number].filter((part) => Boolean(part)).join(' - ');
+  lines.push(`{FONT_B}${footer}{/FONT_B}`);
+  lines.push('{CUT}');
+
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, codePage }, warnings);
+}
+
+export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', codePage?: number): Buffer {
   const width = columnsForPaperWidth(paperWidth) || 48;
   const bar = '='.repeat(width);
   const ruler = Array.from({ length: width }, (_, i) => String((i + 1) % 10)).join('');
@@ -1577,6 +1819,13 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     ruler,
     edgeProbe,
     bar,
+    // Accent probe. Kitchen tickets and receipts rely on the printer's
+    // code page to render Western European text; if this line comes out as
+    // garbage or blank, the profile's codePage is wrong for this hardware
+    // and dish names with accents will not print as intended.
+    'Accents: \u00E0 \u00E8 \u00E9 \u00EC \u00F2 \u00F9 \u00C0 \u00C8 \u00C9 \u00CC \u00D2 \u00D9',
+    codePage === undefined ? 'Code page: none (accents become plain letters)' : `Code page: ${codePage}`,
+    bar,
     `Time: ${new Date().toLocaleString('en-US-u-nu-latn')}`,
     '',
     bar,
@@ -1584,7 +1833,7 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     bar,
     '{CUT}',
   ];
-  return buildEscPos(lines, false, { cutMode });
+  return buildEscPos(lines, false, { cutMode, codePage });
 }
 
 // Every ASCII fallback is no wider than 3 characters, so currency labels such
@@ -1602,14 +1851,17 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
 // symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
 // pushes trailing digits onto the next line.
-function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
+function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, codePage?: number): string {
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS printers
   // cannot shape that token, so normalize this known currency even when the
   // caller requests Unicode. Preserve the existing useUnicode behavior for
   // every other currency value.
   const normalizedSymbol = symbol === 'ریال' ? 'IRR' : symbol;
   const isAsciiSafe = /^[\x00-\x7F]+$/.test(normalizedSymbol);
-  const rawPrefix = (useUnicode || isAsciiSafe)
+  // A declared code page renders symbols like the euro sign directly, so there
+  // is no reason to fall back to a three-letter code on that hardware.
+  const codePageCanRender = codePage !== undefined && isCodePageRepresentable(normalizedSymbol);
+  const rawPrefix = (useUnicode || isAsciiSafe || codePageCanRender)
     ? normalizedSymbol
     : (CURRENCY_ASCII_MAP[normalizedSymbol] || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs');
   const prefix = rawPrefix.length > 3 ? rawPrefix.slice(0, 3) : rawPrefix;
@@ -1622,6 +1874,77 @@ function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
 // implement — a printer profile must declare `arabicShaping` before they are
 // emitted as UTF-8 bytes.
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
+
+/**
+ * Strips Latin diacritics down to plain ASCII (rago-grave -> ragu, creme
+ * brulee -> creme brulee) and folds typographic punctuation to its ASCII
+ * equivalent. Used as a last resort for printers with no declared code page:
+ * a transliterated dish name is imperfect, but a dropped line means the
+ * kitchen never sees the dish at all.
+ */
+function transliterateToAscii(text: string): string {
+  return text
+    // NFD splits an accented letter into base + combining mark, so removing
+    // the marks leaves the plain letter behind.
+    .normalize('NFD')
+    .replace(/[\u0300-\u036F]/g, '')
+    // Letters with no decomposition need explicit mappings.
+    .replace(/\u00DF/g, 'ss')
+    .replace(/\u00C6/g, 'AE')
+    .replace(/\u00E6/g, 'ae')
+    .replace(/[\u00D8]/g, 'O')
+    .replace(/[\u00F8]/g, 'o')
+    .replace(/[\u0110\u00D0]/g, 'D')
+    .replace(/[\u0111\u00F0]/g, 'd')
+    // Typographic punctuation that word processors and menu imports carry in.
+    .replace(/[\u2018-\u201B]/g, "'")
+    .replace(/[\u201C-\u201F]/g, '\"')
+    .replace(/[\u2013\u2014\u2212]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/[\u00A0\u2007\u202F]/g, ' ');
+}
+
+/**
+ * WPC1252 (code page 16) agrees with Latin-1 everywhere except 0x80-0x9F,
+ * where it carries the euro sign and typographic punctuation instead of
+ * control codes. Encoding as plain 'latin1' would silently lose those, so
+ * that range gets an explicit table.
+ */
+const CP1252_HIGH_RANGE: Record<string, number> = {
+  '\u20AC': 0x80, '\u201A': 0x82, '\u0192': 0x83, '\u201E': 0x84,
+  '\u2026': 0x85, '\u2020': 0x86, '\u2021': 0x87, '\u02C6': 0x88,
+  '\u2030': 0x89, '\u0160': 0x8A, '\u2039': 0x8B, '\u0152': 0x8C,
+  '\u017D': 0x8E, '\u2018': 0x91, '\u2019': 0x92, '\u201C': 0x93,
+  '\u201D': 0x94, '\u2022': 0x95, '\u2013': 0x96, '\u2014': 0x97,
+  '\u02DC': 0x98, '\u2122': 0x99, '\u0161': 0x9A, '\u203A': 0x9B,
+  '\u0153': 0x9C, '\u017E': 0x9E, '\u0178': 0x9F,
+};
+
+/** Byte -> character, for turning a code-page payload back into readable text. */
+const CP1252_HIGH_RANGE_REVERSE: Record<number, string> = Object.fromEntries(
+  Object.entries(CP1252_HIGH_RANGE).map(([char, byte]) => [byte, char]),
+);
+
+/** Whether every character has a byte in the printer's single-byte table. */
+function isCodePageRepresentable(text: string): boolean {
+  for (const char of text) {
+    const code = char.codePointAt(0)!;
+    if (code <= 0xFF) continue;
+    if (CP1252_HIGH_RANGE[char] !== undefined) continue;
+    return false;
+  }
+  return true;
+}
+
+/** Encodes a line the printer's selected code page can render. */
+function encodeCodePageLine(text: string): Buffer {
+  const bytes: number[] = [];
+  for (const char of text) {
+    const mapped = CP1252_HIGH_RANGE[char];
+    bytes.push(mapped !== undefined ? mapped : char.codePointAt(0)! & 0xFF);
+  }
+  return Buffer.from(bytes);
+}
 
 function hasArabicScript(text: string): boolean {
   return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
@@ -1636,8 +1959,13 @@ function makeUnsupportedLineWarning(isStoreName: boolean, text: string): string 
   return `${label} was not printed because ${why}: ${text}`;
 }
 
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean } = {}, warnings?: PrintWarning[]): Buffer {
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; codePage?: number } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
+  // With a declared code page the printer renders single-byte Western European
+  // text, so accented lines can be encoded instead of dropped. Without one,
+  // accents are transliterated below rather than sent as UTF-8 the printer
+  // would render as garbage.
+  const codePage = options.codePage;
 
   const resetAllStyles = () => {
     buf.push(0x1B, 0x45, 0x00);
@@ -1648,6 +1976,9 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   for (let line of lines) {
     if (line.includes('{INIT}')) {
       buf.push(0x1B, 0x40);
+      // ESC t n - select character code table. Must follow the reset, which
+      // returns the printer to its power-on page.
+      if (codePage !== undefined) buf.push(0x1B, 0x74, codePage & 0xFF);
       resetAllStyles();
       continue;
     }
@@ -1667,6 +1998,12 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       continue;
     }
 
+    // Compose accents first. The same word can arrive precomposed (U+00F9) or
+    // decomposed (u + U+0300) depending on where the text was typed or
+    // imported from; only the composed form fits a single-byte code page, so
+    // without this a macOS-pasted dish name would needlessly lose its accent.
+    line = line.normalize('NFC');
+
     const isStoreName = line.includes('{STORE_NAME}');
     line = line.replace(/\{STORE_NAME\}/g, '');
     let printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
@@ -1675,6 +2012,10 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     // etc.) are different because generic ESC/POS printers cannot shape or
     // render them reliably.
     const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
+    // 'latin1' for a line whose bytes the selected code page renders directly;
+    // 'utf8' otherwise, which is only ever reached by pure ASCII or by shaped
+    // Arabic on hardware that declares support for it.
+    let lineEncoding: BufferEncoding = 'utf8';
     if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
       // Allow Arabic/Persian script through only when the printer profile
       // explicitly declares Arabic shaping support AND the line contains no
@@ -1682,17 +2023,32 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       const arabicOnly = options.arabicShaping === true
         && hasArabicScript(printableLine)
         && !/[^\x00-\x7F]/.test(printableLine.replace(ARABIC_SCRIPT_GLOBAL_RE, ''));
-      if (!arabicOnly) {
-        if (warnings) {
-          const text = printableLine.trim();
-          warnings.push({
-            field: isStoreName ? 'store name' : 'receipt line',
-            text,
-            message: makeUnsupportedLineWarning(isStoreName, text),
-          });
+      if (!arabicOnly && codePage !== undefined && isCodePageRepresentable(line)) {
+        // Accented Latin text the code page renders natively - print as is.
+        lineEncoding = 'latin1';
+      } else if (!arabicOnly) {
+        // No code page, or characters outside it. Transliteration keeps the
+        // line on paper whenever the script has an ASCII fallback; only text
+        // that still cannot be rendered (Arabic, CJK, emoji) is dropped.
+        const transliterated = transliterateToAscii(line);
+        const transliteratedPrintable = transliterated.replace(/\{[A-Z_/]+\}/g, '');
+        if (!/[^\x00-\x7F]/.test(transliteratedPrintable.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, ''))) {
+          line = transliterated;
+          printableLine = transliteratedPrintable;
+        } else {
+          if (warnings) {
+            const text = printableLine.trim();
+            warnings.push({
+              field: isStoreName ? 'store name' : 'receipt line',
+              text,
+              message: makeUnsupportedLineWarning(isStoreName, text),
+            });
+          }
+          continue;
         }
-        continue;
       }
+    } else if (codePage !== undefined) {
+      lineEncoding = 'latin1';
     }
 
     let lineBold = line.includes('{BOLD}');
@@ -1722,7 +2078,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       buf.push(0x1B, 0x45, 0x01);
     }
 
-    buf.push(...Buffer.from(line, 'utf8'));
+    buf.push(...(lineEncoding === 'latin1' ? encodeCodePageLine(line) : Buffer.from(line, lineEncoding)));
     buf.push(0x0A);
   }
 
@@ -1733,6 +2089,9 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
 export function escPosToText(data: Buffer | Uint8Array): string {
   const bytes = Buffer.from(data);
   const text: number[] = [];
+  // A payload that selected a code page carries single-byte accented text, so
+  // decoding it as UTF-8 would turn every accent into a replacement character.
+  let singleByteText = false;
 
   for (let i = 0; i < bytes.length;) {
     const byte = bytes[i];
@@ -1740,6 +2099,10 @@ export function escPosToText(data: Buffer | Uint8Array): string {
       const command = bytes[i + 1];
       if (command === 0x40) {
         i += 2;
+      } else if (command === 0x74) {
+        // ESC t n - select character code table.
+        singleByteText = true;
+        i += 3;
       } else if (command === 0x21 || command === 0x45 || command === 0x61) {
         i += 3;
       } else if (command === 0x64) {
@@ -1764,7 +2127,14 @@ export function escPosToText(data: Buffer | Uint8Array): string {
     i += 1;
   }
 
-  return Buffer.from(text).toString('utf8').replace(/\n+$/, '');
+  if (!singleByteText) return Buffer.from(text).toString('utf8').replace(/\n+$/, '');
+  // Decoding as plain latin1 would turn the euro sign and the typographic
+  // punctuation WPC1252 keeps at 0x80-0x9F into invisible control characters,
+  // making the preview disagree with the paper.
+  const decoded = text
+    .map((byte) => CP1252_HIGH_RANGE_REVERSE[byte] ?? String.fromCharCode(byte))
+    .join('');
+  return decoded.replace(/\n+$/, '');
 }
 
 export async function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {

@@ -112,11 +112,16 @@ async function main() {
       403,
       'server remains forbidden from POST /api/printers/print-bill',
     );
-    assertEqual(
-      (await request(app).post('/api/printers/print-kot').set(waiterAuth).send({ orderId: 999999 })).status,
-      403,
-      'server remains forbidden from POST /api/printers/print-kot',
-    );
+    // Deliberate widening: on a handheld, "send order" is the act of firing the
+    // kitchen ticket, so a waiter who may create and append order rows must be
+    // able to dispatch the ticket for them. Reaching the printer-validation 400
+    // (rather than a 403) is what proves the role gate lets them through.
+    const waiterKotRes = await request(app)
+      .post('/api/printers/print-kot')
+      .set(waiterAuth)
+      .send({ orderId: 999999 });
+    assertEqual(waiterKotRes.status, 400, 'server reaches POST /api/printers/print-kot handler');
+    assertEqual(waiterKotRes.body.error, 'No default printer configured. Add a printer in Settings.', 'server print-kot fails at printer validation, not role gating');
     assertEqual(
       (await request(app).post('/api/printers/print-bill').send({ billId: 999999 })).status,
       401,

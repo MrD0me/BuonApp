@@ -15,6 +15,8 @@ export interface KotOptions {
   paperWidth?: 58 | 80;
   /** Kitchen station name to print on KOT */
   stationName?: string;
+  /** Re-print an already-issued ticket round instead of sending the pending rows. */
+  batch?: number;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.

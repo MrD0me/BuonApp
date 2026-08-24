@@ -24,7 +24,6 @@ export interface PosSettingsState {
   printerPaperSize: PaperSize;
   printerEnabled: boolean;
   printerPrintMode: PrinterPrintMode;
-  autoPrintKot: boolean;
   autoPrintBill: boolean;
   whatsappShareEnabled: boolean;
   // Web print settings
@@ -63,7 +62,6 @@ export interface PosSettingsState {
   setPrinterPaperSize: (size: PaperSize) => void;
   setPrinterEnabled: (enabled: boolean) => void;
   setPrinterPrintMode: (mode: PrinterPrintMode) => void;
-  setAutoPrintKot: (enabled: boolean) => void;
   setAutoPrintBill: (enabled: boolean) => void;
   setWhatsappShareEnabled: (enabled: boolean) => void;
   setDefaultPrintMode: (mode: 'thermal' | 'web') => void;
@@ -102,7 +100,6 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       printerPaperSize: 'thermal58',
       printerEnabled: false,
       printerPrintMode: 'escpos',
-      autoPrintKot: false,
       autoPrintBill: false,
       whatsappShareEnabled: true,
       // Web print defaults
@@ -138,7 +135,6 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setPrinterPaperSize: (size) => set({ printerPaperSize: size }),
       setPrinterEnabled: (enabled) => set({ printerEnabled: enabled }),
       setPrinterPrintMode: (mode) => set({ printerPrintMode: mode }),
-      setAutoPrintKot: (enabled) => set({ autoPrintKot: enabled }),
       setAutoPrintBill: (enabled) => set({ autoPrintBill: enabled }),
       setWhatsappShareEnabled: (enabled) => set({ whatsappShareEnabled: enabled }),
       setDefaultPrintMode: (mode) => set({ defaultPrintMode: mode }),

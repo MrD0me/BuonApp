@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
+import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson, withTxn } from '../db';
 import { getOrderWithItems } from './bills';
 import { v4 as uuidv4 } from 'uuid';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
@@ -79,6 +79,88 @@ export function getEffectiveOrderItems(db: any, orderId: string): any[] {
     db,
     (db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[]).map(parseItemJson),
   );
+}
+
+// Ticket rows carry their product category so the printed ticket can group
+// dishes under it: a station that cooks both starters and pasta gets one sheet
+// with a rule between the two sections rather than an undifferentiated list.
+const KOT_ITEM_SELECT = `
+  SELECT oi.*, p.category_id AS category_id, c.name AS category_name
+  FROM order_items oi
+  LEFT JOIN products p ON p.id = oi.product_id
+  LEFT JOIN categories c ON c.id = p.category_id
+`;
+
+/**
+ * Rows of an order that have never been sent to a kitchen station.
+ *
+ * `kot_batch` is the send ledger: NULL means "still only on the check", an
+ * integer means "went out on ticket number N". Cancelled and voided rows are
+ * excluded — the kitchen has either never seen them or has already been told
+ * separately, and either way they must not reappear on a fresh ticket.
+ */
+export function getPendingKotItems(db: any, orderId: string | number): any[] {
+  return attachEffectiveAddons(
+    db,
+    (db.prepare(`
+      ${KOT_ITEM_SELECT}
+      WHERE oi.order_id = ? AND oi.kot_batch IS NULL AND oi.status NOT IN ('cancelled', 'voided')
+      ORDER BY oi.id
+    `).all(orderId) as any[]).map(parseItemJson),
+  );
+}
+
+/** Rows that went out on one specific ticket, for an identical re-print. */
+export function getKotBatchItems(db: any, orderId: string | number, batch: number): any[] {
+  return attachEffectiveAddons(
+    db,
+    (db.prepare(`
+      ${KOT_ITEM_SELECT}
+      WHERE oi.order_id = ? AND oi.kot_batch = ?
+      ORDER BY oi.id
+    `).all(orderId, batch) as any[]).map(parseItemJson),
+  );
+}
+
+/** Highest ticket number issued so far for an order (0 when none). */
+export function getLastKotBatch(db: any, orderId: string | number): number {
+  const row = db.prepare('SELECT MAX(kot_batch) AS last FROM order_items WHERE order_id = ?').get(orderId) as { last: number | null };
+  return row?.last ?? 0;
+}
+
+/**
+ * Claims the next ticket number for the given rows, in one transaction, so two
+ * cashiers sending at the same moment cannot both hand out the same number.
+ * The claim happens before the bytes reach the printer; `releaseKotBatch()`
+ * undoes it when the print fails, which keeps the pending queue honest and
+ * lets the cashier simply press send again.
+ */
+export function claimKotBatch(db: any, orderId: string | number, itemIds: number[]): number {
+  return withTxn(() => {
+    const batch = getLastKotBatch(db, orderId) + 1;
+    const stmt = db.prepare('UPDATE order_items SET kot_batch = ?, updated_at = ? WHERE id = ? AND kot_batch IS NULL');
+    const timestamp = now();
+    for (const id of itemIds) stmt.run(batch, timestamp, id);
+    return batch;
+  });
+}
+
+/** Reverts a whole claim whose ticket never made it to paper. */
+export function releaseKotBatch(db: any, orderId: string | number, batch: number): void {
+  withTxn(() => {
+    db.prepare('UPDATE order_items SET kot_batch = NULL, updated_at = ? WHERE order_id = ? AND kot_batch = ?')
+      .run(now(), orderId, batch);
+  });
+}
+
+/** Reverts the claim on specific rows — the stations whose ticket failed. */
+export function releaseKotItems(db: any, itemIds: number[]): void {
+  if (itemIds.length === 0) return;
+  withTxn(() => {
+    const stmt = db.prepare('UPDATE order_items SET kot_batch = NULL, updated_at = ? WHERE id = ?');
+    const timestamp = now();
+    for (const id of itemIds) stmt.run(timestamp, id);
+  });
 }
 
 // GET /api/printers — list all
@@ -282,7 +364,7 @@ router.post('/:id/test', requireRole('owner', 'manager'), asyncHandler(async (re
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
     const profile = resolvePrinterProfile(printer);
-    const testData = buildTestPage(printer.paper_width || profile.defaultPaperWidth, profile.cutMode);
+    const testData = buildTestPage(printer.paper_width || profile.defaultPaperWidth, profile.cutMode, profile.codePage);
     let result: { ok: boolean; detail?: string } = { ok: false };
 
     switch (printer.connection_type) {
@@ -519,18 +601,30 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
   return result;
 }
 
-// POST /api/printers/print-kot — print KOT via backend (desktop app)
-router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
-  // Coarser than auto_print_kot — when this is off, no KOT print command
+// POST /api/printers/print-kot — send a kitchen ticket for an order.
+//
+// Default behavior sends only the rows that have never been to the kitchen and
+// stamps them with the next ticket number, so a second round prints the second
+// round and nothing else. Pass `batch` to re-print a ticket that already went
+// out (paper jam, lost slip) without issuing a new number.
+// The `server` role is included: on a handheld, "send order" *is* the act of
+// firing the kitchen ticket, so a waiter who may create and append order rows
+// must be able to dispatch the ticket for them. Receipt printing (print-bill)
+// stays closed to servers — that is a cashier's job.
+router.post('/print-kot', requireRole('owner', 'manager', 'cashier', 'server'), asyncHandler(async (req: Request, res: Response) => {
+  // The one business-level switch: when this is off, no KOT print command
   // should ever be sent, automatic or manual (issue #133).
   if (!isKotPrintingEnabled()) {
     return res.status(403).json({ error: 'KOT printing is disabled for this business' });
   }
   try {
-    const { orderId, stationName, items, useUnicode = false } = req.body;
+    const { orderId, stationName, items, useUnicode = false, batch } = req.body;
 
     if (!orderId) {
       return res.status(400).json({ error: 'orderId is required' });
+    }
+    if (batch !== undefined && (!Number.isInteger(batch) || batch < 1)) {
+      return res.status(400).json({ error: 'batch must be a positive integer' });
     }
 
     const db = getDatabase();
@@ -550,9 +644,6 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Fetch order items from database
-    const orderItems: any[] = getEffectiveOrderItems(db, orderId);
-
     // Fetch table info if available
     if (order.table_id) {
       const table: any = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
@@ -562,31 +653,62 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
     }
 
     // An explicit stationName/items override (not used by the current frontend,
-    // but kept for any external caller) always prints a single ticket, as before.
-    // Otherwise, auto-route items to their configured kitchen stations.
+    // but kept for any external caller) always prints a single ticket, as before,
+    // and stays outside the batch ledger.
     let success = true;
     const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
     let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
+
     if (stationName || items) {
-      const kotItems = items || orderItems;
+      const kotItems = items || getEffectiveOrderItems(db, orderId);
       const station = stationName || 'Kitchen';
-      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req));
+      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req), batch);
       success = result.ok;
       failure = result.ok ? null : result;
       warnings.push(...(result.warnings || []));
-    } else {
-      const groups = routeItemsToStations(db, orderItems).filter((g) => g.items.length > 0);
-      for (const group of groups) {
-        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req));
-        success = success && result.ok;
-        warnings.push(...(result.warnings || []));
-        if (!result.ok && !failure) failure = result;
+      if (!success) {
+        return res.status(502).json({ error: 'KOT print failed. Check printer connection.', code: failure?.code, correlation_id: failure?.correlationId, stage: failure?.stage });
+      }
+      return res.json({ success: true, printed: true, warnings });
+    }
+
+    const isReprint = batch !== undefined;
+    const kotItems = isReprint ? getKotBatchItems(db, orderId, batch) : getPendingKotItems(db, orderId);
+
+    if (kotItems.length === 0) {
+      // Not an error: pressing send twice, or with nothing new on the check,
+      // should be a no-op the cashier can see rather than a failed print.
+      return res.json({
+        success: true,
+        printed: false,
+        reason: isReprint ? 'batch_not_found' : 'nothing_pending',
+        warnings: [],
+      });
+    }
+
+    const ticketBatch = isReprint
+      ? batch
+      : claimKotBatch(db, orderId, kotItems.map((item: any) => item.id));
+
+    const groups = routeItemsToStations(db, kotItems).filter((g) => g.items.length > 0);
+    const undelivered: number[] = [];
+    for (const group of groups) {
+      const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req), ticketBatch, isReprint);
+      success = success && result.ok;
+      warnings.push(...(result.warnings || []));
+      if (!result.ok) {
+        if (!failure) failure = result;
+        undelivered.push(...group.items.map((item: any) => item.id).filter((id: unknown): id is number => typeof id === 'number'));
       }
     }
 
     if (success) {
-      res.json({ success: true, warnings });
+      res.json({ success: true, printed: true, batch: ticketBatch, item_count: kotItems.length, warnings });
     } else {
+      // One station can fail while another prints fine. Only the rows whose
+      // ticket never came out go back in the queue — re-sending then reprints
+      // just those, instead of duplicating a round the kitchen already has.
+      if (!isReprint && undelivered.length > 0) releaseKotItems(db, undelivered);
       res.status(502).json({ error: 'KOT print failed. Check printer connection.', code: failure?.code, correlation_id: failure?.correlationId, stage: failure?.stage });
     }
   } catch (error: any) {

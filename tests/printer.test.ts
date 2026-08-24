@@ -310,7 +310,7 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   const defaultKot = formatKOT(persianReceiptOrder, persianReceiptOrder.items, 'آشپزخانه مرکزی', 48, true, 'full', 'en-US', undefined, defaultKotWarnings, false);
   assert('formatKOT without flag skips Persian station name', !defaultKot.toString('utf8').includes('آشپزخانه مرکزی'));
   assert('formatKOT without flag skips Persian item name', !defaultKot.toString('utf8').includes('چای زعفرانی'));
-  assert('formatKOT without flag retains English item name', defaultKot.toString('utf8').includes('Espresso'));
+  assert('formatKOT without flag retains English item name', defaultKot.toString('utf8').includes('ESPRESSO'));
   assert('formatKOT without flag emits precise Arabic shaping warnings', defaultKotWarnings.length >= 2 && defaultKotWarnings.every(w => /Arabic shaping|Persian\/Arabic/.test(w.message)));
 
   // KOT with capability flag: prints Persian station, items, addons, notes with 0 warnings
@@ -351,7 +351,7 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   assert('renders Cash payment', text.includes('Cash') && text.includes('₹500.00'));
   assert('renders UPI payment', text.includes('UPI') && text.includes('₹450.00'));
   assert('renders tax registration number', text.includes('TAXID-0001'));
-  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flopos.com'));
+  assert('no vendor branding on the receipt', !text.includes('Powered by FloPOS') && !text.includes('flopos.com'));
   assert('long product name is truncated to fit', !text.includes('Truncated By Formatter'));
   assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x00]));
 
@@ -435,7 +435,7 @@ console.log('\n✅ Test 4: Classic receipt template');
 
   assert('renders business name', text.includes('Flo Test Cafe'));
   assert('renders item and total', text.includes('Cheeseburger') && text.includes('₹950.00'));
-  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flopos.com'));
+  assert('no vendor branding on the receipt', !text.includes('Powered by FloPOS') && !text.includes('flopos.com'));
   assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x00]));
 
   console.log('\n   — Rendered classic —');
@@ -449,7 +449,7 @@ console.log('\n✅ Test 5: Tax-specific labels fall back to the default template
 
   assert('legacy detailed label renders the default classic receipt', text.includes('Invoice #:'));
   assert('legacy detailed label does not render the GST-style tax invoice', !text.includes('TAX INVOICE'));
-  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flopos.com'));
+  assert('no vendor branding on the receipt', !text.includes('Powered by FloPOS') && !text.includes('flopos.com'));
 
   console.log('\n   — Rendered detailed fallback —');
   console.log(visiblePreview(buf, 48));
@@ -567,20 +567,61 @@ console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
   const buf = formatKOT(fixtureOrder, fixtureOrder.items, 'Main Kitchen', 48);
   const text = buf.toString('utf8');
 
-  assert('renders KOT header', text.includes('KITCHEN ORDER TICKET'));
+  assert('leads with the table, in the largest type on the ticket', text.includes('TABLE T3'));
+  assert('renders KOT header', text.includes('KITCHEN TICKET'));
   assert('renders station name', text.includes('Main Kitchen'));
-  assert('renders order number', text.includes('ORD-20260421-0001'));
-  assert('renders table number', text.includes('T3'));
-  assert('renders each item with qty prefix', text.includes('2x  Cheeseburger'));
+  assert('renders order number in the footer', text.includes('ORD-20260421-0001'));
+  assert('renders each item with a quantity column', text.includes(' 2  CHEESEBURGER'));
   assert('renders addon "Extra Cheese"', text.includes('+ Extra Cheese'));
   assert('renders addon "Bacon"', text.includes('+ Bacon'));
-  assert('renders special instructions with ** markers', text.includes('** No onions **'));
+  assert('marks item notes distinctly from addons', text.includes('>> No onions'));
+  assert('closes with a line and piece count', /\d+ lines - \d+ items/.test(text));
   assert('sets DOUBLE_HEIGHT mode for items', bytesContain(buf, [ESC, 0x21, 0x18]));
   assert('does NOT render prices (KOT has no money)', !text.includes('₹'));
   assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x00]));
 
   console.log('\n   — Rendered KOT —');
   console.log(visiblePreview(buf, 48));
+}
+
+console.log('\n✅ Test 6b: KOT groups dishes by category and keeps accents');
+{
+  const groupedItems = [
+    { quantity: 2, product_name: 'Bruschette miste', category_id: 'c1', category_name: 'Antipasti', addons: [] },
+    { quantity: 1, product_name: 'Ravioli al rag\u00F9', category_id: 'c2', category_name: 'Primi', addons: [] },
+    { quantity: 1, product_name: 'Pur\u00E8 di patate', category_id: 'c3', category_name: 'Contorni', addons: [] },
+  ];
+  const order = { order_number: 'ORD-1', created_at: '2026-08-23 20:41:00', table: { name: '7' } };
+
+  // WPC1252 (code page 16) renders accented Latin directly.
+  const withCodePage = formatKOT(order, groupedItems, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 2, 'it', false, 16);
+  const codePageText = withCodePage.toString('latin1');
+  assert('code page selected with ESC t', bytesContain(withCodePage, [ESC, 0x74, 0x10]));
+  assert('accented dish name survives the code page', codePageText.includes('RAVIOLI AL RAG\u00D9'));
+  assert('a second accented dish survives too', codePageText.includes('PUR\u00C8 DI PATATE'));
+
+  // A ticket covering several categories separates them with a labelled rule.
+  assert('category rule for the first category', codePageText.includes('== ANTIPASTI ='));
+  assert('category rule for the second category', codePageText.includes('== PRIMI ='));
+  assert('category rule for the third category', codePageText.includes('== CONTORNI ='));
+
+  // Without a declared code page nothing is dropped: accents transliterate.
+  const noCodePageWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const noCodePage = formatKOT(order, groupedItems, 'Cucina', 48, false, 'full', 'it-IT', undefined, noCodePageWarnings, false, 2, 'it');
+  const asciiText = noCodePage.toString('utf8');
+  assert('accented dish transliterates rather than vanishing', asciiText.includes('RAVIOLI AL RAGU'));
+  assert('transliterated ticket keeps every dish', asciiText.includes('PURE DI PATATE') && asciiText.includes('BRUSCHETTE MISTE'));
+  assert('transliteration is not reported as an unprintable line', noCodePageWarnings.length === 0);
+
+  // One category means nothing to separate, so the headers stay off.
+  const singleCategory = groupedItems.filter((item) => item.category_id === 'c2');
+  const singleText = formatKOT(order, singleCategory, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 2, 'it', false, 16).toString('latin1');
+  assert('no category rule on a single-category ticket', !singleText.includes('== PRIMI ='));
+  assert('single-category ticket still lists its dish', singleText.includes('RAVIOLI AL RAG\u00D9'));
+
+  // A re-print has to be obvious on paper.
+  const reprint = formatKOT(order, singleCategory, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 2, 'it', true, 16).toString('latin1');
+  assert('re-print is marked on the ticket', reprint.includes('RISTAMPA'));
 }
 
 console.log('\n✅ Test 7: Test page builder');

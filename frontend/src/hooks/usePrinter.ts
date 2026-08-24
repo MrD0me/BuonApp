@@ -28,6 +28,25 @@ type ReceiptTenant = Pick<
   'business_name' | 'currency' | 'country' | 'timezone' | 'currency_display' | 'number_digits' | 'calendar'
 >;
 
+/** Outcome of a kitchen-ticket send. `printed: false` means there was nothing new to send. */
+export interface KotSendResult {
+  warnings: PrintWarning[];
+  printed: boolean;
+  /** Ticket round issued for this send. Only the backend path can assign one. */
+  batch?: number;
+  itemCount?: number;
+  reason?: string;
+}
+
+/** Wire shape of POST /printers/print-kot. */
+interface KotSendResponse {
+  warnings?: PrintWarning[];
+  printed?: boolean;
+  batch?: number;
+  item_count?: number;
+  reason?: string;
+}
+
 export interface HardwarePrinter {
   id: string;
   name: string;
@@ -52,7 +71,7 @@ interface PrinterState {
   disconnect: () => Promise<void>;
   printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
   printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
-  printKot: (order: Order, opts?: KotOptions) => Promise<PrintWarning[]>;
+  printKot: (order: Order, opts?: KotOptions) => Promise<KotSendResult>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;
   setPrintMethod: (method: PrintMode) => void;
@@ -262,10 +281,10 @@ export const usePrinterStore = create<PrinterState>()(
 
       printKot: async (order, opts) => {
         set({ lastError: null });
-        // Single choke point for every KOT print path (auto + manual): when
-        // kot_printing_enabled is off, no KOT print command may ever go out
-        // (issue #133) — coarser than auto_print_kot, which only gates
-        // automatic printing on order placement.
+        // Single choke point for every KOT print path (automatic and manual):
+        // when kot_printing_enabled is off, no KOT print command may ever go
+        // out (issue #133). It is now the only switch — sending a ticket is
+        // intrinsic to writing the order, not a separate preference.
         const { kotPrintingEnabled, printerUseUnicode } = usePosSettingsStore.getState();
         if (!kotPrintingEnabled) {
           const err = new Error('KOT printing is disabled for this business');
@@ -276,17 +295,42 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, useUnicode: printerUseUnicode });
-              return response.data.warnings || [];
+              // The backend owns the round ledger: it picks the rows that have
+              // never been sent, stamps them with the next ticket number and
+              // routes them to the stations. It answers printed:false when
+              // there is nothing new, which is a no-op, not a failure.
+              const response = await api.post<KotSendResponse>('/printers/print-kot', {
+                orderId: order.id,
+                useUnicode: printerUseUnicode,
+                ...(opts?.batch !== undefined ? { batch: opts.batch } : {}),
+              });
+              const data = response.data || {};
+              return {
+                warnings: data.warnings || [],
+                printed: data.printed !== false,
+                batch: data.batch,
+                itemCount: data.item_count,
+                reason: data.reason,
+              };
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string } }; message?: string };
               throw new Error(e.response?.data?.error || e.message || 'KOT print failed');
             }
           }
 
+          // Client-side rendering (WebUSB / browser dialog). There is no
+          // backend round-trip here, so nothing can be stamped as sent —
+          // the ticket still narrows to the rows that are waiting, but the
+          // round number needs a configured hardware printer.
+          const pendingItems = (order.items || []).filter(
+            (item) => item.kot_batch === null || item.kot_batch === undefined,
+          );
+          const orderToPrint = order.items && pendingItems.length > 0
+            ? { ...order, items: pendingItems }
+            : order;
           const { paperWidth } = get();
           const warnings: PrintWarning[] = [];
-          const bytes = buildKotBytes(order, { ...opts, paperWidth }, warnings);
+          const bytes = buildKotBytes(orderToPrint, { ...opts, paperWidth }, warnings);
           set({ lastPrintedBytes: bytes });
 
           if (get().printMethod === 'escpos') {
@@ -296,7 +340,7 @@ export const usePrinterStore = create<PrinterState>()(
             const html = `<html><body style="font-family:monospace;white-space:pre;padding:10px;">${new TextDecoder().decode(bytes)}</body></html>`;
             await printerService.printViaBrowser(html, paperWidth);
           }
-          return warnings;
+          return { warnings, printed: true };
         } catch (err) {
           set({ lastError: (err as Error).message });
           throw err;

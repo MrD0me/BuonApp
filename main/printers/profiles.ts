@@ -22,6 +22,15 @@ export interface SupportedPrinterProfile {
    * specific hardware proves shaped Persian output.
    */
   arabicShaping?: boolean;
+  /**
+   * ESC/POS code page selected with `ESC t n` before printing. `16` is
+   * WPC1252, whose byte values match Latin-1 across the accented Latin range,
+   * so Western European text (a la carte, ragu with a grave accent, creme
+   * brulee) prints correctly instead of being dropped for being non-ASCII.
+   * Leave unset for hardware whose code page support is unknown: the encoder
+   * then transliterates accents to plain ASCII rather than risking garbage.
+   */
+  codePage?: number;
   notes?: string;
 }
 
@@ -38,6 +47,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontBColumns: 64,
     printWidthMm: 72,
     cutMode: 'partial',
+    codePage: 16,
     notes: '80mm ESC/POS receipt printer. Vendor specs list 72mm print width, 576 dots/line, Font A 42/48 columns, Font B 56/64 columns.',
   },
   {
@@ -51,6 +61,22 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 48,
     fontBColumns: 64,
     cutMode: 'partial',
+    codePage: 16,
+  },
+  {
+    id: 'tp801-80mm',
+    make: 'Generic',
+    model: 'TP801',
+    aliases: ['tp801', 'tp-801'],
+    commandSet: 'escpos',
+    defaultPaperWidth: 'cols-48',
+    defaultPort: 9100,
+    fontAColumns: 48,
+    fontBColumns: 64,
+    printWidthMm: 72,
+    cutMode: 'full',
+    codePage: 16,
+    notes: "80mm ESC/POS board with USB, Ethernet and serial interfaces, sold under several brands. Values taken from the printer's own self-test: 48 columns in Font A, 64 in Font B, cutter present, and code page 16 (WPC1252) among the supported tables. Its factory default is page 0 (PC437), which lacks the uppercase accented vowels, so selecting 16 explicitly is what makes names like RAGU with a grave accent print.",
   },
   {
     id: 'generic-escpos-80',
@@ -63,6 +89,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 42,
     fontBColumns: 64,
     cutMode: 'full',
+    codePage: 16,
   },
   {
     id: 'generic-escpos-58',
@@ -75,6 +102,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 32,
     fontBColumns: 56,
     cutMode: 'full',
+    codePage: 16,
   },
 ];
 

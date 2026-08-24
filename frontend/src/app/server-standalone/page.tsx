@@ -228,6 +228,26 @@ export default function ServerStandalonePage() {
     return res.data.customer?.id || null;
   }
 
+  /**
+   * Fires the kitchen ticket for whatever is still waiting on this order. The
+   * backend picks the rows, numbers the round and splits them across the
+   * station printers by category, so a drink added mid-meal prints at the bar
+   * and nothing the kitchen already cooked comes out again.
+   */
+  async function sendToKitchen(orderId: number) {
+    if (!api) return;
+    try {
+      const response = await api.post('/api/printers/print-kot', { orderId });
+      const data = response.data || {};
+      if (data.printed === false) return;
+      toast.success(data.batch ? t('kitchenTicketSentBatch', { batch: data.batch }) : t('kitchenTicketSent'));
+    } catch {
+      // Kitchen printing is disabled for this business, or a printer is down.
+      // Either way the order stands; the waiter needs to know the paper didn't.
+      toast.error(t('kitchenTicketFailed'));
+    }
+  }
+
   async function sendDraft() {
     if (!api || !selectedTableId || draft.length === 0) return;
     setSending(true);
@@ -238,19 +258,27 @@ export default function ServerStandalonePage() {
         quantity: line.quantity,
         special_instructions: line.note.trim() || undefined,
       }));
+      let orderId: number | null = null;
       if (currentOrder?.id) {
         await api.post(`/api/orders/${currentOrder.id}/items`, { items });
+        orderId = currentOrder.id;
       } else {
-        await api.post('/api/orders', {
+        const created = await api.post('/api/orders', {
           table_id: selectedTableId,
           customer_id: customerId,
           type: 'dine_in',
           items,
         }, { headers: { 'Idempotency-Key': `server-app-${Date.now()}-${selectedTableId}` } });
+        orderId = created.data?.order?.id ?? null;
       }
       setDraft([]);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));
+      // On a handheld, sending the order *is* the act of firing the ticket, so
+      // this is unconditional rather than tied to the auto-print preference.
+      // It runs after the success toast: the order is already committed, and a
+      // jammed printer must not read as a failed order.
+      if (orderId !== null) await sendToKitchen(orderId);
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {

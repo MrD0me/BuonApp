@@ -990,7 +990,7 @@ Pass `preview: true` to generate receipt preview text, base64 ESC/POS payload, a
 
 ### POST `/api/printers/print-kot`
 
-Print a kitchen order ticket for `orderId`. A caller may provide `stationName` and `items`; otherwise FloCafe routes items to configured kitchen stations. This endpoint returns `403` when KOT printing is disabled.
+Send a kitchen ticket for `orderId`. By default only the order rows that have never been sent go out: they are stamped with the next sequential round number (`order_items.kot_batch`) and routed to the configured kitchen stations, so a second round prints the newly added items and nothing else. Cancelled and voided rows are never included. This endpoint returns `403` when KOT printing is disabled.
 
 ```json
 {
@@ -998,6 +998,42 @@ Print a kitchen order ticket for `orderId`. A caller may provide `stationName` a
   "useUnicode": false
 }
 ```
+
+Pass `batch` to re-print a round that already went out (paper jam, lost slip). A re-print reuses the stored rows and does not issue a new round number.
+
+```json
+{
+  "orderId": 123,
+  "batch": 2
+}
+```
+
+A caller may still provide `stationName` and `items` to force a single ad-hoc ticket; that form bypasses station routing and the round ledger entirely.
+
+Successful responses report what actually happened. When there is nothing new to send — a double tap, or every item already with the kitchen — the response is `200` with `printed: false` rather than an error.
+
+```json
+{
+  "success": true,
+  "printed": true,
+  "batch": 2,
+  "item_count": 3,
+  "warnings": []
+}
+```
+
+```json
+{
+  "success": true,
+  "printed": false,
+  "reason": "nothing_pending",
+  "warnings": []
+}
+```
+
+`reason` is `nothing_pending` for a normal send with an empty queue, or `batch_not_found` when a re-print names a round that does not exist. If the print fails, the round claim is released so the rows return to the queue and the cashier can simply send again.
+
+Owners, managers, cashiers, and servers may call this route. The `server` role is included because on a handheld, sending the order is the act of firing the ticket; the Server App on port `3003` forwards `POST /api/printers/print-kot` to this endpoint for exactly that reason. Receipt printing (`print-bill`) remains closed to servers.
 
 ---
 
