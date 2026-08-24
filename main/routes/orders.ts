@@ -13,8 +13,10 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
-import { resolveOrderTable, tableLabelSource } from './tables';
+import { resolveOrderTable } from './tables';
+import { tableLabelSource, tableGroupLeader } from '../services/tables';
 import { getOrOpenServiceDay } from '../services/service-day';
+import { seatReservationForTable } from '../services/reservations';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -393,6 +395,18 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
     if (!type || !['dine_in', 'takeaway', 'delivery', 'online'].includes(type)) {
       return res.status(400).json({ error: 'Valid type is required (dine_in, takeaway, delivery, online)' });
     }
+    if (table_id) {
+      // A table folded into a group is not seated on its own: the party is on
+      // the leader, and that is the only place its order can live.
+      const leaderId = tableGroupLeader(getDatabase(), String(table_id));
+      if (leaderId !== String(table_id)) {
+        return res.status(409).json({
+          error: 'This table is joined to another one. Place the order on the table leading the group.',
+          code: 'table_is_merged',
+          leader_table_id: leaderId,
+        });
+      }
+    }
     if (guest_count !== undefined && guest_count !== null && (!Number.isSafeInteger(guest_count) || guest_count < 1 || guest_count > 99)) {
       return res.status(400).json({ error: 'guest_count must be a whole number between 1 and 99' });
     }
@@ -596,6 +610,8 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
       if (table_id && type === 'dine_in') {
         db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?").run(now(), table_id);
+        // The party the table was being held for has arrived.
+        seatReservationForTable(db, table_id);
       }
 
       const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)) as any;

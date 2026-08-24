@@ -2302,6 +2302,53 @@ const ROOMS_SCHEMA_SQL = `
     CREATE INDEX IF NOT EXISTS idx_rooms_sort ON rooms(sort_order, name);
 `;
 
+/**
+ * Bookings for the service being run right now. Scoped to a service day and to
+ * a table that exists: the room is rebuilt daily and its tables deleted, so a
+ * booking cannot point at a table that will not exist yet. Name and guest count
+ * are what the floor needs; the time and phone are recorded when given.
+ * See docs/table-management.md.
+ */
+const RESERVATIONS_SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS reservations (
+      id TEXT PRIMARY KEY,
+      service_day_id TEXT NOT NULL,
+      table_id TEXT,
+      customer_id TEXT,
+      name TEXT NOT NULL,
+      guests INTEGER NOT NULL DEFAULT 2,
+      booked_time TEXT,
+      phone TEXT,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'booked',
+      created_by TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_reservations_day ON reservations(service_day_id, status);
+    CREATE INDEX IF NOT EXISTS idx_reservations_table ON reservations(table_id, status);
+    -- A table can only be promised to one party at a time.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_reservations_one_per_table
+      ON reservations(table_id) WHERE status = 'booked' AND table_id IS NOT NULL;
+`;
+
+/**
+ * Floor plans saved under a name ("sabato sera", "estate esterno"). Applying one
+ * rewrites the current rooms and tables in a single transaction, so a room that
+ * is emptied every night can be put back in one action instead of twenty.
+ * See docs/table-management.md.
+ */
+const TABLE_LAYOUTS_SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS table_layouts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_table_layouts_name ON table_layouts(name);
+`;
+
 export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   {
     version: 1,
@@ -4213,6 +4260,41 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[MIGRATION v75] ${roomCount} room(s), ${placed} table(s) given a first position`);
     },
   },
+  {
+    version: 76,
+    name: 'add_reservations',
+    up: () => {
+      db.exec(RESERVATIONS_SCHEMA_SQL);
+
+      // Nothing to migrate: the reservation fields the UI has been posting
+      // since before this table existed (`reservation_customer_id` and friends)
+      // were never persisted anywhere — the handler read only `status` and the
+      // columns were never added. There is no data to carry over, only a table
+      // status left behind on rows someone once marked reserved.
+      const stranded = db.prepare("SELECT COUNT(*) AS count FROM tables WHERE status = 'reserved'").get() as { count: number };
+      if (stranded.count > 0) {
+        db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE status = 'reserved'").run(now());
+        console.log(`[MIGRATION v76] cleared ${stranded.count} table(s) marked reserved with no booking behind them`);
+      }
+    },
+  },
+  {
+    version: 77,
+    name: 'add_table_merging',
+    up: () => {
+      if (!getColumns(db, 'tables').includes('merged_into')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN merged_into TEXT`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_tables_merged_into ON tables(merged_into)`);
+    },
+  },
+  {
+    version: 78,
+    name: 'add_table_layouts',
+    up: () => {
+      db.exec(TABLE_LAYOUTS_SCHEMA_SQL);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4455,6 +4537,10 @@ function createSchema(): void {
 
     ${ROOMS_SCHEMA_SQL}
 
+    ${RESERVATIONS_SCHEMA_SQL}
+
+    ${TABLE_LAYOUTS_SCHEMA_SQL}
+
     CREATE TABLE IF NOT EXISTS tables (
       id TEXT PRIMARY KEY,
       number TEXT NOT NULL UNIQUE,
@@ -4472,6 +4558,9 @@ function createSchema(): void {
       width REAL,
       height REAL,
       shape TEXT DEFAULT 'rect',
+      -- Set on a table joined to another for one party: it points at the table
+      -- leading the group, which is where the order lives.
+      merged_into TEXT,
       kitchen_station_id TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,

@@ -14,7 +14,8 @@
 
 import { getDatabase, now, businessDateToday, parseRowJson } from '../db';
 import { randomUUID } from 'crypto';
-import { tableDeletionBlocker, deleteTableRow } from '../routes/tables';
+import { tableDeletionBlocker, deleteTableRow } from './tables';
+import { expireOpenReservations } from './reservations';
 
 type Db = ReturnType<typeof getDatabase>;
 
@@ -259,6 +260,7 @@ export interface CloseServiceDayResult {
   tablesCleared: number;
   tablesKept: number;
   heldCartsCleared: number;
+  reservationsExpired: number;
 }
 
 /**
@@ -296,6 +298,8 @@ export function closeServiceDay(
   // Held carts are unsent baskets parked on a table. They do not survive the
   // service they belong to, and they would otherwise block the wipe below.
   const heldCartsCleared = db.prepare('DELETE FROM held_orders').run().changes;
+  // Bookings nobody turned up for stop being pending when the service ends.
+  const reservationsExpired = expireOpenReservations(db, day.id);
   db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE status != 'available'").run(stamp);
 
   let tablesCleared = 0;
@@ -335,6 +339,7 @@ export function closeServiceDay(
     tablesCleared,
     tablesKept,
     heldCartsCleared,
+    reservationsExpired,
   };
 }
 

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, Map as MapIcon, PenLine } from 'lucide-react';
+import { Plus, Pencil, Trash2, Map as MapIcon, PenLine, LayoutGrid } from 'lucide-react';
 import type { Room, Table, Order } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { useTranslations } from 'use-intl';
@@ -13,6 +13,8 @@ import { ReserveModal } from '@/components/tables/ReserveModal';
 import { TableFormModal, DeleteTableModal } from '@/components/tables/TableFormModal';
 import { RoomFormModal, DeleteRoomModal } from '@/components/tables/RoomFormModal';
 import { TableDetailModal } from '@/components/tables/TableDetailModal';
+import { MergeTablesModal } from '@/components/tables/MergeTablesModal';
+import { LayoutsModal } from '@/components/tables/LayoutsModal';
 
 /**
  * The dining room as a map (phase 2 of docs/table-management.md).
@@ -40,6 +42,8 @@ export default function TablesPage() {
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
   const [roomForm, setRoomForm] = useState<{ room: Room | null } | null>(null);
   const [deletingRoom, setDeletingRoom] = useState<Room | null>(null);
+  const [mergingTable, setMergingTable] = useState<Table | null>(null);
+  const [showLayouts, setShowLayouts] = useState(false);
 
   // Promise chains rather than await: state updates land in a microtask instead
   // of synchronously inside the effect below, which is what React wants.
@@ -101,9 +105,18 @@ export default function TablesPage() {
     }
   };
 
+  const allTables = rooms.flatMap((room) => room.tables ?? []);
+
   const handleSelect = (table: Table) => {
-    if (editing) setTableForm({ table });
-    else setDetailTable(table);
+    if (editing) {
+      setTableForm({ table });
+      return;
+    }
+    // A table folded into a group is not its own thing any more: show the party.
+    const leader = table.merged_into
+      ? allTables.find((row) => row.id === table.merged_into) ?? table
+      : table;
+    setDetailTable(leader);
   };
 
   if (loading) {
@@ -127,6 +140,9 @@ export default function TablesPage() {
           )}
           {editing && (
             <>
+              <Button variant="outline" onClick={() => setShowLayouts(true)}>
+                <LayoutGrid size={16} className="me-1" /> {tTables('layouts')}
+              </Button>
               <Button variant="outline" onClick={() => setRoomForm({ room: null })}>
                 <Plus size={16} className="me-1" /> {tTables('addRoom')}
               </Button>
@@ -218,8 +234,10 @@ export default function TablesPage() {
           order={ordersByTable.get(detailTable.id) ?? null}
           onClose={() => setDetailTable(null)}
           onChanged={reload}
+          groupMembers={allTables.filter((row) => row.merged_into === detailTable.id)}
           onEdit={() => { setTableForm({ table: detailTable }); setDetailTable(null); }}
           onReserve={() => { setReservingTable(detailTable); setDetailTable(null); }}
+          onMerge={() => { setMergingTable(detailTable); setDetailTable(null); }}
         />
       )}
 
@@ -263,6 +281,22 @@ export default function TablesPage() {
             if (roomId) setSelectedRoomId(roomId);
             loadMap();
           }}
+        />
+      )}
+
+      {mergingTable && (
+        <MergeTablesModal
+          leader={mergingTable}
+          tables={rooms.find((room) => room.id === mergingTable.room_id)?.tables ?? []}
+          onClose={() => setMergingTable(null)}
+          onMerged={() => { setMergingTable(null); reload(); }}
+        />
+      )}
+
+      {showLayouts && (
+        <LayoutsModal
+          onClose={() => setShowLayouts(false)}
+          onApplied={() => { setShowLayouts(false); reload(); }}
         />
       )}
 

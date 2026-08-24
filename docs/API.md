@@ -340,6 +340,69 @@ or deleting the tables behind one click.
 
 ---
 
+## Reservations
+
+Bookings for the service being run right now, held against a table that exists. See
+`docs/table-management.md`. A table's booking rides along on every read that returns tables
+(`GET /tables`, `GET /tables/:id`, `GET /rooms`) as a `reservation` field.
+
+### POST `/api/tables/:id/reserve`
+Book a table. Owner/manager. `name` is required; `guests` defaults to 2; `booked_time` (`HH:MM`),
+`phone`, `notes` and `customer_id` are optional. Re-posting replaces the standing booking, which is
+how a name or a head count gets corrected.
+
+**Response (400):** `reservation_name_required`, `reservation_time_invalid`
+**Response (409):** `table_has_open_order` — the table is already serving.
+
+---
+
+### DELETE `/api/tables/:id/reserve`
+Drop the standing booking and free the table. Owner/manager.
+
+**Response (404):** `{ "code": "no_reservation" }`
+
+---
+
+## Joined tables
+
+### POST `/api/tables/:id/merge`
+Push tables together for one party. Owner/manager. The table in the path leads the group and keeps
+the order; `table_ids` lists the ones folded into it.
+
+**Response (409):** `table_has_open_order`, `table_has_held_cart`, `table_has_reservation`,
+`table_already_merged`, `table_leads_group` — the message names the table in the way.
+
+---
+
+### POST `/api/tables/:id/split`
+Break the group up. Owner/manager. Works from the leader or from any member.
+
+**Response (400):** `{ "code": "not_merged" }`
+
+---
+
+## Floor plans
+
+Saved maps, so a room emptied at close can be rebuilt in one action.
+
+### GET `/api/table-layouts`
+List saved plans with their room and table counts. Owner/manager.
+
+### POST `/api/table-layouts`
+Save the floor as it stands, under `name`. Owner/manager. Re-using a name overwrites that plan.
+
+**Response (400):** `layout_name_required`, `layout_empty`
+
+### POST `/api/table-layouts/:id/apply`
+Rebuild the floor from a plan. Owner/manager.
+
+**Response (409):** `{ "code": "layout_apply_blocked", "blockers": [{ "number": "T6", "reason": "table_has_open_order" }] }`
+
+### DELETE `/api/table-layouts/:id`
+Delete a plan. Owner/manager.
+
+---
+
 ## Service Days
 
 The business-day cycle. Orders are stamped with the day that was open when they were placed, so a

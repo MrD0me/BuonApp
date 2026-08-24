@@ -121,6 +121,35 @@ export interface Room {
 
 export type TableShape = 'rect' | 'round';
 
+/** A floor plan kept under a name, so a wiped room can be rebuilt in one action. */
+export interface TableLayout {
+  id: string;
+  name: string;
+  rooms: number;
+  tables: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * A booking for the service being run now. Scoped to a table that exists,
+ * because the room is rebuilt daily — see docs/table-management.md.
+ */
+export interface Reservation {
+  id: string;
+  service_day_id: string;
+  table_id: string | null;
+  customer_id: string | null;
+  name: string;
+  guests: number;
+  /** `HH:MM`, only when the guest gave one. */
+  booked_time: string | null;
+  phone: string | null;
+  notes: string | null;
+  status: 'booked' | 'seated' | 'cancelled' | 'expired';
+  created_at: string;
+}
+
 export interface Table {
   id: string;
   name: string;
@@ -138,12 +167,13 @@ export interface Table {
   width: number | null;
   height: number | null;
   shape: TableShape;
+  /** Set when this table has been folded into another for one party; it names the leader. */
+  merged_into?: string | null;
   is_active: boolean;
   activeOrder?: Order | null;
   current_order?: Order | null;
-  reservation_customer_id?: number | null;
-  reservation_customer_name?: string | null;
-  reservation_customer_phone?: string | null;
+  /** The booking this table is being held for, when there is one. */
+  reservation?: Reservation | null;
 }
 
 /**

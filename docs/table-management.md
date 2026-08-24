@@ -1,6 +1,6 @@
 # Table management design
 
-**Status:** ACTIVE DESIGN. Phases 1, 2 and 3 are implemented; phase 4 is approved but not yet built.
+**Status:** CURRENT. All four phases are implemented.
 
 FloCafe's table model was built for a fixed dining room: tables are created once and can only be
 soft-deactivated. This design reworks it for a restaurant whose room layout, table count, and seat
@@ -96,8 +96,19 @@ only — no trends, comparisons, or time series.
 ### `reservations` (new, phase 4)
 
 Replaces the three fields that were being bolted onto the table: `service_day_id`, `table_id`,
-`name`, `guests`, `time` (optional), `phone` (optional), `notes`, `status`. Name and guest count are
-the operationally required fields; time and phone are stored for completeness but never required.
+`customer_id`, `name`, `guests`, `booked_time` (optional), `phone` (optional), `notes`, `status`.
+Name and guest count are the operationally required fields; time and phone are stored when given and
+never demanded.
+
+**Scope (decided 2026-08-25):** bookings are for the service being run right now, not for future
+dates. That falls out of the rest of the design rather than being a shortcut — the room is rebuilt
+daily and its tables really are deleted, so "table 12 on Saturday" names something that will not
+exist until Saturday's map is built. A booking therefore points at a table that already exists.
+
+`status` moves `booked` → `seated` when an order lands on the table, `cancelled` when the booking is
+dropped or the table is freed by hand, and `expired` at close for the parties who never arrived.
+`tables.status = 'reserved'` is now what having a booking looks like, not something a caller can
+assert: `PATCH /tables/:id/status` refuses it and points at the booking endpoint.
 
 ### `table_layouts` (new, phase 4)
 
@@ -226,6 +237,40 @@ from React state that had not updated yet. All three are fixed and pinned.
 orientation from the horizontal/vertical toggle. `section` survives as a free-text field and has no
 role in the map.
 
+## What phase 4 shipped
+
+**Reservations** (migration v76). The reserve dialog had been posting
+`reservation_customer_id`/`_name`/`_phone` into columns that never existed, against a handler that
+read only `status` — so "reserved" was a colour and nothing else, and the POS read those fields back
+as `undefined`. That whole path is gone. A booking is now a row with a name, a head count, and
+optionally a time, a phone, a note and a link to a customer already in the book. `POST
+/tables/:id/reserve` books, re-posting corrects, `DELETE` cancels, an order seats it, and the day
+close expires whoever did not turn up.
+
+**Joining tables** (migration v77). `tables.merged_into` points a folded table at the one leading its
+group. Deliberately one level deep: a member can never itself lead, so there are no chains to walk
+and splitting is always one step. The leader keeps the order — `POST /orders` refuses a table that
+has been folded in and names the leader to use instead. Joining is refused for a table that is
+working, holding a cart, booked, or already in a group, and the refusal names the table in the way.
+Deleting a leader releases its members rather than stranding them.
+
+**Saved floor plans** (migration v78). `table_layouts` stores rooms and tables under a name.
+Applying one rebuilds the floor in a single transaction, tearing the current tables down through the
+same safe path a single delete takes — so history keeps its labels — and is refused while any table
+is still working. Plans store names rather than ids, which is what lets one survive the map being
+wiped. That is the point: it is the answer to the daily tax the close ritual creates.
+
+**Structural:** the table lifecycle helpers moved from `main/routes/tables.ts` to
+`main/services/tables.ts`. Reservations needed the service day and the day close needed table
+deletion, which had the route and the service importing each other in a circle. Services now hold
+the domain and routes only speak HTTP; there are no import cycles left in `main/`.
+
+Covered by `tests/reservations.test.ts` and `tests/table-merge-layouts.test.ts`.
+
+**Still open:** reserving and joining are owner/manager, the same as every other table write. A
+cashier taking a booking at the till cannot, and widening that is a decision rather than an
+oversight. There is no booking agenda, by design.
+
 ## Phases
 
 | Phase | Content |
@@ -233,6 +278,6 @@ role in the map.
 | 1 | Full table CRUD: edit, real deletion, label snapshot on orders — **done** (migration v73, `tests/table-crud.test.ts`) |
 | 2 | Rooms as entities, graphical map, service/edit modes — **done** (migration v75, `tests/rooms-map.test.ts`) |
 | 3 | Service days: open/close, order stamping, closing report, day history — **done** (migration v74, `tests/service-days.test.ts`) |
-| 4 | Reservations, table merging, layout templates |
+| 4 | Reservations, table merging, layout templates — **done** (migrations v76-v78, `tests/reservations.test.ts`, `tests/table-merge-layouts.test.ts`) |
 
-Phase 4 is what remains. It builds on the map: joining tables and layout templates are both much more useful with a floor plan in front of you than with a list.
+All four phases are in. What the design set out to fix — a room that cannot be edited, a day that has no boundary, and a floor plan that has to be rebuilt by hand every morning — is done.

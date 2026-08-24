@@ -10,7 +10,7 @@ import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenSt
 import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
-import { resolveRoomForNewTable, findFreeSlot } from './tables';
+import { resolveRoomForNewTable, findFreeSlot } from '../services/tables';
 import { defaultTableSize } from '../lib/table-geometry';
 import { normalizeOptionalPhone } from '../lib/phone';
 

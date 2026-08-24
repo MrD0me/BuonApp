@@ -6,7 +6,7 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { parseDbTimestamp } from '@/lib/utils';
 import { Ltr } from '@/components/layout/Ltr';
-import { Flame } from 'lucide-react';
+import { Flame, Link2 } from 'lucide-react';
 
 /**
  * The dining room, drawn to scale (phase 2 of docs/table-management.md).
@@ -73,6 +73,10 @@ function TableTile({
     (item) => item.kot_batch == null && item.status !== 'cancelled' && item.status !== 'voided',
   );
   const compact = height < 100 || width < 120;
+  // A table being held shows who it is being held for; that is the whole point
+  // of marking it reserved rather than just colouring it.
+  const booking = !order ? table.reservation ?? null : null;
+  const isGroupMember = Boolean(table.merged_into);
 
   return (
     <div
@@ -96,10 +100,16 @@ function TableTile({
         ${editing ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
         ${dragging ? 'shadow-lg ring-2 ring-brand z-10' : 'shadow-sm hover:shadow-md'}
         ${!table.is_active ? 'opacity-50' : ''}
+        ${isGroupMember ? 'border-dashed opacity-70' : ''}
         transition-shadow
       `}
     >
       <span className={`absolute top-1.5 start-1.5 w-2 h-2 rounded-full ${style.dot}`} />
+      {isGroupMember && (
+        <span className="absolute bottom-1 end-1 text-gray-400" title={tTables('mergedInto')}>
+          <Link2 size={12} />
+        </span>
+      )}
       {pendingKot && (
         <span className="absolute top-1 end-1 text-orange-600" title={tTables('kotPending')}>
           <Flame size={13} />
@@ -110,10 +120,22 @@ function TableTile({
         {table.name}
       </span>
       {!compact && (
-        <span className="text-[11px] text-gray-500">
-          {order?.guest_count
-            ? `${order.guest_count}/${table.capacity}`
-            : tTables('capacitySeats', { count: table.capacity })}
+        booking ? (
+          <span className="text-[11px] font-medium text-amber-800 truncate max-w-full px-1">{booking.name}</span>
+        ) : (
+          <span className="text-[11px] text-gray-500">
+            {order?.guest_count
+              ? `${order.guest_count}/${table.capacity}`
+              : tTables('capacitySeats', { count: table.capacity })}
+          </span>
+        )
+      )}
+      {booking && !compact && (
+        <span className="text-[10px] text-amber-700">
+          <Ltr>
+            {booking.booked_time ? `${booking.booked_time} · ` : ''}
+            {tTables('reservationGuestsShort', { count: booking.guests })}
+          </Ltr>
         </span>
       )}
       {order && !compact && (
