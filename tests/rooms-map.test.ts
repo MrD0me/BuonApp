@@ -9,7 +9,7 @@
  * B) rooms are created, renamed and sized within bounds; names stay unique
  * C) a new table lands in a room, sized from its capacity, on a free spot
  * D) two tables created in a row do not sit on top of each other
- * E) geometry is validated: shape, negative coordinates, unknown room
+ * E) geometry is validated, and a vertical rectangle round-trips unchanged
  * F) an order records the ROOM name, and follows the table between rooms
  * G) a room holding tables refuses to be deleted
  * H) migration v75 promotes legacy `floor` values into rooms
@@ -159,6 +159,20 @@ async function main() {
     const badRoom = await api(baseUrl, `/api/tables/${first.id}`, { method: 'PUT', headers: authHeader, body: { room_id: 'room-nope' } });
     assertEqual(badRoom.status, 400, 'an unknown room is refused');
 
+    // Standing a rectangle on end is just swapping its sides, so no schema
+    // support is needed — but the API has to preserve a taller-than-wide table
+    // rather than normalising it back.
+    const upright = await createTable({ number: 'Verticale', capacity: 4, width: 110, height: 150, room_id: dehors.id });
+    assertEqual(upright.width, 110, 'a vertical table keeps its narrow width');
+    assertEqual(upright.height, 150, 'a vertical table keeps its tall height');
+
+    const laidDown = await api(baseUrl, `/api/tables/${upright.id}`, {
+      method: 'PUT', headers: authHeader, body: { width: 150, height: 110 },
+    });
+    assertEqual(laidDown.status, 200, 'turning the table back is saved');
+    assertEqual(laidDown.data.table.width, 150, 'width and height swap cleanly');
+    assertEqual(laidDown.data.table.height, 110, 'width and height swap cleanly');
+
     const moved = await api(baseUrl, `/api/tables/${first.id}`, {
       method: 'PUT', headers: authHeader, body: { position_x: 320, position_y: 180, width: 200, height: 140 },
     });
@@ -194,7 +208,7 @@ async function main() {
     const busyRoom = await api(baseUrl, `/api/rooms/${dehors.id}`, { method: 'DELETE', headers: authHeader });
     assertEqual(busyRoom.status, 409, 'a room with tables refuses to go');
     assertEqual(busyRoom.data.code, 'room_not_empty', 'refusal carries a stable code');
-    assertEqual(busyRoom.data.tables, 2, 'refusal counts what is in the way');
+    assertEqual(busyRoom.data.tables, 3, 'refusal counts what is in the way');
 
     const spare = await createRoom({ name: 'Sala Chiusa' });
     const emptyRoom = await api(baseUrl, `/api/rooms/${spare.id}`, { method: 'DELETE', headers: authHeader });

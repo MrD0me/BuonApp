@@ -34,20 +34,37 @@ const SIZE_LABEL_KEYS = {
   banquet: 'sizeBanquet',
 } as const;
 
-function dimensionsFor(size: SizeKey, shape: TableShape): { width: number; height: number } {
+/**
+ * Which way a rectangle lies. Not a stored field: standing a table up is just
+ * swapping its width and height, so the orientation is already readable from
+ * the size itself. Round tables are square and have none.
+ */
+type Orientation = 'horizontal' | 'vertical';
+
+function dimensionsFor(size: SizeKey, shape: TableShape, orientation: Orientation): { width: number; height: number } {
   const preset = SIZE_PRESETS[size];
   if (shape === 'round') return { width: preset.round, height: preset.round };
-  return { width: preset.rect[0], height: preset.rect[1] };
+  const [long, short] = preset.rect;
+  return orientation === 'vertical' ? { width: short, height: long } : { width: long, height: short };
+}
+
+function orientationOf(table: Table | null): Orientation {
+  if (!table?.width || !table?.height) return 'horizontal';
+  return table.height > table.width ? 'vertical' : 'horizontal';
 }
 
 /** Which preset a table is currently closest to, so editing starts where it is. */
 function sizeOf(table: Table | null): SizeKey {
   if (!table?.width) return 'medium';
-  const width = table.width;
+  // Compare on the long side, so a table standing on end matches the same
+  // preset as the one it was turned from.
+  const longest = Math.max(table.width, table.height ?? 0);
   let best: SizeKey = 'medium';
   let bestGap = Infinity;
   for (const key of SIZE_KEYS) {
-    const gap = Math.abs(dimensionsFor(key, table.shape || 'rect').width - width);
+    const preset = SIZE_PRESETS[key];
+    const presetLongest = table.shape === 'round' ? preset.round : Math.max(preset.rect[0], preset.rect[1]);
+    const gap = Math.abs(presetLongest - longest);
     if (gap < bestGap) {
       bestGap = gap;
       best = key;
@@ -87,6 +104,7 @@ export function TableFormModal({ table, rooms, defaultRoomId, onClose, onSaved, 
     roomId: table?.room_id ?? defaultRoomId ?? rooms[0]?.id ?? '',
     shape: (table?.shape ?? 'rect') as TableShape,
     size: sizeOf(table),
+    orientation: orientationOf(table),
     section: table?.section ?? '',
   });
   const [saving, setSaving] = useState(false);
@@ -109,7 +127,7 @@ export function TableFormModal({ table, rooms, defaultRoomId, onClose, onSaved, 
       return;
     }
     setSaving(true);
-    const dimensions = dimensionsFor(form.size, form.shape);
+    const dimensions = dimensionsFor(form.size, form.shape, form.orientation);
     const payload = {
       name: form.name.trim(),
       capacity,
@@ -178,6 +196,22 @@ export function TableFormModal({ table, rooms, defaultRoomId, onClose, onSaved, 
               ))}
             </div>
           </div>
+
+          {form.shape === 'rect' && (
+            <div>
+              <span className="block text-sm font-medium text-gray-700 mb-1">{tTables('orientation')}</span>
+              <div className="grid grid-cols-2 gap-2">
+                {(['horizontal', 'vertical'] as Orientation[]).map((orientation) => (
+                  <button key={orientation} type="button" onClick={() => setForm({ ...form, orientation })}
+                    className={`px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
+                      form.orientation === orientation ? 'border-brand bg-brand-light text-brand font-medium' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}>
+                    {tTables(orientation === 'horizontal' ? 'orientationHorizontal' : 'orientationVertical')}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <span className="block text-sm font-medium text-gray-700 mb-1">{tTables('size')}</span>

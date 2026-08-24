@@ -61,10 +61,16 @@ Stays the same table, becomes fully mutable and deletable. Phase 2 adds `room_id
 (rect/round), `width` and `height`; `position_x`/`position_y` finally get used. Phase 4 adds
 `merged_into` for joining tables.
 
-**Amendment (phase 2):** `rotation` and `notes` were planned and are not there. Rotation costs a
-fiddly editor handle to express layouts that a wide rectangle or a circle already covers, and a
-per-table note had no reader. Neither is hard to add later; adding a column nothing writes is worse
-than adding it when something does.
+**Amendment (phase 2):** the planned `rotation` and `notes` columns are not there.
+
+Free-angle rotation costs a fiddly editor handle, and the thing it was actually wanted for — a table
+standing on its end rather than lying across — needs no rotation at all: it is the same rectangle
+with its width and height swapped. The form offers that as a horizontal/vertical toggle, and the
+orientation is read back out of the stored size (taller than wide means vertical) rather than
+duplicated in a column that could disagree with it. Angles that are not multiples of 90 degrees
+remain unsupported.
+
+`notes` had no reader, and a column nothing writes is worse than one added when something does.
 
 `is_active` and the deactivate/reactivate routes are retained for backward compatibility and for
 databases that already hold deactivated rows, but real deletion is the primary action in the UI.
@@ -216,8 +222,9 @@ itself only through a `ResizeObserver`, which left the first paint unscaled; and
 move and release landed in the same frame was dropped, because the landing position was read back
 from React state that had not updated yet. All three are fixed and pinned.
 
-**Still open:** tables cannot be rotated or resized by dragging a handle — size is chosen from
-presets. `section` survives as a free-text field and has no role in the map.
+**Still open:** tables cannot be resized by dragging a handle — size comes from presets, and
+orientation from the horizontal/vertical toggle. `section` survives as a free-text field and has no
+role in the map.
 
 ## Phases
 
