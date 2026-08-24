@@ -124,6 +124,42 @@ export interface Table {
   reservation_customer_phone?: string | null;
 }
 
+/**
+ * One business day of service. Orders link to it, so a day's takings are an
+ * exact set of rows rather than a time range — see docs/table-management.md.
+ */
+export interface ServiceDay {
+  id: string;
+  business_date: string;
+  status: 'open' | 'closed';
+  opened_at: string;
+  opened_by: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  notes: string | null;
+  /** Totals frozen at close. Absent while the day is open. */
+  summary: string | null;
+  layout_snapshot: string | null;
+  /** Present on list rows only, so the picker can show numbers without a second call. */
+  orders_count?: number;
+  covers?: number;
+  takings?: number;
+}
+
+export interface ServiceDaySummary {
+  orders: { total: number; completed: number; cancelled: number };
+  covers: number;
+  bills: { count: number; paid: number; unpaid: number };
+  takings: { total: number; byMethod: { method: string; count: number; total: number }[] };
+  discounts: number;
+  topProducts: { name: string; quantity: number; total: number }[];
+}
+
+export interface ServiceDayBlockers {
+  openOrders: { id: number; order_number: string; status: string; table_label: string | null }[];
+  unpaidBills: { id: number; bill_number: string; total: number; paid_amount: number }[];
+}
+
 export interface Customer {
   id: string | number;
   phone: string;
@@ -146,6 +182,11 @@ export interface Order {
   id: number;
   order_number: string;
   table_id: string | null;
+  /** Where the order was served, captured at creation and immune to the table being deleted. */
+  table_label?: string | null;
+  room_label?: string | null;
+  /** The business day this order belongs to. */
+  service_day_id?: string | null;
   customer_id: number | string | null;
   type: 'dine_in' | 'takeaway' | 'delivery' | 'online';
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';

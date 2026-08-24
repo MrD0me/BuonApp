@@ -2251,6 +2251,35 @@ export function buildIdealSchemaDb(): Database.Database {
 // Each entry runs exactly once, in order, wrapped in a transaction.
 // To add a schema change: append a new entry. Never edit existing entries.
 
+/**
+ * One row per business day of service. Orders point at it, so "the orders of
+ * 12 August" is an exact link instead of a guessed time range — which matters
+ * because a restaurant serving past midnight does not end its day when the UTC
+ * date rolls over. Shared by createSchema() and migration v74 so a fresh
+ * install and an upgraded one cannot drift apart.
+ * See docs/table-management.md.
+ */
+const SERVICE_DAYS_SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS service_days (
+      id TEXT PRIMARY KEY,
+      business_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      opened_at TEXT NOT NULL,
+      opened_by TEXT,
+      closed_at TEXT,
+      closed_by TEXT,
+      notes TEXT,
+      summary TEXT,
+      layout_snapshot TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_service_days_date ON service_days(business_date DESC);
+    -- At most one day may be open at a time; the whole model rests on it.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_service_days_single_open
+      ON service_days(status) WHERE status = 'open';
+`;
+
 export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   {
     version: 1,
@@ -3990,6 +4019,79 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `).run();
     },
   },
+  {
+    version: 74,
+    name: 'add_service_days',
+    up: () => {
+      db.exec(SERVICE_DAYS_SCHEMA_SQL);
+
+      if (!getColumns(db, 'orders').includes('service_day_id')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN service_day_id TEXT`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_service_day ON orders(service_day_id)`);
+
+      // Give the history that predates this table a home: one closed day per
+      // business date the orders already fall on, bucketed in the tenant
+      // timezone rather than UTC so a service that ran past midnight stays a
+      // single day. These carry no frozen summary — totals are computed on
+      // read, which is exact for data that can no longer change.
+      const timezoneRow = db.prepare("SELECT value FROM settings WHERE key = 'timezone'").get() as { value?: string } | undefined;
+      let formatBusinessDate: (date: Date) => string;
+      try {
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: timezoneRow?.value || 'UTC',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        formatBusinessDate = (date: Date) => {
+          const parts = formatter.formatToParts(date);
+          const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+          return `${get('year')}-${get('month')}-${get('day')}`;
+        };
+      } catch {
+        formatBusinessDate = (date: Date) => date.toISOString().slice(0, 10);
+      }
+
+      const pending = db.prepare('SELECT id, created_at FROM orders WHERE service_day_id IS NULL').all() as { id: number; created_at: string }[];
+      if (pending.length === 0) return;
+
+      const buckets = new Map<string, { ids: number[]; first: string; last: string }>();
+      for (const row of pending) {
+        const parsed = parseDbTimestamp(row.created_at);
+        if (isNaN(parsed.getTime())) continue;
+        const businessDate = formatBusinessDate(parsed);
+        const bucket = buckets.get(businessDate);
+        if (!bucket) {
+          buckets.set(businessDate, { ids: [row.id], first: row.created_at, last: row.created_at });
+          continue;
+        }
+        bucket.ids.push(row.id);
+        if (row.created_at < bucket.first) bucket.first = row.created_at;
+        if (row.created_at > bucket.last) bucket.last = row.created_at;
+      }
+
+      const stamp = now();
+      const insertDay = db.prepare(`
+        INSERT OR IGNORE INTO service_days (id, business_date, status, opened_at, closed_at, notes, created_at, updated_at)
+        VALUES (?, ?, 'closed', ?, ?, 'Backfilled from order history', ?, ?)
+      `);
+      let backfilled = 0;
+      for (const [businessDate, bucket] of buckets) {
+        const dayId = `sd-${businessDate.replace(/-/g, '')}`;
+        insertDay.run(dayId, businessDate, bucket.first, bucket.last, stamp, stamp);
+        // Chunked so a long-running store stays under SQLite's bound-parameter
+        // limit instead of throwing partway through the upgrade.
+        for (let offset = 0; offset < bucket.ids.length; offset += 400) {
+          const chunk = bucket.ids.slice(offset, offset + 400);
+          db.prepare(`UPDATE orders SET service_day_id = ? WHERE id IN (${chunk.map(() => '?').join(',')})`)
+            .run(dayId, ...chunk);
+          backfilled += chunk.length;
+        }
+      }
+      console.log(`[MIGRATION v74] backfilled ${backfilled} order(s) into ${buckets.size} service day(s)`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4281,6 +4383,8 @@ function createSchema(): void {
 
     -- ── Transactional tables ─────────────────────────────────────────────
 
+    ${SERVICE_DAYS_SCHEMA_SQL}
+
     CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_number TEXT UNIQUE NOT NULL,
@@ -4291,6 +4395,7 @@ function createSchema(): void {
       -- table they name is gone. See docs/table-management.md.
       table_label TEXT,
       room_label TEXT,
+      service_day_id TEXT,
       customer_id TEXT,
       user_id TEXT,
       type TEXT DEFAULT 'takeaway',
@@ -4969,6 +5074,16 @@ export function parseDbTimestamp(ts: string | null | undefined): Date {
  */
 export function utcTodayDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * "Today" as `YYYY-MM-DD` in the tenant's configured timezone. Unlike
+ * `utcTodayDate()` this is what a business day is labelled with, so a service
+ * opened at 19:00 in Rome is dated that evening and not the next morning.
+ */
+export function businessDateToday(): string {
+  const stamp = dateStampInTimezone(getSettingValue('timezone') || 'Asia/Kolkata');
+  return `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}`;
 }
 
 /**

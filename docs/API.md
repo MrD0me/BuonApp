@@ -258,17 +258,100 @@ List all tables.
 ---
 
 ### POST `/api/tables`
-Create table.
+Create table. Owner/manager. Accepts `number` (or the legacy `name`), `capacity`, `floor`,
+`section`, `position_x`, `position_y`, `kitchen_station_id`.
 
 ---
 
-### PATCH `/api/tables/:id`
-Update table.
+### PUT `/api/tables/:id`
+Update table. Owner/manager. Only the fields present in the body are written, so an optional
+field can be cleared by sending it as `""` or `null`. Renaming retags the labels on the table's
+open orders; closed orders keep the label they were served under.
 
 ---
 
 ### DELETE `/api/tables/:id`
-Delete table.
+Delete table for real. Owner/manager. History survives because each order carries its own
+`table_label`/`room_label` snapshot; the order's `table_id` is set to `NULL`.
+
+**Response (409):** refused while something live still points at the table.
+```json
+{ "error": "Cannot delete a table with an open order. Close or move the order first.",
+  "code": "table_has_open_order" }
+```
+`code` is `table_has_open_order` or `table_has_held_cart`.
+
+---
+
+## Service Days
+
+The business-day cycle. Orders are stamped with the day that was open when they were placed, so a
+service running past midnight stays one day. See `docs/table-management.md`.
+
+### GET `/api/service-days/current`
+The day being served, with live totals and what would block a close. Owner/manager.
+
+**Response (200):**
+```json
+{
+  "day": { "id": "sd-20260824-a1b2c3", "business_date": "2026-08-24", "status": "open" },
+  "summary": { "orders": { "total": 42 }, "covers": 96, "takings": { "total": 1284.5 } },
+  "blockers": { "openOrders": [], "unpaidBills": [] }
+}
+```
+`day` is `null` when no day is open.
+
+---
+
+### GET `/api/service-days`
+List days, newest first. Owner/manager. Query: `limit` (default 60, max 200), `offset`.
+Rows carry `orders_count`, `covers` and `takings` for the picker.
+
+---
+
+### GET `/api/service-days/:id`
+One day with its summary and orders. Owner/manager. A closed day reports the totals frozen at
+close; an open or backfilled one reports totals computed live.
+
+---
+
+### POST `/api/service-days/open`
+Open the day explicitly, attributing it to the caller. Owner/manager. Placing an order with no day
+running opens one anyway — this exists so the opening has an operator, not to gate service.
+
+**Response (409):** `{ "code": "service_day_already_open", "day": { ... } }`
+
+---
+
+### POST `/api/service-days/:id/close`
+Close the day: freeze the totals, snapshot the room, clear held carts, free the tables.
+Owner/manager.
+
+**Body:** `{ "clear_tables": false, "force": false, "reason": null }`
+
+`clear_tables` deletes the tables so the next day starts from a blank map. `force` is owner-only,
+requires `reason`, and leaves open orders (and their tables) alone.
+
+**Response (200):**
+```json
+{ "day": { "status": "closed" }, "summary": { }, "tablesCleared": 12, "tablesKept": 0, "heldCartsCleared": 1 }
+```
+
+**Response (409):** `{ "code": "service_day_has_blockers", "blockers": { "openOrders": [], "unpaidBills": [] } }`
+
+---
+
+### POST `/api/service-days/:id/reopen`
+Reopen a closed day, dropping its frozen summary so totals go live again. Owner only, and only
+when no other day is open.
+
+---
+
+### POST `/api/service-days/:id/print`
+Print the closing report on the thermal printer. Owner/manager.
+
+**Body:** `{ "preview": false, "useUnicode": false }` — `preview: true` returns the rendered text
+instead of printing.
 
 ---
 

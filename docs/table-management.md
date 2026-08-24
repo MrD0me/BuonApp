@@ -1,6 +1,7 @@
 # Table management design
 
-**Status:** ACTIVE DESIGN. Phase 1 is implemented; phases 2-4 are approved but not yet built.
+**Status:** ACTIVE DESIGN. Phases 1 and 3 are implemented; phases 2 and 4 are approved but not
+yet built.
 
 FloCafe's table model was built for a fixed dining room: tables are created once and can only be
 soft-deactivated. This design reworks it for a restaurant whose room layout, table count, and seat
@@ -71,8 +72,13 @@ The business-day session: `id`, `business_date`, `status` (`open`/`closed`), `op
 `layout_snapshot` (JSON of rooms and tables as they were that day, so a past day renders with its
 real map even after the tables are gone). A partial unique index enforces at most one open day.
 
-`orders.service_day_id` and `bills.service_day_id` are stamped at creation, making "the orders of
-12 August" an exact query rather than a guessed time range.
+`orders.service_day_id` is stamped at creation, making "the orders of 12 August" an exact query
+rather than a guessed time range.
+
+**Amendment (phase 3):** bills are *not* stamped. The plan called for `bills.service_day_id`, but a
+bill always belongs to an order, and the close refuses to run while any bill is unpaid — so joining
+through `orders` is both exact and impossible to desynchronise, where a second stamped column would
+have to be kept in step at two insert sites. `idx_orders_service_day` makes the join cheap.
 
 **Scope note:** the owner explicitly does not want cross-day aggregate reporting. Per-day summaries
 only — no trends, comparisons, or time series.
@@ -141,13 +147,47 @@ take orders; they do not change table state, reservations, or layout.
 
 Covered by `tests/table-crud.test.ts` (`npm run test:table-crud`).
 
+## What phase 3 shipped
+
+- Migration v74 adds `service_days` and `orders.service_day_id`, then backfills: one closed day per
+  business date the existing orders already fall on, bucketed in the tenant timezone. Backfilled
+  days carry no frozen summary, so their totals are computed on read — exact, for data that can no
+  longer change. The backfill has only timestamps to work from, so an order taken after midnight
+  lands on the next calendar date rather than with the service it belonged to; only days opened
+  going forward get that right. `tests/service-days.test.ts` pins this.
+- A partial unique index on `status = 'open'` is the authority on "one day at a time".
+- Placing an order opens a day if none is running (`getOrOpenServiceDay`). An offline-first till
+  must never refuse an order because nobody pressed a button that morning.
+- `main/services/service-day.ts` owns the domain: blockers, summary, close, reopen. The HTTP layer
+  in `main/routes/service-days.ts` only authorizes and translates errors.
+- The close freezes the summary *before* resetting anything, so the numbers describe the day as it
+  was served rather than as the reset leaves it. It then clears held carts, frees the tables, and
+  optionally deletes them — reusing `tableDeletionBlocker()`/`deleteTableRow()` from phase 1, so the
+  wipe cannot strand history any more than a single delete can.
+- Force-closing is owner-only, requires a reason, records it in the day's notes, and leaves open
+  orders and their tables in place.
+- Reopening drops the frozen summary on purpose: the day is live again, so its totals go back to
+  being computed.
+- `formatServiceDayReport()` / `printServiceDayReport()` in `main/printers/thermal.ts` print the
+  paper closing report, with en/it labels following the same policy as receipts and kitchen tickets.
+  The close dialog offers it by default; a printer that is off never turns a completed close into a
+  failure.
+- A `/service-days` page shows the running day with live totals and blockers, the day history, and
+  a per-day detail with orders, payment split and best sellers.
+
+Covered by `tests/service-days.test.ts` (`npm run test:service-days`).
+
+**Still open:** reports elsewhere in the app (`main/routes/reports.ts`, the dashboard) continue to
+bucket by UTC day. Service days fix the *filing* of orders, not those legacy report queries; moving
+them over is a follow-up, and the owner has said aggregate reporting is not wanted anyway.
+
 ## Phases
 
 | Phase | Content |
 | --- | --- |
 | 1 | Full table CRUD: edit, real deletion, label snapshot on orders — **done** (migration v73, `tests/table-crud.test.ts`) |
 | 2 | Rooms as entities, graphical map, service/edit modes |
-| 3 | Service days: open/close, order stamping, closing report, day history |
+| 3 | Service days: open/close, order stamping, closing report, day history — **done** (migration v74, `tests/service-days.test.ts`) |
 | 4 | Reservations, table merging, layout templates |
 
-Phases 1 and 3 are coupled: "wipe the map at close" needs both. Phase 2 is independent.
+Phase 2 is independent of the rest and is what remains before the room becomes a real map.

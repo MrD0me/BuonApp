@@ -1800,6 +1800,188 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, codePage }, warnings);
 }
 
+/**
+ * End-of-day report labels. Same policy as the receipt and kitchen-ticket
+ * tables: only the languages this build actually prints for are spelled out,
+ * and anything else falls back to English rather than printing half-translated.
+ */
+interface DayReportLabels {
+  title: string;
+  date: string;
+  opened: string;
+  closed: string;
+  printed: string;
+  orders: string;
+  completed: string;
+  cancelled: string;
+  covers: string;
+  bills: string;
+  takings: string;
+  byMethod: string;
+  discounts: string;
+  topProducts: string;
+  notes: string;
+}
+
+const DAY_REPORT_LABELS: Record<string, DayReportLabels> = {
+  en: {
+    title: 'END OF DAY',
+    date: 'Date',
+    opened: 'Opened',
+    closed: 'Closed',
+    printed: 'Printed',
+    orders: 'Orders',
+    completed: 'completed',
+    cancelled: 'cancelled',
+    covers: 'Covers',
+    bills: 'Bills paid',
+    takings: 'TAKINGS',
+    byMethod: 'BY PAYMENT METHOD',
+    discounts: 'Discounts',
+    topProducts: 'BEST SELLERS',
+    notes: 'Notes',
+  },
+  it: {
+    title: 'CHIUSURA GIORNATA',
+    date: 'Data',
+    opened: 'Aperta',
+    closed: 'Chiusa',
+    printed: 'Stampata',
+    orders: 'Ordini',
+    completed: 'completati',
+    cancelled: 'annullati',
+    covers: 'Coperti',
+    bills: 'Conti saldati',
+    takings: 'INCASSO',
+    byMethod: 'PER METODO DI PAGAMENTO',
+    discounts: 'Sconti',
+    topProducts: 'PIU VENDUTI',
+    notes: 'Note',
+  },
+};
+
+/**
+ * The day's closing report — the paper "chiusura di cassa". Built from the
+ * summary frozen at close, so reprinting it days later gives the same numbers
+ * the floor saw that night. See docs/table-management.md.
+ */
+export function formatServiceDayReport(
+  day: any,
+  summary: any,
+  business?: any,
+  cols: number = 48,
+  useUnicode: boolean = false,
+  cutMode: PrinterCutMode = 'full',
+  locale: string = 'en-US',
+  tzOptions?: any,
+  language: string = 'en',
+  codePage?: number,
+): Buffer {
+  const biz = business || {};
+  const L = DAY_REPORT_LABELS[language] || DAY_REPORT_LABELS.en;
+  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode, codePage);
+  const money = (amount: number) => formatCurrency(Number(amount) || 0, prefix, locale, biz.trim_decimals === true);
+  const safeLocale = getSafeLatnLocale(locale);
+  const bar = '='.repeat(cols);
+  const rule = '-'.repeat(cols);
+  /** Label left, value hard against the right edge — the shape a till roll reads best. */
+  const row = (left: string, right: string) => left + rightAlign(right, Math.max(1, cols - left.length));
+
+  const clock = (date: Date) => date.toLocaleString(safeLocale, {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', ...(tzOptions || {}),
+  });
+  const stamp = (value: string | null | undefined) => {
+    if (!value) return '-';
+    const parsed = parseDbTimestamp(value);
+    return isNaN(parsed.getTime()) ? '-' : clock(parsed);
+  };
+
+  const businessDate = (() => {
+    const [year, month, date] = String(day?.business_date || '').split('-').map(Number);
+    if (!year || !month || !date) return String(day?.business_date || '-');
+    // A bare calendar date, so it is formatted in UTC — running it through the
+    // store timezone would shift the label onto the wrong day.
+    return new Date(Date.UTC(year, month - 1, date)).toLocaleDateString(safeLocale, {
+      day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
+    });
+  })();
+
+  const lines: string[] = [
+    '{INIT}',
+  ];
+  if (biz.name) lines.push(`{CENTER}{BOLD}${biz.name}{/BOLD}{/CENTER}`);
+  lines.push(
+    `{CENTER}{BOLD}${L.title}{/BOLD}{/CENTER}`,
+    bar,
+    row(`${L.date}:`, businessDate),
+    row(`${L.opened}:`, stamp(day?.opened_at)),
+    row(`${L.closed}:`, stamp(day?.closed_at)),
+    row(`${L.printed}:`, clock(new Date())),
+    bar,
+    row(L.orders, String(summary?.orders?.total ?? 0)),
+    row(`  ${L.completed}`, String(summary?.orders?.completed ?? 0)),
+    row(`  ${L.cancelled}`, String(summary?.orders?.cancelled ?? 0)),
+    row(L.covers, String(summary?.covers ?? 0)),
+    row(L.bills, `${summary?.bills?.paid ?? 0} / ${summary?.bills?.count ?? 0}`),
+    rule,
+    `{BOLD}${row(L.takings, money(summary?.takings?.total ?? 0))}{/BOLD}`,
+  );
+
+  const byMethod = Array.isArray(summary?.takings?.byMethod) ? summary.takings.byMethod : [];
+  if (byMethod.length > 0) {
+    lines.push(rule, L.byMethod);
+    for (const entry of byMethod) {
+      lines.push(row(`  ${truncate(capitalize(String(entry?.method || '')), Math.max(4, cols - 14))}`, money(entry?.total ?? 0)));
+    }
+  }
+
+  if (Number(summary?.discounts) > 0) {
+    lines.push(rule, row(L.discounts, money(summary.discounts)));
+  }
+
+  const topProducts = Array.isArray(summary?.topProducts) ? summary.topProducts : [];
+  if (topProducts.length > 0) {
+    lines.push(rule, L.topProducts);
+    for (const entry of topProducts) {
+      lines.push(row(`  ${truncate(String(entry?.name || ''), Math.max(4, cols - 10))}`, `x ${entry?.quantity ?? 0}`));
+    }
+  }
+
+  lines.push(bar);
+  if (day?.notes) {
+    for (const wrapped of wrapText(`${L.notes}: ${day.notes}`, cols)) lines.push(wrapped);
+    lines.push(bar);
+  }
+  lines.push('{CUT}');
+
+  return buildEscPos(lines, useUnicode, { cutMode, codePage });
+}
+
+/** Dispatch the closing report to the configured printer. */
+export async function printServiceDayReport(day: any, summary: any, business?: any, useUnicode: boolean = false, signal?: AbortSignal): Promise<DispatchResult> {
+  try {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
+    const printer = getPrinterConfig();
+    if (!printer) return { ok: false, detail: 'No printer configured' };
+
+    const profile = resolvePrinterProfile(printer);
+    const cols = getColumnsForPrinter(printer, profile);
+    const country = getSettingValue('country');
+    const timezone = getSettingValue('timezone');
+    const locale = country ? getCountryByCode(country)?.locale ?? 'en-US' : 'en-US';
+    const tzOptions = timezone ? { timeZone: timezone } : undefined;
+
+    const data = formatServiceDayReport(
+      day, summary, business, cols, useUnicode, profile.cutMode, locale, tzOptions,
+      getPrintLanguage(), profile.codePage,
+    );
+    return await dispatchPrint(printer, data, signal);
+  } catch (error: any) {
+    console.error('[Printer] Day report print error:', error);
+    return { ok: false, detail: error?.message };
+  }
+}
+
 export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', codePage?: number): Buffer {
   const width = columnsForPaperWidth(paperWidth) || 48;
   const bar = '='.repeat(width);

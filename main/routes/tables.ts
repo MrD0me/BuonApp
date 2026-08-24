@@ -61,6 +61,42 @@ export function resolveOrderTable(order: any, tableRow?: any | null) {
   return null;
 }
 
+export type TableDeletionBlocker = 'table_has_open_order' | 'table_has_held_cart';
+
+/**
+ * Why this table cannot be deleted yet, or null if it can go. Live surfaces —
+ * KDS, checkout, held carts — resolve a table through its live row, so anything
+ * still pointing at it has to be settled first. History does not count: orders
+ * carry their own label snapshot.
+ */
+export function tableDeletionBlocker(
+  db: ReturnType<typeof getDatabase>,
+  tableId: string,
+): TableDeletionBlocker | null {
+  const activeOrder = db.prepare(`SELECT id FROM orders WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL}`).get(tableId);
+  if (activeOrder) return 'table_has_open_order';
+  const heldOrder = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId);
+  if (heldOrder) return 'table_has_held_cart';
+  return null;
+}
+
+/**
+ * Delete a table row, releasing its history first. Callers must have checked
+ * `tableDeletionBlocker()` and must already be inside a transaction.
+ */
+export function deleteTableRow(db: ReturnType<typeof getDatabase>, table: any): void {
+  // Stamp any history that predates the snapshot columns before the link is
+  // cut, so no past order is left without a table to name.
+  db.prepare(`
+    UPDATE orders SET
+      table_label = COALESCE(table_label, ?),
+      room_label = COALESCE(room_label, ?)
+    WHERE table_id = ?
+  `).run(table.number, table.floor, table.id);
+  db.prepare('UPDATE orders SET table_id = NULL, updated_at = ? WHERE table_id = ?').run(now(), table.id);
+  db.prepare('DELETE FROM tables WHERE id = ?').run(table.id);
+}
+
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -243,34 +279,21 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
         throw Object.assign(new Error('Table not found'), { status: 404 });
       }
 
-      const activeOrder = db.prepare(`SELECT id FROM orders WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL}`).get(tableId);
-      if (activeOrder) {
+      const blocker = tableDeletionBlocker(db, tableId);
+      if (blocker === 'table_has_open_order') {
         throw Object.assign(new Error('Cannot delete a table with an open order. Close or move the order first.'), {
           status: 409,
-          code: 'table_has_open_order',
+          code: blocker,
         });
       }
-
-      const heldOrder = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId);
-      if (heldOrder) {
+      if (blocker === 'table_has_held_cart') {
         throw Object.assign(new Error('Cannot delete a table with a held cart. Clear the held cart first.'), {
           status: 409,
-          code: 'table_has_held_cart',
+          code: blocker,
         });
       }
 
-      const nowStr = now();
-      // Stamp any history that predates the snapshot columns before the link is
-      // cut, so no past order is left without a table to name.
-      db.prepare(`
-        UPDATE orders SET
-          table_label = COALESCE(table_label, ?),
-          room_label = COALESCE(room_label, ?)
-        WHERE table_id = ?
-      `).run(table.number, table.floor, tableId);
-      db.prepare('UPDATE orders SET table_id = NULL, updated_at = ? WHERE table_id = ?').run(nowStr, tableId);
-      db.prepare('DELETE FROM tables WHERE id = ?').run(tableId);
-
+      deleteTableRow(db, table);
       return table;
     });
 
