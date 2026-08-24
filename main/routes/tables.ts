@@ -4,6 +4,9 @@ import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
 import { notifyKdsUpdate } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
+import {
+  defaultTableSize, isTableShape, DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, ROOM_MARGIN, TABLE_GAP,
+} from '../lib/table-geometry';
 
 const router = Router();
 
@@ -34,7 +37,11 @@ function tableShape(table: any, activeOrder?: any) {
 }
 
 /** Fields on `tables` a caller may set, beyond the table number itself. */
-const OPTIONAL_TABLE_FIELDS = ['capacity', 'floor', 'section', 'position_x', 'position_y', 'kitchen_station_id'] as const;
+const OPTIONAL_TABLE_FIELDS = [
+  'capacity', 'section', 'room_id', 'position_x', 'position_y', 'width', 'height', 'shape', 'kitchen_station_id',
+] as const;
+/** Numeric map geometry, validated as finite and non-negative before it is written. */
+const NUMERIC_TABLE_FIELDS = new Set(['capacity', 'position_x', 'position_y', 'width', 'height']);
 
 function hasField(body: any, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(body || {}, field);
@@ -59,6 +66,134 @@ export function resolveOrderTable(order: any, tableRow?: any | null) {
     };
   }
   return null;
+}
+
+/**
+ * The name of the room a table sits in. Rooms superseded the free-text `floor`
+ * in phase 2, but a database restored from an older backup can still be carrying
+ * the old value, so fall back to it rather than labelling an order with nothing.
+ */
+export function tableRoomName(db: ReturnType<typeof getDatabase>, table: any): string | null {
+  if (!table) return null;
+  if (table.room_id) {
+    const room = db.prepare('SELECT name FROM rooms WHERE id = ?').get(table.room_id) as { name?: string } | undefined;
+    if (room?.name) return room.name;
+  }
+  return table.floor ?? null;
+}
+
+/** A table's number and room name, as an order should record them. */
+export function tableLabelSource(db: ReturnType<typeof getDatabase>, tableId: string): { number: string; room: string | null } | null {
+  const row = db.prepare('SELECT number, room_id, floor FROM tables WHERE id = ?').get(tableId) as any;
+  if (!row) return null;
+  return { number: row.number, room: tableRoomName(db, row) };
+}
+
+/**
+ * Attach each table's active order (and its customer) in three queries instead
+ * of two per table. The map draws every table in a room at once, so the old
+ * per-row lookup turned one screen into a hundred queries per refresh.
+ */
+export function hydrateTables(db: ReturnType<typeof getDatabase>, rows: any[]): any[] {
+  if (rows.length === 0) return [];
+  const ids = rows.map((row) => row.id).filter(Boolean);
+  if (ids.length === 0) return rows.map((row) => tableShape(row));
+
+  const placeholders = ids.map(() => '?').join(',');
+  // Ascending, overwriting as we go, leaves the most recent open order per
+  // table — the same row the single-table query picked with DESC LIMIT 1.
+  const orders = db.prepare(`
+    SELECT * FROM orders
+    WHERE table_id IN (${placeholders}) AND ${ACTIVE_ORDER_STATUS_SQL}
+    ORDER BY created_at ASC, id ASC
+  `).all(...ids) as any[];
+
+  const orderByTable = new Map<string, any>();
+  for (const order of orders) orderByTable.set(String(order.table_id), parseRowJson(order));
+
+  const customerIds = Array.from(new Set([...orderByTable.values()].map((order) => order.customer_id).filter(Boolean)));
+  const customersById = new Map<string, any>();
+  if (customerIds.length > 0) {
+    const customerPlaceholders = customerIds.map(() => '?').join(',');
+    const customers = db.prepare(`SELECT * FROM customers WHERE id IN (${customerPlaceholders})`).all(...customerIds) as any[];
+    for (const customer of customers) customersById.set(String(customer.id), customer);
+  }
+
+  return rows.map((row) => {
+    const order = orderByTable.get(String(row.id));
+    if (!order) return tableShape(row);
+    const withCustomer = order.customer_id
+      ? { ...order, customer: customersById.get(String(order.customer_id)) || null }
+      : order;
+    return tableShape(row, withCustomer);
+  });
+}
+
+/** A finite, non-negative number, or null when the value is not one. */
+function positiveNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/**
+ * The room a new table belongs to: the one asked for, else the first room, else
+ * a freshly created one. A table always has somewhere to be drawn.
+ */
+export function resolveRoomForNewTable(db: ReturnType<typeof getDatabase>, requestedRoomId?: unknown): string {
+  if (typeof requestedRoomId === 'string' && requestedRoomId) {
+    const room = db.prepare('SELECT id FROM rooms WHERE id = ?').get(requestedRoomId) as { id?: string } | undefined;
+    if (room?.id) return room.id;
+  }
+  const first = db.prepare('SELECT id FROM rooms WHERE is_active = 1 ORDER BY sort_order, name LIMIT 1').get() as { id?: string } | undefined;
+  if (first?.id) return first.id;
+
+  const id = `room-${randomUUID().slice(0, 8)}`;
+  const stamp = now();
+  db.prepare(`
+    INSERT INTO rooms (id, name, sort_order, width, height, created_at, updated_at)
+    VALUES (?, 'Main room', 0, ?, ?, ?, ?)
+  `).run(id, DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, stamp, stamp);
+  return id;
+}
+
+/**
+ * First spot in the room where a table of this size does not sit on top of
+ * another one. Scanning beats appending to a grid, because after any dragging
+ * the existing tables are nowhere near grid order.
+ */
+export function findFreeSlot(
+  db: ReturnType<typeof getDatabase>,
+  roomId: string,
+  width: number,
+  height: number,
+): { x: number; y: number } {
+  const room = db.prepare('SELECT width, height FROM rooms WHERE id = ?').get(roomId) as { width?: number; height?: number } | undefined;
+  const roomWidth = room?.width || DEFAULT_ROOM_WIDTH;
+  const roomHeight = room?.height || DEFAULT_ROOM_HEIGHT;
+  const occupied = db.prepare(`
+    SELECT COALESCE(position_x, 0) AS x, COALESCE(position_y, 0) AS y,
+           COALESCE(width, 150) AS w, COALESCE(height, 110) AS h
+    FROM tables WHERE room_id = ?
+  `).all(roomId) as { x: number; y: number; w: number; h: number }[];
+
+  const breathing = TABLE_GAP / 2;
+  const collides = (x: number, y: number) => occupied.some((other) => (
+    x < other.x + other.w + breathing
+    && x + width + breathing > other.x
+    && y < other.y + other.h + breathing
+    && y + height + breathing > other.y
+  ));
+
+  const step = 20;
+  for (let y = ROOM_MARGIN; y + height + ROOM_MARGIN <= roomHeight; y += step) {
+    for (let x = ROOM_MARGIN; x + width + ROOM_MARGIN <= roomWidth; x += step) {
+      if (!collides(x, y)) return { x, y };
+    }
+  }
+  // Room is full at this size. Drop it in the corner rather than refusing to
+  // create the table — the floor can drag it or make the room bigger.
+  return { x: ROOM_MARGIN, y: ROOM_MARGIN };
 }
 
 export type TableDeletionBlocker = 'table_has_open_order' | 'table_has_held_cart';
@@ -92,7 +227,7 @@ export function deleteTableRow(db: ReturnType<typeof getDatabase>, table: any): 
       table_label = COALESCE(table_label, ?),
       room_label = COALESCE(room_label, ?)
     WHERE table_id = ?
-  `).run(table.number, table.floor, table.id);
+  `).run(table.number, tableRoomName(db, table), table.id);
   db.prepare('UPDATE orders SET table_id = NULL, updated_at = ? WHERE table_id = ?').run(now(), table.id);
   db.prepare('DELETE FROM tables WHERE id = ?').run(table.id);
 }
@@ -107,9 +242,9 @@ router.get('/', (req: Request, res: Response) => {
       query += ' AND status = ?';
       params.push(req.query.status);
     }
-    if (req.query.floor) {
-      query += ' AND floor = ?';
-      params.push(req.query.floor);
+    if (req.query.room_id) {
+      query += ' AND room_id = ?';
+      params.push(req.query.room_id);
     }
     if (req.query.section) {
       query += ' AND section = ?';
@@ -125,10 +260,9 @@ router.get('/', (req: Request, res: Response) => {
 
     query += ' ORDER BY number';
 
-    const rows = db.prepare(query).all(...params);
+    const rows = db.prepare(query).all(...params) as any[];
     // Normalize: frontend expects `name`, schema column is `number`
-    const tables = rows.map((t: any) => tableShape(t, activeOrderForTable(db, t.id)));
-    res.json({ tables });
+    res.json({ tables: hydrateTables(db, rows) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -156,11 +290,21 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     // Accept `number` (schema column) or `name` (legacy frontend field)
-    const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
-    const tableNumber = number || name;
+    const body = req.body || {};
+    const tableNumber = String(body.number ?? body.name ?? '').trim();
 
     if (!tableNumber) {
       return res.status(400).json({ error: 'Table number is required' });
+    }
+
+    const capacity = body.capacity === undefined || body.capacity === null || body.capacity === ''
+      ? 4
+      : Number(body.capacity);
+    if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 99) {
+      return res.status(400).json({ error: 'capacity must be a whole number between 1 and 99' });
+    }
+    if (body.shape !== undefined && !isTableShape(body.shape)) {
+      return res.status(400).json({ error: 'shape must be rect or round' });
     }
 
     const db = getDatabase();
@@ -173,17 +317,35 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       }
     }
 
-    const tableId = `tbl-${randomUUID().slice(0, 8)}`;
-    const result = db.prepare(`
-      INSERT INTO tables (id, number, capacity, floor, section, position_x, position_y, kitchen_station_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      tableId, tableNumber, capacity || 4, floor || null, section || null,
-      position_x || null, position_y || null, kitchen_station_id || null, now(), now()
-    );
+    const shape = isTableShape(body.shape) ? body.shape : 'rect';
+    const fallbackSize = defaultTableSize(capacity, shape);
+    const width = positiveNumber(body.width) ?? fallbackSize.width;
+    const height = positiveNumber(body.height) ?? fallbackSize.height;
 
-    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId) as any;
-    res.status(201).json({ table: tableShape(table) });
+    const tableId = `tbl-${randomUUID().slice(0, 8)}`;
+    const created = withTxn(() => {
+      const roomId = resolveRoomForNewTable(db, body.room_id);
+      // An unplaced table would be invisible under whatever sits at the origin,
+      // so give it the first free spot in the room it joins.
+      const requestedX = positiveNumber(body.position_x);
+      const requestedY = positiveNumber(body.position_y);
+      const slot = requestedX !== null && requestedY !== null
+        ? { x: requestedX, y: requestedY }
+        : findFreeSlot(db, roomId, width, height);
+
+      const stamp = now();
+      db.prepare(`
+        INSERT INTO tables (id, number, capacity, room_id, section, position_x, position_y, width, height, shape,
+          kitchen_station_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        tableId, tableNumber, capacity, roomId, body.section || null,
+        slot.x, slot.y, width, height, shape, body.kitchen_station_id || null, stamp, stamp,
+      );
+      return db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId) as any;
+    });
+
+    res.status(201).json({ table: tableShape(created) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -219,6 +381,20 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         return res.status(400).json({ error: 'capacity must be a whole number between 1 and 99' });
       }
     }
+    if (hasField(body, 'shape') && !isTableShape(body.shape)) {
+      return res.status(400).json({ error: 'shape must be rect or round' });
+    }
+    if (hasField(body, 'room_id') && body.room_id) {
+      const room = db.prepare('SELECT id FROM rooms WHERE id = ?').get(body.room_id);
+      if (!room) {
+        return res.status(400).json({ error: 'Room not found' });
+      }
+    }
+    for (const field of ['position_x', 'position_y', 'width', 'height'] as const) {
+      if (hasField(body, field) && body[field] !== null && positiveNumber(body[field]) === null) {
+        return res.status(400).json({ error: `${field} must be a non-negative number` });
+      }
+    }
 
     // Only touch what the caller actually sent. The previous COALESCE(?, col)
     // form turned every null into a no-op, so a floor or a section could be set
@@ -232,7 +408,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     for (const field of OPTIONAL_TABLE_FIELDS) {
       if (!hasField(body, field)) continue;
       assignments.push(`${field} = ?`);
-      values.push(field === 'capacity' ? Number(body[field]) : (body[field] === '' ? null : body[field]));
+      const raw = body[field] === '' ? null : body[field];
+      values.push(NUMERIC_TABLE_FIELDS.has(field) && raw !== null ? Number(raw) : raw);
     }
 
     if (assignments.length === 0) {
@@ -250,7 +427,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       db.prepare(`
         UPDATE orders SET table_label = ?, room_label = ?, updated_at = ?
         WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL}
-      `).run(row.number, row.floor, nowStr, req.params.id);
+      `).run(row.number, tableRoomName(db, row), nowStr, req.params.id);
       return row;
     });
 
@@ -401,7 +578,7 @@ router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'serve
       // The label snapshot moves with the order, otherwise a reprint after the
       // source table is gone would still name the table the guests left.
       db.prepare('UPDATE orders SET table_id = ?, table_label = ?, room_label = ?, type = ?, updated_at = ? WHERE id = ?')
-        .run(target_table_id, targetTable.number, targetTable.floor, order.type, nowStr, order.id);
+        .run(target_table_id, targetTable.number, tableRoomName(db, targetTable), order.type, nowStr, order.id);
       db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
         .run(nowStr, sourceTableId);
       db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?")

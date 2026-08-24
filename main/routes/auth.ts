@@ -10,6 +10,8 @@ import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenSt
 import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
+import { resolveRoomForNewTable, findFreeSlot } from './tables';
+import { defaultTableSize } from '../lib/table-geometry';
 import { normalizeOptionalPhone } from '../lib/phone';
 
 const router = Router();
@@ -162,10 +164,16 @@ function insertProduct(db: ReturnType<typeof getDatabase>, id: string, categoryI
 }
 
 function insertTable(db: ReturnType<typeof getDatabase>, id: string, number: string, capacity: number): void {
+  // Seeded tables go through the same room assignment and placement as ones
+  // created from the map. Without it a brand-new install opened on a floor plan
+  // of tables that belonged to no room and had no position.
+  const roomId = resolveRoomForNewTable(db);
+  const size = defaultTableSize(capacity, 'rect');
+  const slot = findFreeSlot(db, roomId, size.width, size.height);
   db.prepare(`
-    INSERT OR IGNORE INTO tables (id, number, capacity, status, created_at, updated_at)
-    VALUES (?, ?, ?, 'available', ?, ?)
-  `).run(id, number, capacity, now(), now());
+    INSERT OR IGNORE INTO tables (id, number, capacity, status, room_id, position_x, position_y, width, height, shape, created_at, updated_at)
+    VALUES (?, ?, ?, 'available', ?, ?, ?, ?, ?, 'rect', ?, ?)
+  `).run(id, number, capacity, roomId, slot.x, slot.y, size.width, size.height, now(), now());
 }
 
 function insertCustomer(db: ReturnType<typeof getDatabase>, id: string, name: string, rawPhone: string, fallbackDialCode: string, country = 'IN'): void {

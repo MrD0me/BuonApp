@@ -13,7 +13,7 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
-import { resolveOrderTable } from './tables';
+import { resolveOrderTable, tableLabelSource } from './tables';
 import { getOrOpenServiceDay } from '../services/service-day';
 import expressRateLimit from 'express-rate-limit';
 
@@ -466,9 +466,7 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
       // deleted for real, so `table_id` alone cannot carry history — these
       // labels are what the order shows once its table is gone.
       // See docs/table-management.md.
-      const orderTableRow = table_id
-        ? db.prepare('SELECT number, floor FROM tables WHERE id = ?').get(table_id) as any
-        : null;
+      const orderTableRow = table_id ? tableLabelSource(db, table_id) : null;
 
       // File the order under the day being served, opening one if the floor
       // never started it. An offline-first till must not refuse an order
@@ -480,7 +478,7 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
           guest_count, special_instructions, packaging_charge, delivery_charge, packaging_tax_category_id,
           delivery_tax_category_id, service_charge_tax_category_id, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `).run(orderNumber, table_id || null, orderTableRow?.number ?? null, orderTableRow?.floor ?? null,
+      `).run(orderNumber, table_id || null, orderTableRow?.number ?? null, orderTableRow?.room ?? null,
         serviceDay.id, customer_id || null, authenticatedUserId, type, guest_count || null,
         special_instructions || null, packaging_charge || 0, delivery_charge || 0,
         chargeContext.packaging_tax_category_id, chargeContext.delivery_tax_category_id,

@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
+import { DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, defaultTableSize, createGridPlacer } from './lib/table-geometry';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -2280,6 +2281,27 @@ const SERVICE_DAYS_SCHEMA_SQL = `
       ON service_days(status) WHERE status = 'open';
 `;
 
+/**
+ * Dining rooms. Replaces the free-text `tables.floor`, which could not carry a
+ * size, an order, or anything the map needs to draw. Shared by createSchema()
+ * and migration v75 so a fresh install and an upgraded one cannot drift apart.
+ * See docs/table-management.md.
+ */
+const ROOMS_SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS rooms (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      width INTEGER DEFAULT ${DEFAULT_ROOM_WIDTH},
+      height INTEGER DEFAULT ${DEFAULT_ROOM_HEIGHT},
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_name ON rooms(name);
+    CREATE INDEX IF NOT EXISTS idx_rooms_sort ON rooms(sort_order, name);
+`;
+
 export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   {
     version: 1,
@@ -4092,6 +4114,105 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[MIGRATION v74] backfilled ${backfilled} order(s) into ${buckets.size} service day(s)`);
     },
   },
+  {
+    version: 75,
+    name: 'add_rooms_and_table_geometry',
+    up: () => {
+      db.exec(ROOMS_SCHEMA_SQL);
+
+      const tableColumns = getColumns(db, 'tables');
+      if (!tableColumns.includes('room_id')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN room_id TEXT`);
+      }
+      if (!tableColumns.includes('width')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN width REAL`);
+      }
+      if (!tableColumns.includes('height')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN height REAL`);
+      }
+      if (!tableColumns.includes('shape')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN shape TEXT DEFAULT 'rect'`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_tables_room ON tables(room_id)`);
+
+      const stamp = now();
+      const newRoomId = () => `room-${crypto.randomUUID().slice(0, 8)}`;
+      const insertRoom = db.prepare(`
+        INSERT OR IGNORE INTO rooms (id, name, sort_order, width, height, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const roomIdByName = (name: string) =>
+        (db.prepare('SELECT id FROM rooms WHERE name = ?').get(name) as { id?: string } | undefined)?.id;
+
+      // Promote whatever the free-text `floor` held into real rooms, one per
+      // distinct value, preserving which tables belonged where.
+      const floors = db.prepare(`
+        SELECT DISTINCT TRIM(floor) AS name FROM tables
+        WHERE floor IS NOT NULL AND TRIM(floor) != ''
+        ORDER BY name
+      `).all() as { name: string }[];
+
+      floors.forEach((row, index) => {
+        insertRoom.run(newRoomId(), row.name, index, DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, stamp, stamp);
+        db.prepare(`
+          UPDATE tables SET room_id = ?, updated_at = ?
+          WHERE room_id IS NULL AND TRIM(COALESCE(floor, '')) = ?
+        `).run(roomIdByName(row.name), stamp, row.name);
+      });
+
+      // Tables predating rooms usually have no floor at all, and a map needs
+      // somewhere to draw them. The name is a placeholder the owner renames.
+      const unassigned = db.prepare('SELECT COUNT(*) AS count FROM tables WHERE room_id IS NULL').get() as { count: number };
+      if (unassigned.count > 0) {
+        let fallbackId = roomIdByName('Main room');
+        if (!fallbackId) {
+          insertRoom.run(newRoomId(), 'Main room', floors.length, DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, stamp, stamp);
+          fallbackId = roomIdByName('Main room');
+        }
+        db.prepare('UPDATE tables SET room_id = ?, updated_at = ? WHERE room_id IS NULL').run(fallbackId, stamp);
+      }
+
+      // Nothing has ever written position_x/position_y, so without this every
+      // table would stack at the origin the first time the map is opened.
+      const rooms = db.prepare('SELECT id, width FROM rooms').all() as { id: string; width: number }[];
+      const place = db.prepare(`
+        UPDATE tables SET position_x = ?, position_y = ?, width = ?, height = ?, updated_at = ?
+        WHERE id = ?
+      `);
+      let placed = 0;
+      for (const room of rooms) {
+        const pending = db.prepare(`
+          SELECT id, capacity, shape, width, height FROM tables
+          WHERE room_id = ? AND (position_x IS NULL OR position_y IS NULL)
+          ORDER BY number
+        `).all(room.id) as { id: string; capacity: number; shape: string; width: number | null; height: number | null }[];
+        if (pending.length === 0) continue;
+
+        const nextSlot = createGridPlacer(room.width || DEFAULT_ROOM_WIDTH);
+        for (const table of pending) {
+          const fallbackSize = defaultTableSize(table.capacity, table.shape);
+          const width = table.width || fallbackSize.width;
+          const height = table.height || fallbackSize.height;
+          const slot = nextSlot(width, height);
+          place.run(slot.x, slot.y, width, height, stamp, table.id);
+          placed++;
+        }
+      }
+
+      // Any table already positioned but never sized still needs a size.
+      const unsized = db.prepare('SELECT id, capacity, shape FROM tables WHERE width IS NULL OR height IS NULL')
+        .all() as { id: string; capacity: number; shape: string }[];
+      for (const table of unsized) {
+        const size = defaultTableSize(table.capacity, table.shape);
+        db.prepare('UPDATE tables SET width = ?, height = ?, updated_at = ? WHERE id = ?')
+          .run(size.width, size.height, stamp, table.id);
+      }
+      db.exec(`UPDATE tables SET shape = 'rect' WHERE shape IS NULL OR shape = ''`);
+
+      const roomCount = (db.prepare('SELECT COUNT(*) AS count FROM rooms').get() as { count: number }).count;
+      console.log(`[MIGRATION v75] ${roomCount} room(s), ${placed} table(s) given a first position`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4332,15 +4453,25 @@ function createSchema(): void {
       FOREIGN KEY (station_id) REFERENCES kitchen_stations(id) ON DELETE CASCADE
     );
 
+    ${ROOMS_SCHEMA_SQL}
+
     CREATE TABLE IF NOT EXISTS tables (
       id TEXT PRIMARY KEY,
       number TEXT NOT NULL UNIQUE,
       capacity INTEGER DEFAULT 4,
       status TEXT DEFAULT 'available',
+      room_id TEXT,
+      -- Superseded by room_id. Kept so restoring an older backup still reads,
+      -- and so migration v75 has something to derive rooms from; new code
+      -- writes room_id only.
       floor TEXT,
       section TEXT,
+      -- Map geometry, in the abstract units the room is sized in.
       position_x REAL,
       position_y REAL,
+      width REAL,
+      height REAL,
+      shape TEXT DEFAULT 'rect',
       kitchen_station_id TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,

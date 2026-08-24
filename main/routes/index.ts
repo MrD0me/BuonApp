@@ -8,6 +8,7 @@ import { orderRoutes } from './orders';
 import { orderItemRoutes } from './order-items';
 import { billRoutes, syncUnpaidBillsForOrder } from './bills';
 import { tableRoutes } from './tables';
+import { roomRoutes } from './rooms';
 import { serviceDayRoutes } from './service-days';
 import { kitchenStationRoutes } from './kitchen-stations';
 import { kitchenRoutes } from './kitchen';
@@ -82,6 +83,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/kitchen', kitchenRoutes);
   app.use('/api/bills', billRoutes);
   app.use('/api/tables', tableRoutes);
+  app.use('/api/rooms', roomRoutes);
   app.use('/api/service-days', serviceDayRoutes);
   app.use('/api/kitchen-stations', kitchenStationRoutes);
   app.use('/api/customers', customerRoutes);

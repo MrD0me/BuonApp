@@ -258,15 +258,20 @@ List all tables.
 ---
 
 ### POST `/api/tables`
-Create table. Owner/manager. Accepts `number` (or the legacy `name`), `capacity`, `floor`,
-`section`, `position_x`, `position_y`, `kitchen_station_id`.
+Create table. Owner/manager. Accepts `number` (or the legacy `name`), `capacity`, `room_id`,
+`shape` (`rect`/`round`), `width`, `height`, `section`, `position_x`, `position_y`,
+`kitchen_station_id`.
+
+Without `room_id` the table joins the first room, creating one if none exists. Without a position it
+is placed on the first free spot in that room; without a size it is sized from its seat count.
 
 ---
 
 ### PUT `/api/tables/:id`
 Update table. Owner/manager. Only the fields present in the body are written, so an optional
-field can be cleared by sending it as `""` or `null`. Renaming retags the labels on the table's
-open orders; closed orders keep the label they were served under.
+field can be cleared by sending it as `""` or `null`. Renaming — or moving the table to another
+room — retags the labels on the table's open orders; closed orders keep the label they were served
+under. This is also how the map saves a drag: `{ "position_x": 320, "position_y": 180 }`.
 
 ---
 
@@ -280,6 +285,58 @@ Delete table for real. Owner/manager. History survives because each order carrie
   "code": "table_has_open_order" }
 ```
 `code` is `table_has_open_order` or `table_has_held_cart`.
+
+---
+
+## Rooms
+
+The dining rooms the map is drawn on. Sizes are abstract units, not pixels: the renderer scales a
+room to the width it is given. See `docs/table-management.md`.
+
+### GET `/api/rooms`
+The whole floor: every room with its tables, each table carrying its live order. Any authenticated
+role. Query: `tables=false` omits the tables, `active=1` hides deactivated rooms.
+
+**Response (200):**
+```json
+{
+  "rooms": [
+    {
+      "id": "room-a1b2c3d4", "name": "Sala Interna", "sort_order": 0,
+      "width": 1200, "height": 800, "is_active": 1,
+      "tables": [
+        { "id": "tbl-1", "name": "T1", "capacity": 4, "status": "occupied",
+          "position_x": 40, "position_y": 40, "width": 150, "height": 110, "shape": "rect",
+          "activeOrder": { } }
+      ]
+    }
+  ],
+  "orphanTables": []
+}
+```
+`orphanTables` holds any table with no room; it should stay empty, and is surfaced rather than
+hidden so such a table can still be opened and assigned.
+
+---
+
+### POST `/api/rooms`
+Create room. Owner/manager. Accepts `name` (required, unique), `width`, `height`, `sort_order`.
+Sizes must be between 400 and 6000.
+
+**Response (400):** `{ "code": "room_name_taken" }` when the name is in use.
+
+---
+
+### PUT `/api/rooms/:id`
+Rename, resize or reorder a room. Owner/manager. Only the fields present in the body are written.
+
+---
+
+### DELETE `/api/rooms/:id`
+Delete room. Owner/manager. Refused while it still holds tables, rather than scattering a floor plan
+or deleting the tables behind one click.
+
+**Response (409):** `{ "code": "room_not_empty", "tables": 6 }`
 
 ---
 

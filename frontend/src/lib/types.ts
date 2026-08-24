@@ -108,14 +108,36 @@ export interface Addon {
   sort_order: number;
 }
 
+/** A dining room: what the map is drawn on. Sizes are abstract units, not pixels. */
+export interface Room {
+  id: string;
+  name: string;
+  sort_order: number;
+  width: number;
+  height: number;
+  is_active: boolean;
+  tables?: Table[];
+}
+
+export type TableShape = 'rect' | 'round';
+
 export interface Table {
   id: string;
   name: string;
+  /** Schema column behind `name`; the API sends both. */
+  number?: string;
   capacity: number;
   status: 'available' | 'occupied' | 'reserved' | 'cleaning' | 'held';
   kitchen_station_id: number | null;
+  room_id: string | null;
+  /** Superseded by `room_id`; only older databases still carry it. */
   floor: string | null;
   section: string | null;
+  position_x: number | null;
+  position_y: number | null;
+  width: number | null;
+  height: number | null;
+  shape: TableShape;
   is_active: boolean;
   activeOrder?: Order | null;
   current_order?: Order | null;

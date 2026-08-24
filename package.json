@@ -114,6 +114,7 @@
     "test:tables-string-ids": "node tests/run-electron-node-test.cjs tests/tables-string-ids.test.ts",
     "test:table-crud": "node tests/run-electron-node-test.cjs tests/table-crud.test.ts",
     "test:service-days": "node tests/run-electron-node-test.cjs tests/service-days.test.ts",
+    "test:rooms-map": "node tests/run-electron-node-test.cjs tests/rooms-map.test.ts",
     "test:held-orders": "node tests/run-electron-node-test.cjs tests/held-orders.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/held-orders-store.test.ts",
     "test:product-images": "node tests/run-electron-node-test.cjs tests/product-images.test.ts",
     "test:schema-health": "node tests/run-electron-node-test.cjs tests/schema-health.test.ts",

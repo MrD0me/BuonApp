@@ -320,6 +320,61 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
   } finally {
     await new Promise<void>((resolve) => cloudServer.close(() => resolve()));
   }
+
+  // A third fresh install, this time dine-in: the express profile seeds sample
+  // tables, and those have to arrive on the map like any other table. They used
+  // to be inserted straight into `tables` with no room and no position, so a
+  // brand-new restaurant opened on a floor plan of stranded tables.
+  console.log('\n   Dine-in express setup seeds tables onto the map');
+  closeDatabase();
+  fs.rmSync(testDir, { recursive: true, force: true });
+  testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-first-run-dinein-'));
+  initDatabase();
+
+  const dineInApi = express();
+  dineInApi.use(express.json());
+  dineInApi.use('/api/auth', authRoutes);
+  let dineInServer: http.Server;
+  try {
+    dineInServer = await listen(dineInApi);
+  } catch (error: any) {
+    if (error?.code === 'EPERM' || error?.code === 'EACCES') {
+      console.log('   ⚠ Skipping dine-in seeding assertions: local port binding is blocked in this environment.');
+      return;
+    }
+    throw error;
+  }
+  const dineInAddress = dineInServer.address() as { port: number };
+
+  try {
+    const created = await request(`http://127.0.0.1:${dineInAddress.port}/api/auth`, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Dine Owner', email: 'dine-owner@example.com', password: 'TestPass123',
+        business_type: 'restaurant', setup_profile: 'express', service_model: 'finedine',
+        terms_accepted: true,
+      }),
+    });
+    assert.equal(created.status, 200, `dine-in express setup succeeds (got ${created.status})`);
+    assert.equal(count('tables'), 3, 'dine-in express setup seeds sample tables');
+
+    const stranded = getDatabase().prepare(
+      'SELECT COUNT(*) AS count FROM tables WHERE room_id IS NULL OR position_x IS NULL OR width IS NULL'
+    ).get() as { count: number };
+    assert.equal(stranded.count, 0, 'every seeded table has a room, a position and a size');
+    assert.equal(count('rooms'), 1, 'the seeded tables share one room');
+
+    const placed = getDatabase().prepare(
+      'SELECT number, position_x AS x, position_y AS y, width AS w, height AS h FROM tables ORDER BY number'
+    ).all() as { number: string; x: number; y: number; w: number; h: number }[];
+    const overlapping = placed.some((a, index) => placed.slice(index + 1).some((b) => (
+      a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+    )));
+    assert.equal(overlapping, false, 'seeded tables are not stacked on top of each other');
+    console.log('   ✓ seeded tables land in a room, placed and sized');
+  } finally {
+    await new Promise<void>((resolve) => dineInServer.close(() => resolve()));
+  }
 }
 
 main()

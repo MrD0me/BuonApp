@@ -1,443 +1,109 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Search, UserPlus, RotateCcw, Pencil, Trash2 } from 'lucide-react';
-import type { Table, Customer, Order, OrderItem } from '@/lib/types';
+import { Plus, Pencil, Trash2, Map as MapIcon, PenLine } from 'lucide-react';
+import type { Room, Table, Order } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
-import { countryName } from '@/lib/countries';
-import { parsePhone, dialCodeFor } from '@/lib/phone';
-import { useTranslations, type AppConfig } from 'use-intl';
-import { Ltr } from '@/components/layout/Ltr';
-import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS, TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { useTranslations } from 'use-intl';
+import { RoomMap } from '@/components/tables/RoomMap';
+import { ReserveModal } from '@/components/tables/ReserveModal';
+import { TableFormModal, DeleteTableModal } from '@/components/tables/TableFormModal';
+import { RoomFormModal, DeleteRoomModal } from '@/components/tables/RoomFormModal';
+import { TableDetailModal } from '@/components/tables/TableDetailModal';
 
-const statusColors: Record<string, string> = {
-  available: 'bg-green-500',
-  occupied: 'bg-red-500',
-  reserved: 'bg-yellow-500',
-  cleaning: 'bg-gray-500',
-  held: 'bg-blue-500',
-};
-
-type OrdersKey = keyof AppConfig['Messages']['orders'];
-
-const itemStatusLabelKey = (status: OrderItem['status']): OrdersKey =>
-  ITEM_STATUS_LABEL_KEYS[status] ?? 'itemStatusPending';
-
-interface ReserveModalProps {
-  table: Table;
-  onClose: () => void;
-  onDone: () => void;
-}
-
-function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
-  const { currentTenant } = useAuthStore();
-  const tTables = useTranslations('tables');
-  const tPos = useTranslations('pos');
-  const tNav = useTranslations('nav');
-  const tSettings = useTranslations('settings');
-  const tProducts = useTranslations('products');
-  const dialCode = dialCodeFor(currentTenant?.country ?? 'IN') || '+91';
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Customer[]>([]);
-  const [selected, setSelected] = useState<Customer | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-
-  const searchCustomers = (q: string) => {
-    if (q.length < 2) { setResults([]); return; }
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const { data } = await api.get(`/customers-search?q=${encodeURIComponent(q)}`);
-        setResults(data.customers || []);
-      } catch { setResults([]); }
-    }, 300);
-  };
-
-  const handleCreateCustomer = async () => {
-    if (!newName.trim() || !newPhone.trim()) return;
-    const country = currentTenant?.country ?? 'IN';
-    const parsed = parsePhone(newPhone, country);
-    if (!parsed) {
-      toast.error(tPos('invalidPhone', { country: countryName(country) }));
-      return;
-    }
-    setCreating(true);
-    try {
-      const { data } = await api.post('/customers', { name: newName, phone: parsed.e164, country_code: parsed.countryCode });
-      setSelected(data.customer);
-      setShowCreate(false);
-      setQuery('');
-      setResults([]);
-      toast.success(tPos('customerCreated'));
-    } catch {
-      toast.error(tPos('createCustomerFailed'));
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleReserve = async () => {
-    setSaving(true);
-    try {
-      await api.patch(`/tables/${table.id}/status`, {
-        status: 'reserved',
-        reservation_customer_id: selected?.id ?? null,
-        reservation_customer_name: selected?.name ?? null,
-        reservation_customer_phone: selected?.phone ?? null,
-      });
-      const msg = selected
-        ? tTables('reservedFor', { name: table.name, customer: selected.name })
-        : tTables('reservedNoCustomer', { name: table.name });
-      toast.success(msg);
-      onDone();
-    } catch {
-      toast.error(tTables('tableReserveFailed'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">{tNav('tables')} · {table.name}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-        </div>
-
-        {selected ? (
-          <div className="flex items-center justify-between px-3 py-2.5 bg-brand-light rounded-xl mb-4">
-            <div>
-              <p className="font-semibold text-brand text-sm">{selected.name}</p>
-              <p className="text-xs text-brand/70"><Ltr>{selected.phone}</Ltr></p>
-            </div>
-            <button onClick={() => setSelected(null)} className="text-brand hover:text-brand-hover">
-              <X size={14} />
-            </button>
-          </div>
-        ) : (
-          <div className="mb-4">
-            <p className="text-sm text-gray-500 mb-2">{tTables('linkCustomer')}</p>
-            <div className="relative mb-2">
-              <Search size={14} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => { setQuery(e.target.value); searchCustomers(e.target.value); }}
-                placeholder={tTables('searchCustomerPlaceholder')}
-                className="w-full ps-8 pe-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
-              />
-            </div>
-            {results.length > 0 && (
-              <div className="border border-gray-200 rounded-lg overflow-hidden mb-2 max-h-36 overflow-y-auto">
-                {results.map((c) => (
-                  <button key={c.id} onClick={() => { setSelected(c); setQuery(''); setResults([]); }}
-                    className="w-full text-start px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0">
-                    <span className="font-medium">{c.name}</span>
-                    <span className="text-gray-400 ms-2 text-xs"><Ltr>{c.phone}</Ltr></span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {!showCreate ? (
-              <button onClick={() => { setShowCreate(true); if (/^\d+$/.test(query.trim())) setNewPhone(query.trim()); }}
-                className="flex items-center gap-1.5 text-sm text-brand font-medium hover:text-brand-hover">
-                <UserPlus size={14} /> {tTables('newCustomer')}
-              </button>
-            ) : (
-              <div className="space-y-2 border border-gray-200 rounded-xl p-3">
-                <input type="text" placeholder={tProducts('nameLabel')} value={newName} onChange={(e) => setNewName(e.target.value)}
-                  className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
-                <div className="flex items-stretch gap-2">
-
-                  <input type="tel" inputMode="numeric" placeholder={`${dialCode} ${tSettings('phone')}`} value={newPhone}
-                    onChange={(e) => setNewPhone(e.target.value)}
-                    className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setShowCreate(false)} className="flex-1 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">{tTables('cancel')}</button>
-                  <button onClick={handleCreateCustomer} disabled={creating || !newName.trim() || !newPhone.trim()}
-                    className="flex-1 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50">
-                    {creating ? tTables('creating') : tTables('create')}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onClose} className="flex-1">{tTables('cancel')}</Button>
-          <Button onClick={handleReserve} disabled={saving} className="flex-1">
-            {saving ? tTables('reserving') : tTables('reserveTable')}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const itemStatusColors: Record<string, { bg: string; text: string; dot: string }> = {
-  pending: { bg: 'bg-yellow-50', text: 'text-yellow-700', dot: 'bg-yellow-400' },
-  preparing: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500' },
-  ready: { bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500' },
-  served: { bg: 'bg-purple-50', text: 'text-purple-700', dot: 'bg-purple-500' },
-  cancelled: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
-  voided: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
-  void_adjustment: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
-};
-
-interface TableFormModalProps {
-  /** null = create a new table, otherwise edit this one. */
-  table: Table | null;
-  onClose: () => void;
-  onSaved: () => void;
-}
-
-function TableFormModal({ table, onClose, onSaved }: TableFormModalProps) {
-  const tTables = useTranslations('tables');
-  const tCommon = useTranslations('common');
-  const isEdit = table !== null;
-  const [form, setForm] = useState({
-    name: table?.name ?? '',
-    capacity: String(table?.capacity ?? 4),
-    floor: table?.floor ?? '',
-    section: table?.section ?? '',
-  });
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const capacity = Number(form.capacity);
-    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 99) {
-      toast.error(tTables('capacityRange'));
-      return;
-    }
-    setSaving(true);
-    const payload = {
-      name: form.name.trim(),
-      capacity,
-      floor: form.floor.trim(),
-      section: form.section.trim(),
-    };
-    try {
-      if (isEdit) {
-        await api.put(`/tables/${table.id}`, payload);
-        toast.success(tTables('tableUpdated'));
-      } else {
-        await api.post('/tables', payload);
-        toast.success(tTables('tableCreated'));
-      }
-      onSaved();
-    } catch {
-      toast.error(isEdit ? tTables('tableUpdateFailed') : tTables('tableCreateFailed'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">{isEdit ? tTables('edit') : tTables('add')}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('tableName')}</label>
-            <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder={tTables('tableNamePlaceholder')} className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('capacity')}</label>
-              <input type="number" min="1" max="99" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('floor')}</label>
-              <input type="text" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })}
-                placeholder={tTables('floorPlaceholder')} className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {tTables('section')} <span className="text-gray-400 font-normal">({tCommon('optional')})</span>
-            </label>
-            <input type="text" value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
-          </div>
-          <Button type="submit" className="w-full" disabled={saving}>
-            {saving ? tCommon('saving') : (isEdit ? tCommon('save') : tTables('createTable'))}
-          </Button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-interface DeleteTableModalProps {
-  table: Table;
-  onClose: () => void;
-  onDeleted: () => void;
-}
-
-function DeleteTableModal({ table, onClose, onDeleted }: DeleteTableModalProps) {
-  const tTables = useTranslations('tables');
-  const tCommon = useTranslations('common');
-  const [deleting, setDeleting] = useState(false);
-
-  const handleDelete = async () => {
-    setDeleting(true);
-    try {
-      await api.delete(`/tables/${table.id}`);
-      toast.success(tTables('tableDeleted', { name: table.name }));
-      onDeleted();
-    } catch (error: unknown) {
-      // The backend refuses to delete a table anything live still points at,
-      // and says which case it hit so the message can be actionable.
-      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
-      toast.error(
-        code === 'table_has_open_order' ? tTables('deleteBlockedOpenOrder')
-          : code === 'table_has_held_cart' ? tTables('deleteBlockedHeldCart')
-            : tTables('tableDeleteFailed'),
-      );
-      setDeleting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">{tTables('deleteTable')}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-        </div>
-        <p className="text-sm text-gray-700 mb-2">{tTables('deleteConfirm', { name: table.name })}</p>
-        <p className="text-xs text-gray-500 mb-5">{tTables('deleteExplain')}</p>
-        <div className="flex gap-3">
-          <Button type="button" variant="outline" className="flex-1" onClick={onClose} disabled={deleting}>
-            {tCommon('cancel')}
-          </Button>
-          <Button type="button" variant="destructive" className="flex-1" onClick={handleDelete} disabled={deleting}>
-            {tCommon('delete')}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
+/**
+ * The dining room as a map (phase 2 of docs/table-management.md).
+ *
+ * Two modes on one page. In service the map is read-only and a tap opens what
+ * the table is doing; in edit the tables are dragged, added and removed. Edit
+ * is owner/manager only, and it is never reachable from the waiter handheld —
+ * that app forwards a fixed allowlist which carries no table writes at all.
+ */
 export default function TablesPage() {
   const tTables = useTranslations('tables');
-  const tOrders = useTranslations('orders');
-  const tCommon = useTranslations('common');
-  const [tables, setTables] = useState<Table[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const role = useAuthStore((state) => state.currentTenant?.role) || 'cashier';
+  const canEdit = role === 'owner' || role === 'manager';
+
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [orphanTables, setOrphanTables] = useState<Table[]>([]);
+  const [ordersByTable, setOrdersByTable] = useState<Map<string, Order>>(new Map());
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [reservingTable, setReservingTable] = useState<Table | null>(null);
-  // `null` = closed; `{ table: null }` = create; `{ table }` = edit.
-  const [formModal, setFormModal] = useState<{ table: Table | null } | null>(null);
+
+  const [detailTable, setDetailTable] = useState<Table | null>(null);
+  const [tableForm, setTableForm] = useState<{ table: Table | null } | null>(null);
   const [deletingTable, setDeletingTable] = useState<Table | null>(null);
-  const [showDetails, setShowDetails] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('tables_showDetails');
-      return stored !== null ? stored === 'true' : true;
-    }
-    return true;
-  });
+  const [reservingTable, setReservingTable] = useState<Table | null>(null);
+  const [roomForm, setRoomForm] = useState<{ room: Room | null } | null>(null);
+  const [deletingRoom, setDeletingRoom] = useState<Room | null>(null);
 
-  const toggleDetails = () => {
-    const next = !showDetails;
-    setShowDetails(next);
-    localStorage.setItem('tables_showDetails', String(next));
-  };
+  // Promise chains rather than await: state updates land in a microtask instead
+  // of synchronously inside the effect below, which is what React wants.
+  const loadMap = useCallback(() => api.get('/rooms')
+    .then(({ data }) => {
+      setRooms(data.rooms || []);
+      setOrphanTables(data.orphanTables || []);
+    })
+    .catch(() => toast.error(tTables('loadFailed')))
+    .finally(() => setLoading(false)),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  []);
 
-  const fetchTables = async () => {
-    try {
-      const { data } = await api.get('/tables');
-      setTables(data.tables || []);
-    } catch {
-      toast.error(tTables('loadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loadOrders = useCallback(() => api
+    .get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
+    .then(({ data }) => {
+      const byTable = new Map<string, Order>();
+      for (const order of (data.orders || []) as Order[]) {
+        if (!order.table_id) continue;
+        const key = String(order.table_id);
+        const current = byTable.get(key);
+        // Newest wins, matching what the map is meant to show: the order the
+        // table is running right now.
+        if (!current || order.id > current.id) byTable.set(key, order);
+      }
+      setOrdersByTable(byTable);
+    })
+    .catch(() => {
+      // The map still draws without order detail; the load error above covers it.
+    }),
+  []);
 
-  useEffect(() => {
-    const load = () => {
-      api.get('/tables')
-        .then(({ data }) => setTables(data.tables || []))
-        .catch(() => toast.error(tTables('loadFailed')))
-        .finally(() => setLoading(false));
-    };
-    load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Clear stale orders the moment details get hidden, read directly during render (React's
-  // recommended pattern for "adjusting state when a prop changes") so the effect below only
-  // needs to own the polling subscription.
-  const [syncedShowDetails, setSyncedShowDetails] = useState(showDetails);
-  if (showDetails !== syncedShowDetails) {
-    setSyncedShowDetails(showDetails);
-    if (!showDetails) setOrders([]);
-  }
+  const reload = useCallback(() => Promise.all([loadMap(), loadOrders()]), [loadMap, loadOrders]);
 
   useEffect(() => {
-    if (!showDetails) return;
-    const fetchOrders = () => {
-      api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
-        .then(({ data }) => setOrders(data.orders || []))
-        .catch(() => {
-          // silently fail — tables still show
-        });
-    };
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 10000);
+    loadMap();
+    loadOrders();
+    const interval = setInterval(() => { loadMap(); loadOrders(); }, 10000);
     return () => clearInterval(interval);
-  }, [showDetails]);
+  }, [loadMap, loadOrders]);
 
-  // Group active orders by table_id
-  const ordersByTable = new Map<string, Order[]>();
-  if (showDetails) {
-    for (const order of orders) {
-      if (!order.table_id) continue;
-      const tableKey = String(order.table_id);
-      const existing = ordersByTable.get(tableKey);
-      if (existing) existing.push(order);
-      else ordersByTable.set(tableKey, [order]);
-    }
-  }
+  // Derived rather than synced: no effect has to chase the room list.
+  const activeRoom = rooms.find((room) => room.id === selectedRoomId) ?? rooms[0] ?? null;
+  const activeTables = activeRoom?.tables ?? [];
 
-  const updateStatus = async (id: string, status: string) => {
+  const handleMove = async (table: Table, x: number, y: number) => {
+    // Optimistic, so the tile stays under the finger; a failure reloads the truth.
+    setRooms((previous) => previous.map((room) => ({
+      ...room,
+      tables: (room.tables || []).map((row) => (
+        row.id === table.id ? { ...row, position_x: x, position_y: y } : row
+      )),
+    })));
     try {
-      await api.patch(`/tables/${id}/status`, { status });
-      fetchTables();
+      await api.put(`/tables/${table.id}`, { position_x: x, position_y: y });
     } catch {
       toast.error(tTables('tableUpdateFailed'));
+      loadMap();
     }
   };
 
-  const toggleActive = async (table: Table) => {
-    try {
-      await api.post(`/tables/${table.id}/${table.is_active ? 'deactivate' : 'reactivate'}`);
-      fetchTables();
-    } catch {
-      toast.error(tTables('updateStatusFailed'));
-    }
+  const handleSelect = (table: Table) => {
+    if (editing) setTableForm({ table });
+    else setDetailTable(table);
   };
 
   if (loading) {
@@ -450,190 +116,124 @@ export default function TablesPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <h1 className="text-2xl font-bold text-gray-900">{tTables('title')}</h1>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={showDetails}
-              onChange={toggleDetails}
-              className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
-            />
-            {tTables('showOrderDetails')}
-          </label>
-          <Button onClick={() => setFormModal({ table: null })}>
-            <Plus size={16} className="me-1" /> {tTables('addTable')}
-          </Button>
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button variant={editing ? 'default' : 'outline'} onClick={() => setEditing((value) => !value)}>
+              {editing ? <><MapIcon size={16} className="me-1" /> {tTables('serviceMode')}</>
+                : <><PenLine size={16} className="me-1" /> {tTables('editMode')}</>}
+            </Button>
+          )}
+          {editing && (
+            <>
+              <Button variant="outline" onClick={() => setRoomForm({ room: null })}>
+                <Plus size={16} className="me-1" /> {tTables('addRoom')}
+              </Button>
+              <Button onClick={() => setTableForm({ table: null })} disabled={rooms.length === 0}>
+                <Plus size={16} className="me-1" /> {tTables('addTable')}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      {showDetails ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tables.map((table) => {
-            const tableOrders = ordersByTable.get(table.id) || [];
-            const hasOrders = tableOrders.length > 0;
-
-            return (
-              <div key={table.id}
-                className={`bg-white rounded-xl border border-gray-100 hover:shadow-md transition-shadow ${
-                  hasOrders ? 'border-s-4 border-s-brand' : ''
-                } ${!table.is_active ? 'opacity-60' : ''}`}>
-                {/* Table header */}
-                <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded-full ${statusColors[table.status]}`} />
-                    <h3 className="font-bold text-gray-900">{table.name}</h3>
-                    <span className="text-xs text-gray-400">· {tTables('capacitySeats', { count: table.capacity })}</span>
-                  </div>
-                  <span className="text-xs text-gray-400">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</span>
-                </div>
-
-                {/* Orders section */}
-                {hasOrders ? (
-                  <div className="px-4 py-3 space-y-3">
-                    {tableOrders.map((order) => (
-                      <div key={order.id} className="bg-gray-50 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-semibold text-gray-800">#<Ltr>{order.order_number}</Ltr></span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                            order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
-                            order.status === 'ready' ? 'bg-green-100 text-green-700' :
-                            order.status === 'served' ? 'bg-purple-100 text-purple-700' :
-                            'bg-gray-100 text-gray-600'
-                          }`}>
-                            {tOrders(ORDER_STATUS_LABEL_KEYS[order.status])}
-                          </span>
-                        </div>
-                        {order.customer?.name && (
-                          <p className="text-xs text-gray-500 mb-1.5">{order.customer.name}</p>
-                        )}
-                        <div className="space-y-1">
-                          {order.items?.filter(i => i.status !== 'cancelled').map((item) => {
-                            const sc = itemStatusColors[item.status] || itemStatusColors.pending;
-                            return (
-                              <div key={item.id} className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${sc.bg}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} flex-shrink-0`} />
-                                <span className="flex-1 truncate text-gray-700">{item.product_name}</span>
-                                <span className="text-gray-500">×{item.quantity}</span>
-                                <span className={`font-medium capitalize ${sc.text}`}>{tOrders(itemStatusLabelKey(item.status))}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="px-4 py-4 text-center text-xs text-gray-400">
-                    {tTables('noActiveOrders')}
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="px-4 py-2 border-t border-gray-50 flex justify-end gap-2">
-                  {(table.status === 'occupied' || table.status === 'reserved') && (
-                    <button onClick={() => updateStatus(table.id, 'available')}
-                      className="text-xs text-brand hover:text-brand-hover font-medium">
-                      {tTables('markAvailable')}
-                    </button>
-                  )}
-                  {table.status === 'available' && (
-                    <button onClick={() => setReservingTable(table)}
-                      className="text-xs text-yellow-600 hover:text-yellow-700 font-medium">
-                      {tTables('reserve')}
-                    </button>
-                  )}
-                  <button onClick={() => setFormModal({ table })}
-                    className="text-xs text-gray-600 hover:text-gray-900 font-medium flex items-center gap-1">
-                    <Pencil size={12} /> {tCommon('edit')}
-                  </button>
-                  {/* Rows soft-deactivated before real deletion existed still need a way back. */}
-                  {!table.is_active && (
-                    <button onClick={() => toggleActive(table)}
-                      className="text-xs text-green-600 hover:text-green-700 font-medium flex items-center gap-1">
-                      <RotateCcw size={12} /> {tTables('reactivate')}
-                    </button>
-                  )}
-                  <button onClick={() => setDeletingTable(table)}
-                    className="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1">
-                    <Trash2 size={12} /> {tCommon('delete')}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+      {rooms.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-100 p-10 text-center">
+          <MapIcon size={32} className="mx-auto text-gray-300 mb-3" />
+          <p className="font-medium text-gray-700">{tTables('noRooms')}</p>
+          <p className="text-sm text-gray-500 mt-1 mb-4">{tTables('noRoomsHint')}</p>
+          {canEdit && (
+            <Button onClick={() => { setEditing(true); setRoomForm({ room: null }); }}>
+              {tTables('createRoom')}
+            </Button>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {tables.map((table) => (
-            <div key={table.id}
-              className={`bg-white rounded-xl p-5 border border-gray-100 text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}>
-              <div className={`w-3 h-3 rounded-full ${statusColors[table.status]} mx-auto mb-3`} />
-              <h3 className="font-bold text-lg text-gray-900">{table.name}</h3>
-              <p className="text-sm text-gray-500">{tTables('capacitySeats', { count: table.capacity })}</p>
-              <p className="text-xs text-gray-400 mt-1">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</p>
-              {table.floor && <p className="text-xs text-gray-400">{table.floor}</p>}
-              {table.status === 'reserved' && table.reservation_customer_name && (
-                <p className="text-xs text-yellow-700 font-medium mt-1 truncate">{table.reservation_customer_name}</p>
-              )}
-              {table.status === 'reserved' && table.reservation_customer_phone && (
-                <p className="text-xs text-yellow-600 mt-0.5"><Ltr>{table.reservation_customer_phone}</Ltr></p>
-              )}
+        <>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {rooms.map((room) => (
+              <button key={room.id} onClick={() => setSelectedRoomId(room.id)}
+                className={`px-3 py-1.5 text-sm rounded-lg border-2 transition-colors ${
+                  activeRoom?.id === room.id
+                    ? 'border-brand bg-brand-light text-brand font-medium'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}>
+                {room.name}
+                <span className="ms-1.5 text-xs text-gray-400">{(room.tables || []).length}</span>
+              </button>
+            ))}
 
-              {(table.status === 'occupied' || table.status === 'reserved') && (
-                <button onClick={() => updateStatus(table.id, 'available')}
-                  className="mt-3 text-xs text-brand hover:text-brand-hover font-medium">
-                  {tTables('markAvailable')}
+            {editing && activeRoom && (
+              <div className="flex items-center gap-1 ms-2">
+                <button onClick={() => setRoomForm({ room: activeRoom })}
+                  className="p-1.5 text-gray-500 hover:text-gray-800" title={tTables('editRoom')}>
+                  <Pencil size={15} />
                 </button>
-              )}
-              {table.status === 'available' && (
-                <button onClick={() => setReservingTable(table)}
-                  className="mt-3 text-xs text-yellow-600 hover:text-yellow-700 font-medium">
-                  {tTables('reserve')}
-                </button>
-              )}
-              <div className="mt-2 flex items-center justify-center gap-3">
-                <button onClick={() => setFormModal({ table })}
-                  className="text-xs text-gray-600 hover:text-gray-900 font-medium flex items-center gap-1">
-                  <Pencil size={12} /> {tCommon('edit')}
-                </button>
-                {!table.is_active && (
-                  <button onClick={() => toggleActive(table)}
-                    className="text-xs text-green-600 hover:text-green-700 font-medium flex items-center gap-1">
-                    <RotateCcw size={12} /> {tTables('reactivate')}
-                  </button>
-                )}
-                <button onClick={() => setDeletingTable(table)}
-                  className="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1">
-                  <Trash2 size={12} /> {tCommon('delete')}
+                <button onClick={() => setDeletingRoom(activeRoom)}
+                  className="p-1.5 text-red-500 hover:text-red-700" title={tTables('deleteRoom')}>
+                  <Trash2 size={15} />
                 </button>
               </div>
-            </div>
-          ))}
+            )}
+          </div>
+
+          {activeRoom && (
+            <RoomMap
+              room={activeRoom}
+              tables={activeTables}
+              ordersByTable={ordersByTable}
+              editing={editing}
+              onSelect={handleSelect}
+              onMove={handleMove}
+            />
+          )}
+
+          {editing && (
+            <p className="mt-3 text-xs text-gray-500">{tTables('editModeHint')}</p>
+          )}
+        </>
+      )}
+
+      {orphanTables.length > 0 && (
+        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-medium text-amber-800 mb-2">
+            {tTables('unassignedTables', { count: orphanTables.length })}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {orphanTables.map((table) => (
+              <button key={table.id} onClick={() => setTableForm({ table })}
+                className="px-2.5 py-1 text-xs rounded-lg bg-white border border-amber-300 text-amber-900 hover:bg-amber-100">
+                {table.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {tables.length === 0 && (
-        <p className="text-center text-gray-500 py-12">{tTables('noTablesYet')}</p>
-      )}
-
-      {/* Reserve Modal */}
-      {reservingTable && (
-        <ReserveModal
-          table={reservingTable}
-          onClose={() => setReservingTable(null)}
-          onDone={() => { setReservingTable(null); fetchTables(); }}
+      {detailTable && (
+        <TableDetailModal
+          table={detailTable}
+          room={rooms.find((room) => room.id === detailTable.room_id) ?? null}
+          order={ordersByTable.get(detailTable.id) ?? null}
+          onClose={() => setDetailTable(null)}
+          onChanged={reload}
+          onEdit={() => { setTableForm({ table: detailTable }); setDetailTable(null); }}
+          onReserve={() => { setReservingTable(detailTable); setDetailTable(null); }}
         />
       )}
 
-      {formModal && (
+      {tableForm && (
         <TableFormModal
-          key={formModal.table?.id ?? 'new'}
-          table={formModal.table}
-          onClose={() => setFormModal(null)}
-          onSaved={() => { setFormModal(null); fetchTables(); }}
+          key={tableForm.table?.id ?? 'new'}
+          table={tableForm.table}
+          rooms={rooms}
+          defaultRoomId={activeRoom?.id ?? null}
+          onClose={() => setTableForm(null)}
+          onSaved={() => { setTableForm(null); reload(); }}
+          onDelete={tableForm.table
+            ? () => { setDeletingTable(tableForm.table); setTableForm(null); }
+            : undefined}
         />
       )}
 
@@ -641,10 +241,38 @@ export default function TablesPage() {
         <DeleteTableModal
           table={deletingTable}
           onClose={() => setDeletingTable(null)}
-          onDeleted={() => { setDeletingTable(null); fetchTables(); }}
+          onDeleted={() => { setDeletingTable(null); reload(); }}
         />
       )}
 
+      {reservingTable && (
+        <ReserveModal
+          table={reservingTable}
+          onClose={() => setReservingTable(null)}
+          onDone={() => { setReservingTable(null); reload(); }}
+        />
+      )}
+
+      {roomForm && (
+        <RoomFormModal
+          key={roomForm.room?.id ?? 'new-room'}
+          room={roomForm.room}
+          onClose={() => setRoomForm(null)}
+          onSaved={(roomId) => {
+            setRoomForm(null);
+            if (roomId) setSelectedRoomId(roomId);
+            loadMap();
+          }}
+        />
+      )}
+
+      {deletingRoom && (
+        <DeleteRoomModal
+          room={deletingRoom}
+          onClose={() => setDeletingRoom(null)}
+          onDeleted={() => { setDeletingRoom(null); setSelectedRoomId(null); loadMap(); }}
+        />
+      )}
     </div>
   );
 }

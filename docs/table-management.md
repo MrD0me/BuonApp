@@ -1,7 +1,6 @@
 # Table management design
 
-**Status:** ACTIVE DESIGN. Phases 1 and 3 are implemented; phases 2 and 4 are approved but not
-yet built.
+**Status:** ACTIVE DESIGN. Phases 1, 2 and 3 are implemented; phase 4 is approved but not yet built.
 
 FloCafe's table model was built for a fixed dining room: tables are created once and can only be
 soft-deactivated. This design reworks it for a restaurant whose room layout, table count, and seat
@@ -59,8 +58,13 @@ Real entity replacing the free-text `floor`: `id`, `name`, `sort_order`, `width`
 ### `tables` (extended)
 
 Stays the same table, becomes fully mutable and deletable. Phase 2 adds `room_id`, `shape`
-(rect/round), `width`, `height`, `rotation`, and `notes`; `position_x`/`position_y` finally get used.
-Phase 4 adds `merged_into` for joining tables.
+(rect/round), `width` and `height`; `position_x`/`position_y` finally get used. Phase 4 adds
+`merged_into` for joining tables.
+
+**Amendment (phase 2):** `rotation` and `notes` were planned and are not there. Rotation costs a
+fiddly editor handle to express layouts that a wide rectangle or a circle already covers, and a
+per-table note had no reader. Neither is hard to add later; adding a column nothing writes is worse
+than adding it when something does.
 
 `is_active` and the deactivate/reactivate routes are retained for backward compatibility and for
 databases that already hold deactivated rows, but real deletion is the primary action in the UI.
@@ -181,13 +185,47 @@ Covered by `tests/service-days.test.ts` (`npm run test:service-days`).
 bucket by UTC day. Service days fix the *filing* of orders, not those legacy report queries; moving
 them over is a follow-up, and the owner has said aggregate reporting is not wanted anyway.
 
+## What phase 2 shipped
+
+- Migration v75 adds `rooms` plus `room_id`, `shape`, `width` and `height` on `tables`. It promotes
+  each distinct `floor` value into a real room, gives tables with no floor a placeholder `Main room`,
+  and lays every table out on a grid — nothing had ever written `position_x`/`position_y`, so without
+  that pass the first map would open with every table stacked at the origin.
+- `main/lib/table-geometry.ts` holds the shared geometry (default sizes from seat count, the grid
+  placer) so the migration and the routes cannot disagree about what a table looks like.
+- `GET /rooms` returns the whole floor in three queries: `hydrateTables()` batches each table's live
+  order and customer, replacing a per-table lookup that the map would have multiplied by every table
+  on screen.
+- `POST /tables` puts a new table in a room and scans for the first free spot, so it never lands on
+  top of another one. Setup's seeded sample tables go through the same path.
+- Order labels now read the room name rather than the legacy `floor`, and moving a table to another
+  room retags its open orders.
+- The tables page became the map: room tabs, a service mode where a tap opens what the table is
+  doing, and an edit mode where tables are dragged, added and removed. Rooms are laid out in abstract
+  units and scaled to the available width, so the same map reads on the central PC and on a tablet.
+- Each table shows status colour, covers against capacity, running total, elapsed occupancy, and a
+  badge for courses still to send — driven by the same `order_items.kot_batch IS NULL` the kitchen
+  ticket uses.
+
+Covered by `tests/rooms-map.test.ts` (`npm run test:rooms-map`) and a dine-in seeding scenario in
+`tests/first-run-setup.test.ts`.
+
+**Found by running it, not by the tests:** setup seeded sample tables straight into `tables`, so a
+brand-new dine-in install opened on a floor plan of tables belonging to no room; the map measured
+itself only through a `ResizeObserver`, which left the first paint unscaled; and a quick drag whose
+move and release landed in the same frame was dropped, because the landing position was read back
+from React state that had not updated yet. All three are fixed and pinned.
+
+**Still open:** tables cannot be rotated or resized by dragging a handle — size is chosen from
+presets. `section` survives as a free-text field and has no role in the map.
+
 ## Phases
 
 | Phase | Content |
 | --- | --- |
 | 1 | Full table CRUD: edit, real deletion, label snapshot on orders — **done** (migration v73, `tests/table-crud.test.ts`) |
-| 2 | Rooms as entities, graphical map, service/edit modes |
+| 2 | Rooms as entities, graphical map, service/edit modes — **done** (migration v75, `tests/rooms-map.test.ts`) |
 | 3 | Service days: open/close, order stamping, closing report, day history — **done** (migration v74, `tests/service-days.test.ts`) |
 | 4 | Reservations, table merging, layout templates |
 
-Phase 2 is independent of the rest and is what remains before the room becomes a real map.
+Phase 4 is what remains. It builds on the map: joining tables and layout templates are both much more useful with a floor plan in front of you than with a list.
