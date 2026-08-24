@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Search, UserPlus, RotateCcw } from 'lucide-react';
+import { Plus, X, Search, UserPlus, RotateCcw, Pencil, Trash2 } from 'lucide-react';
 import type { Table, Customer, Order, OrderItem } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { countryName } from '@/lib/countries';
@@ -196,15 +196,159 @@ const itemStatusColors: Record<string, { bg: string; text: string; dot: string }
   void_adjustment: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
 };
 
+interface TableFormModalProps {
+  /** null = create a new table, otherwise edit this one. */
+  table: Table | null;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function TableFormModal({ table, onClose, onSaved }: TableFormModalProps) {
+  const tTables = useTranslations('tables');
+  const tCommon = useTranslations('common');
+  const isEdit = table !== null;
+  const [form, setForm] = useState({
+    name: table?.name ?? '',
+    capacity: String(table?.capacity ?? 4),
+    floor: table?.floor ?? '',
+    section: table?.section ?? '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const capacity = Number(form.capacity);
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 99) {
+      toast.error(tTables('capacityRange'));
+      return;
+    }
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      capacity,
+      floor: form.floor.trim(),
+      section: form.section.trim(),
+    };
+    try {
+      if (isEdit) {
+        await api.put(`/tables/${table.id}`, payload);
+        toast.success(tTables('tableUpdated'));
+      } else {
+        await api.post('/tables', payload);
+        toast.success(tTables('tableCreated'));
+      }
+      onSaved();
+    } catch {
+      toast.error(isEdit ? tTables('tableUpdateFailed') : tTables('tableCreateFailed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-bold">{isEdit ? tTables('edit') : tTables('add')}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('tableName')}</label>
+            <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder={tTables('tableNamePlaceholder')} className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('capacity')}</label>
+              <input type="number" min="1" max="99" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('floor')}</label>
+              <input type="text" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })}
+                placeholder={tTables('floorPlaceholder')} className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {tTables('section')} <span className="text-gray-400 font-normal">({tCommon('optional')})</span>
+            </label>
+            <input type="text" value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+          </div>
+          <Button type="submit" className="w-full" disabled={saving}>
+            {saving ? tCommon('saving') : (isEdit ? tCommon('save') : tTables('createTable'))}
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+interface DeleteTableModalProps {
+  table: Table;
+  onClose: () => void;
+  onDeleted: () => void;
+}
+
+function DeleteTableModal({ table, onClose, onDeleted }: DeleteTableModalProps) {
+  const tTables = useTranslations('tables');
+  const tCommon = useTranslations('common');
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await api.delete(`/tables/${table.id}`);
+      toast.success(tTables('tableDeleted', { name: table.name }));
+      onDeleted();
+    } catch (error: unknown) {
+      // The backend refuses to delete a table anything live still points at,
+      // and says which case it hit so the message can be actionable.
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      toast.error(
+        code === 'table_has_open_order' ? tTables('deleteBlockedOpenOrder')
+          : code === 'table_has_held_cart' ? tTables('deleteBlockedHeldCart')
+            : tTables('tableDeleteFailed'),
+      );
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-bold">{tTables('deleteTable')}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        </div>
+        <p className="text-sm text-gray-700 mb-2">{tTables('deleteConfirm', { name: table.name })}</p>
+        <p className="text-xs text-gray-500 mb-5">{tTables('deleteExplain')}</p>
+        <div className="flex gap-3">
+          <Button type="button" variant="outline" className="flex-1" onClick={onClose} disabled={deleting}>
+            {tCommon('cancel')}
+          </Button>
+          <Button type="button" variant="destructive" className="flex-1" onClick={handleDelete} disabled={deleting}>
+            {tCommon('delete')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TablesPage() {
   const tTables = useTranslations('tables');
   const tOrders = useTranslations('orders');
+  const tCommon = useTranslations('common');
   const [tables, setTables] = useState<Table[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
-  const [form, setForm] = useState({ name: '', capacity: '4', floor: 'Ground', section: '' });
+  // `null` = closed; `{ table: null }` = create; `{ table }` = edit.
+  const [formModal, setFormModal] = useState<{ table: Table | null } | null>(null);
+  const [deletingTable, setDeletingTable] = useState<Table | null>(null);
   const [showDetails, setShowDetails] = useState(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('tables_showDetails');
@@ -278,19 +422,6 @@ export default function TablesPage() {
     }
   }
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.post('/tables', { ...form, capacity: Number(form.capacity) });
-      toast.success(tTables('tableCreated'));
-      setShowForm(false);
-      setForm({ name: '', capacity: '4', floor: 'Ground', section: '' });
-      fetchTables();
-    } catch {
-      toast.error(tTables('tableCreateFailed'));
-    }
-  };
-
   const updateStatus = async (id: string, status: string) => {
     try {
       await api.patch(`/tables/${id}/status`, { status });
@@ -331,7 +462,7 @@ export default function TablesPage() {
             />
             {tTables('showOrderDetails')}
           </label>
-          <Button onClick={() => setShowForm(true)}>
+          <Button onClick={() => setFormModal({ table: null })}>
             <Plus size={16} className="me-1" /> {tTables('addTable')}
           </Button>
         </div>
@@ -414,9 +545,20 @@ export default function TablesPage() {
                       {tTables('reserve')}
                     </button>
                   )}
-                  <button onClick={() => toggleActive(table)}
-                    className={`text-xs font-medium flex items-center gap-1 ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                    {!table.is_active ? <><RotateCcw size={12} /> {tTables('reactivate')}</> : tTables('deactivate')}
+                  <button onClick={() => setFormModal({ table })}
+                    className="text-xs text-gray-600 hover:text-gray-900 font-medium flex items-center gap-1">
+                    <Pencil size={12} /> {tCommon('edit')}
+                  </button>
+                  {/* Rows soft-deactivated before real deletion existed still need a way back. */}
+                  {!table.is_active && (
+                    <button onClick={() => toggleActive(table)}
+                      className="text-xs text-green-600 hover:text-green-700 font-medium flex items-center gap-1">
+                      <RotateCcw size={12} /> {tTables('reactivate')}
+                    </button>
+                  )}
+                  <button onClick={() => setDeletingTable(table)}
+                    className="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1">
+                    <Trash2 size={12} /> {tCommon('delete')}
                   </button>
                 </div>
               </div>
@@ -452,10 +594,22 @@ export default function TablesPage() {
                   {tTables('reserve')}
                 </button>
               )}
-              <button onClick={() => toggleActive(table)}
-                className={`mt-2 block mx-auto text-xs font-medium ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                {!table.is_active ? tTables('reactivate') : tTables('deactivate')}
-              </button>
+              <div className="mt-2 flex items-center justify-center gap-3">
+                <button onClick={() => setFormModal({ table })}
+                  className="text-xs text-gray-600 hover:text-gray-900 font-medium flex items-center gap-1">
+                  <Pencil size={12} /> {tCommon('edit')}
+                </button>
+                {!table.is_active && (
+                  <button onClick={() => toggleActive(table)}
+                    className="text-xs text-green-600 hover:text-green-700 font-medium flex items-center gap-1">
+                    <RotateCcw size={12} /> {tTables('reactivate')}
+                  </button>
+                )}
+                <button onClick={() => setDeletingTable(table)}
+                  className="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1">
+                  <Trash2 size={12} /> {tCommon('delete')}
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -474,37 +628,23 @@ export default function TablesPage() {
         />
       )}
 
-      {/* Add Table Modal */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{tTables('add')}</h2>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-            </div>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('tableName')}</label>
-                <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder={tTables('tableNamePlaceholder')} className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('capacity')}</label>
-                  <input type="number" min="1" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('floor')}</label>
-                  <input type="text" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
-                </div>
-              </div>
-              <Button type="submit" className="w-full">{tTables('createTable')}</Button>
-            </form>
-          </div>
-        </div>
+      {formModal && (
+        <TableFormModal
+          key={formModal.table?.id ?? 'new'}
+          table={formModal.table}
+          onClose={() => setFormModal(null)}
+          onSaved={() => { setFormModal(null); fetchTables(); }}
+        />
       )}
+
+      {deletingTable && (
+        <DeleteTableModal
+          table={deletingTable}
+          onClose={() => setDeletingTable(null)}
+          onDeleted={() => { setDeletingTable(null); fetchTables(); }}
+        />
+      )}
+
     </div>
   );
 }

@@ -3966,6 +3966,30 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.prepare(`UPDATE order_items SET kot_batch = 1 WHERE kot_batch IS NULL`).run();
     },
   },
+  {
+    version: 73,
+    name: 'add_order_table_snapshot',
+    up: () => {
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('table_label')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN table_label TEXT`);
+      }
+      if (!orderColumns.includes('room_label')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN room_label TEXT`);
+      }
+      // Backfill from the tables still standing. v20 added `is_active` because
+      // hard-deleting tables orphaned orders.table_id; carrying the label on the
+      // order instead is what finally makes deletion safe, but only for history
+      // that has a label. Everything already in the database gets one here, once,
+      // before the first real delete can strand it.
+      db.prepare(`
+        UPDATE orders SET
+          table_label = (SELECT number FROM tables WHERE tables.id = orders.table_id),
+          room_label = (SELECT floor FROM tables WHERE tables.id = orders.table_id)
+        WHERE table_id IS NOT NULL AND table_label IS NULL
+      `).run();
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4261,6 +4285,12 @@ function createSchema(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_number TEXT UNIQUE NOT NULL,
       table_id TEXT,
+      -- Where this order was served, captured at creation. Tables are rebuilt
+      -- daily and deleted for real, so the live table_id link cannot be what
+      -- history relies on: these labels are what past orders display once the
+      -- table they name is gone. See docs/table-management.md.
+      table_label TEXT,
+      room_label TEXT,
       customer_id TEXT,
       user_id TEXT,
       type TEXT DEFAULT 'takeaway',

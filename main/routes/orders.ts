@@ -13,6 +13,7 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
+import { resolveOrderTable } from './tables';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -333,7 +334,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   return parsedOrders.map((order) => {
     const itemList = itemsByOrder.get(order.id) || [];
     const tableRow = order.table_id ? tablesById.get(order.table_id) : null;
-    const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
+    const table = resolveOrderTable(order, tableRow);
     const customer = order.customer_id ? customersById.get(order.customer_id) : null;
     const bills = billsByOrderId.get(order.id) || [];
     for (const billRow of bills) {
@@ -460,12 +461,21 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
         service_charge_tax_category_id: chargeCategories.service_charge?.categoryId || null,
       };
 
+      // Capture where this order is being served. Tables are rebuilt daily and
+      // deleted for real, so `table_id` alone cannot carry history — these
+      // labels are what the order shows once its table is gone.
+      // See docs/table-management.md.
+      const orderTableRow = table_id
+        ? db.prepare('SELECT number, floor FROM tables WHERE id = ?').get(table_id) as any
+        : null;
+
       const orderResult = db.prepare(`
-        INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
-          packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
+        INSERT INTO orders (order_number, table_id, table_label, room_label, customer_id, user_id, type, guest_count,
+          special_instructions, packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
           service_charge_tax_category_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `).run(orderNumber, table_id || null, customer_id || null, authenticatedUserId, type, guest_count || null,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      `).run(orderNumber, table_id || null, orderTableRow?.number ?? null, orderTableRow?.floor ?? null,
+        customer_id || null, authenticatedUserId, type, guest_count || null,
         special_instructions || null, packaging_charge || 0, delivery_charge || 0,
         chargeContext.packaging_tax_category_id, chargeContext.delivery_tax_category_id,
         chargeContext.service_charge_tax_category_id, now(), now());
@@ -918,7 +928,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
         // Idempotent same-state request for order
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
         const tableRow = currentOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(currentOrder.table_id) as any : null;
-        const tableObj = tableRow ? { ...tableRow, name: tableRow.number } : null;
+        const tableObj = resolveOrderTable(currentOrder, tableRow);
         return { updatedOrder: parseRowJson(currentOrder), orderItems: items, table: tableObj, changed: false };
       }
 
@@ -1033,7 +1043,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
       const tableRow2 = updatedOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any : null;
-      const table = tableRow2 ? { ...tableRow2, name: tableRow2.number } : null;
+      const table = resolveOrderTable(updatedOrder, tableRow2);
       return { updatedOrder, orderItems, table, changed: true };
     });
 

@@ -33,6 +33,34 @@ function tableShape(table: any, activeOrder?: any) {
   };
 }
 
+/** Fields on `tables` a caller may set, beyond the table number itself. */
+const OPTIONAL_TABLE_FIELDS = ['capacity', 'floor', 'section', 'position_x', 'position_y', 'kitchen_station_id'] as const;
+
+function hasField(body: any, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(body || {}, field);
+}
+
+/**
+ * The table an order was served at. Prefers the live row, so a rename shows up
+ * immediately, and falls back to the labels the order captured at creation once
+ * the table has been deleted — routine here, since the room gets rebuilt daily.
+ * Returns null only for orders that never had a table (takeaway, delivery).
+ * See docs/table-management.md.
+ */
+export function resolveOrderTable(order: any, tableRow?: any | null) {
+  if (tableRow) return { ...tableRow, name: tableRow.number };
+  if (order?.table_label) {
+    return {
+      id: null,
+      number: order.table_label,
+      name: order.table_label,
+      floor: order.room_label ?? null,
+      is_deleted: true,
+    };
+  }
+  return null;
+}
+
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -118,8 +146,8 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       position_x || null, position_y || null, kitchen_station_id || null, now(), now()
     );
 
-    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId);
-    res.status(201).json({ table });
+    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId) as any;
+    res.status(201).json({ table: tableShape(table) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -128,40 +156,132 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
 
 router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
-    const tableNumber = number || name;
+    const body = req.body || {};
     const db = getDatabase();
 
-    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
+    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
     if (!table) {
       return res.status(404).json({ error: 'Table not found' });
     }
 
-    if (tableNumber) {
-      const existing = db.prepare('SELECT * FROM tables WHERE number = ? AND id != ?').get(tableNumber, req.params.id);
-      if (existing) {
+    // Accept `number` (schema column) or `name` (legacy frontend field).
+    const renaming = hasField(body, 'number') || hasField(body, 'name');
+    const tableNumber = String((hasField(body, 'number') ? body.number : body.name) ?? '').trim();
+    if (renaming) {
+      if (!tableNumber) {
+        return res.status(400).json({ error: 'Table number is required' });
+      }
+      const clash = db.prepare('SELECT id FROM tables WHERE number = ? AND id != ?').get(tableNumber, req.params.id);
+      if (clash) {
         return res.status(400).json({ error: 'Table number already exists' });
       }
     }
 
-    db.prepare(`
-      UPDATE tables SET
-        number = COALESCE(?, number),
-        capacity = COALESCE(?, capacity),
-        floor = COALESCE(?, floor),
-        section = COALESCE(?, section),
-        position_x = COALESCE(?, position_x),
-        position_y = COALESCE(?, position_y),
-        kitchen_station_id = COALESCE(?, kitchen_station_id),
-        updated_at = ?
-      WHERE id = ?
-    `).run(tableNumber, capacity, floor, section, position_x, position_y, kitchen_station_id, now(), req.params.id);
+    if (hasField(body, 'capacity')) {
+      const capacity = Number(body.capacity);
+      if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 99) {
+        return res.status(400).json({ error: 'capacity must be a whole number between 1 and 99' });
+      }
+    }
 
-    const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
-    res.json({ table: updated });
+    // Only touch what the caller actually sent. The previous COALESCE(?, col)
+    // form turned every null into a no-op, so a floor or a section could be set
+    // once and never cleared again.
+    const assignments: string[] = [];
+    const values: any[] = [];
+    if (renaming) {
+      assignments.push('number = ?');
+      values.push(tableNumber);
+    }
+    for (const field of OPTIONAL_TABLE_FIELDS) {
+      if (!hasField(body, field)) continue;
+      assignments.push(`${field} = ?`);
+      values.push(field === 'capacity' ? Number(body[field]) : (body[field] === '' ? null : body[field]));
+    }
+
+    if (assignments.length === 0) {
+      return res.json({ table: tableShape(table, activeOrderForTable(db, req.params.id as string)) });
+    }
+
+    const updated = withTxn(() => {
+      const nowStr = now();
+      db.prepare(`UPDATE tables SET ${assignments.join(', ')}, updated_at = ? WHERE id = ?`)
+        .run(...values, nowStr, req.params.id);
+      const row = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
+      // An order still in service follows its table's new name; a closed one
+      // keeps the label it was actually served under, which is the whole point
+      // of the snapshot. See docs/table-management.md.
+      db.prepare(`
+        UPDATE orders SET table_label = ?, room_label = ?, updated_at = ?
+        WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL}
+      `).run(row.number, row.floor, nowStr, req.params.id);
+      return row;
+    });
+
+    res.json({ table: tableShape(updated, activeOrderForTable(db, req.params.id as string)) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * Delete a table for real. Safe because every order carries its own
+ * `table_label`/`room_label` snapshot: cutting `table_id` releases the row
+ * without blanking the table out of history. Blocked while anything live still
+ * points at the table, since those surfaces (KDS, checkout, held carts) resolve
+ * it through the live row.
+ */
+router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const tableId = req.params.id as string;
+
+    const deleted = withTxn(() => {
+      const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId) as any;
+      if (!table) {
+        throw Object.assign(new Error('Table not found'), { status: 404 });
+      }
+
+      const activeOrder = db.prepare(`SELECT id FROM orders WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL}`).get(tableId);
+      if (activeOrder) {
+        throw Object.assign(new Error('Cannot delete a table with an open order. Close or move the order first.'), {
+          status: 409,
+          code: 'table_has_open_order',
+        });
+      }
+
+      const heldOrder = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId);
+      if (heldOrder) {
+        throw Object.assign(new Error('Cannot delete a table with a held cart. Clear the held cart first.'), {
+          status: 409,
+          code: 'table_has_held_cart',
+        });
+      }
+
+      const nowStr = now();
+      // Stamp any history that predates the snapshot columns before the link is
+      // cut, so no past order is left without a table to name.
+      db.prepare(`
+        UPDATE orders SET
+          table_label = COALESCE(table_label, ?),
+          room_label = COALESCE(room_label, ?)
+        WHERE table_id = ?
+      `).run(table.number, table.floor, tableId);
+      db.prepare('UPDATE orders SET table_id = NULL, updated_at = ? WHERE table_id = ?').run(nowStr, tableId);
+      db.prepare('DELETE FROM tables WHERE id = ?').run(tableId);
+
+      return table;
+    });
+
+    res.json({ deleted: { id: deleted.id, name: deleted.number } });
+  } catch (error: any) {
+    const statusCode = error.status || 500;
+    if (statusCode >= 500) console.error('[API] Table delete failed:', error);
+    res.status(statusCode).json({
+      error: statusCode >= 500 ? 'Internal server error' : error.message,
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -255,8 +375,10 @@ router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'serve
       }
 
       const nowStr = now();
-      db.prepare('UPDATE orders SET table_id = ?, type = ?, updated_at = ? WHERE id = ?')
-        .run(target_table_id, order.type, nowStr, order.id);
+      // The label snapshot moves with the order, otherwise a reprint after the
+      // source table is gone would still name the table the guests left.
+      db.prepare('UPDATE orders SET table_id = ?, table_label = ?, room_label = ?, type = ?, updated_at = ? WHERE id = ?')
+        .run(target_table_id, targetTable.number, targetTable.floor, order.type, nowStr, order.id);
       db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
         .run(nowStr, sourceTableId);
       db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?")
