@@ -35,7 +35,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedCategory, seedProduct,
-  api, assert, assertEqual,
+  api, assert, assertEqual, getResults,
   closeDatabase,
 } = require('./helpers/test-setup');
 
@@ -235,9 +235,15 @@ async function main() {
 
 main()
   .then(() => {
+    // The assertion helpers count failures rather than throwing, so without
+    // this a red assertion would still exit 0 and the suite would read green.
+    const { passed, failed, total } = getResults();
+    console.log('='.repeat(50));
+    console.log(`${passed}/${total} passed, ${failed} failed`);
     closeDatabase();
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
+    process.exit(failed === 0 ? 0 : 1);
   })
   .catch((error) => {
     try { closeDatabase(); } catch { }

@@ -271,6 +271,38 @@ Covered by `tests/reservations.test.ts` and `tests/table-merge-layouts.test.ts`.
 cashier taking a booking at the till cannot, and widening that is a decision rather than an
 oversight. There is no booking agenda, by design.
 
+## The booking sheet
+
+Added after phase 4, once the bookings had somewhere to live. The floor takes bookings down first
+and decides who sits where second, so a booking with no table is the normal starting state — not
+something half-finished. `reservations.table_id` was already nullable and the unique index already
+excluded nulls, so this needed no schema change beyond a `no_show` status value.
+
+**Assignment is an exchange of places.** `POST /reservations/:id/assign` is the only operation: the
+booking takes the table, and whatever was on that table inherits what the booking had, which may be
+nothing. Assign, reassign, swap and unassign all fall out of that one rule, so the swap the floor
+does every evening stops being a special case. The response names who was displaced, because a swap
+the user cannot see reads as a bug.
+
+Moving is refused for a booking that is no longer `booked` — which is exactly the "only if no order
+has been placed" rule, since an order on a held table seats its booking. It is also refused onto a
+table that is serving, or one folded into a group.
+
+**Two surfaces, one operation.** The `/reservations` page lists the day by time with a single-row
+add — fifteen bookings off a paper list should be fifteen lines of typing — and a table picker that
+shows who currently holds each table. The map carries a strip of unseated bookings: tap one, tap a
+table.
+
+**`no_show`** is separate from `expired`: it frees a table during service, where `expired` is what
+the day close does to whatever is still pending.
+
+**Known wrinkle, accepted:** any order on a held table seats its booking, so a walk-in taking a
+reserved table closes the wrong one. `POST /reservations/:id/reopen` puts it back on the sheet, with
+no table, since the one it had is now busy. The owner chose this over a confirmation prompt in the
+POS.
+
+Covered by `tests/reservation-sheet.test.ts`.
+
 ## Phases
 
 | Phase | Content |

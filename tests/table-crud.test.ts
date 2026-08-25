@@ -33,11 +33,12 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedCategory, seedProduct,
-  api, assert, assertEqual,
+  api, assert, assertEqual, getResults,
   closeDatabase, now,
 } = require('./helpers/test-setup');
 
 const { tableRoutes } = require('../main/routes/tables');
+const { roomRoutes } = require('../main/routes/rooms');
 const { orderRoutes } = require('../main/routes/orders');
 
 async function main() {
@@ -51,6 +52,7 @@ async function main() {
 
   const app = createApp({
     '/api/tables': tableRoutes,
+    '/api/rooms': roomRoutes,
     '/api/orders': orderRoutes,
   });
   const { baseUrl, server } = await startServer(app);
@@ -59,6 +61,12 @@ async function main() {
     const res = await api(baseUrl, '/api/tables', { method: 'POST', headers: authHeader, body: payload });
     assertEqual(res.status, 201, `table ${payload.number} created`);
     return res.data.table;
+  };
+
+  const createRoom = async (name: string) => {
+    const res = await api(baseUrl, '/api/rooms', { method: 'POST', headers: authHeader, body: { name } });
+    assertEqual(res.status, 201, `room ${name} created`);
+    return res.data.room.id;
   };
 
   const openOrder = async (tableId: string) => {
@@ -75,23 +83,29 @@ async function main() {
     db.prepare('SELECT table_id, table_label, room_label FROM orders WHERE id = ?').get(orderId);
 
   try {
+    // Rooms replaced the free-text `floor` in phase 2, so a table's room comes
+    // from a real row and the order labels read its name.
+    const inside = await createRoom('Sala Interna');
+    const dehors = await createRoom('Dehors');
+    const oldRoom = await createRoom('Sala Vecchia');
+
     // ═══════════════════════════════════════════════════════════════════
     // Scenario A: editing a table, including clearing an optional field
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario A: PUT /tables/:id edits and clears ───');
 
-    const edited = await createTable({ number: 'Tavolo 1', capacity: 4, floor: 'Sala Interna', section: 'Finestra' });
+    const edited = await createTable({ number: 'Tavolo 1', capacity: 4, room_id: inside, section: 'Finestra' });
 
     const editRes = await api(baseUrl, `/api/tables/${edited.id}`, {
       method: 'PUT',
       headers: authHeader,
-      body: { name: 'Tavolo 1 bis', capacity: 6, floor: 'Dehors' },
+      body: { name: 'Tavolo 1 bis', capacity: 6, room_id: dehors },
     });
     assertEqual(editRes.status, 200, 'PUT returns 200');
     assertEqual(editRes.data.table.number, 'Tavolo 1 bis', 'table number updated');
     assertEqual(editRes.data.table.name, 'Tavolo 1 bis', 'response carries the frontend `name` alias');
     assertEqual(editRes.data.table.capacity, 6, 'capacity updated');
-    assertEqual(editRes.data.table.floor, 'Dehors', 'floor updated');
+    assertEqual(editRes.data.table.room_id, dehors, 'room updated');
     assertEqual(editRes.data.table.section, 'Finestra', 'untouched field left alone');
 
     const clearRes = await api(baseUrl, `/api/tables/${edited.id}`, {
@@ -115,7 +129,7 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario B: rename retags live orders, not closed ones ───');
 
-    const renamed = await createTable({ number: 'Tavolo 2', capacity: 2, floor: 'Sala Interna' });
+    const renamed = await createTable({ number: 'Tavolo 2', capacity: 2, room_id: inside });
     const liveOrderId = await openOrder(renamed.id);
 
     const stamped = labelsOf(liveOrderId);
@@ -125,7 +139,7 @@ async function main() {
     await api(baseUrl, `/api/tables/${renamed.id}`, {
       method: 'PUT',
       headers: authHeader,
-      body: { name: 'Tavolo 2 unito', floor: 'Dehors' },
+      body: { name: 'Tavolo 2 unito', room_id: dehors },
     });
     const afterRename = labelsOf(liveOrderId);
     assertEqual(afterRename.table_label, 'Tavolo 2 unito', 'open order follows the rename');
@@ -151,7 +165,7 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario C: DELETE blocked by an open order ───');
 
-    const busy = await createTable({ number: 'Tavolo 3', capacity: 4, floor: 'Sala Interna' });
+    const busy = await createTable({ number: 'Tavolo 3', capacity: 4, room_id: inside });
     const busyOrderId = await openOrder(busy.id);
 
     const blockedRes = await api(baseUrl, `/api/tables/${busy.id}`, { method: 'DELETE', headers: authHeader });
@@ -164,7 +178,7 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario D: DELETE blocked by a held cart ───');
 
-    const held = await createTable({ number: 'Tavolo 4', capacity: 4, floor: 'Sala Interna' });
+    const held = await createTable({ number: 'Tavolo 4', capacity: 4, room_id: inside });
     db.prepare(`
       INSERT INTO held_orders (id, table_id, items, guest_count, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -208,7 +222,7 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario F: DELETE backfills pre-snapshot history ───');
 
-    const legacy = await createTable({ number: 'Tavolo 9', capacity: 4, floor: 'Sala Vecchia' });
+    const legacy = await createTable({ number: 'Tavolo 9', capacity: 4, room_id: oldRoom });
     db.prepare(`
       INSERT INTO orders (order_number, table_id, type, status, created_at, updated_at)
       VALUES (?, ?, 'dine_in', 'completed', ?, ?)
@@ -230,9 +244,15 @@ async function main() {
 
 main()
   .then(() => {
+    // The assertion helpers count failures rather than throwing, so without
+    // this a red assertion would still exit 0 and the suite would read green.
+    const { passed, failed, total } = getResults();
+    console.log('='.repeat(50));
+    console.log(`${passed}/${total} passed, ${failed} failed`);
     closeDatabase();
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
+    process.exit(failed === 0 ? 0 : 1);
   })
   .catch((error) => {
     try { closeDatabase(); } catch { }

@@ -146,7 +146,7 @@ export interface Reservation {
   booked_time: string | null;
   phone: string | null;
   notes: string | null;
-  status: 'booked' | 'seated' | 'cancelled' | 'expired';
+  status: 'booked' | 'seated' | 'cancelled' | 'no_show' | 'expired';
   created_at: string;
 }
 

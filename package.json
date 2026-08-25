@@ -116,6 +116,7 @@
     "test:service-days": "node tests/run-electron-node-test.cjs tests/service-days.test.ts",
     "test:rooms-map": "node tests/run-electron-node-test.cjs tests/rooms-map.test.ts",
     "test:reservations": "node tests/run-electron-node-test.cjs tests/reservations.test.ts",
+    "test:reservation-sheet": "node tests/run-electron-node-test.cjs tests/reservation-sheet.test.ts",
     "test:table-merge-layouts": "node tests/run-electron-node-test.cjs tests/table-merge-layouts.test.ts",
     "test:held-orders": "node tests/run-electron-node-test.cjs tests/held-orders.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/held-orders-store.test.ts",
     "test:product-images": "node tests/run-electron-node-test.cjs tests/product-images.test.ts",

@@ -363,6 +363,44 @@ Drop the standing booking and free the table. Owner/manager.
 
 ---
 
+### GET `/api/reservations`
+The day's booking sheet, ordered the way the evening runs (timed first, then untimed).
+Owner/manager. Returns `{ "day": null, "reservations": [] }` when no day is open.
+
+---
+
+### POST `/api/reservations`
+Take a booking down. Owner/manager. `name` required, `guests` defaults to 2; `booked_time`
+(`HH:MM`), `phone`, `notes`, `customer_id` and `table_id` are optional. Without a table the booking
+waits on the sheet, which is the normal case.
+
+---
+
+### PATCH `/api/reservations/:id`
+Edit a pending booking. Owner/manager. Only the fields sent are written.
+
+**Response (409):** `{ "code": "reservation_not_pending" }`
+
+---
+
+### POST `/api/reservations/:id/assign`
+Give the booking a table, or take its table away with `{ "table_id": null }`. Owner/manager.
+
+Whatever was on the target table inherits what this booking had, so a swap is the same call as a
+plain assignment. The response carries `displaced` when another booking had to move.
+
+**Response (409):** `reservation_not_pending`, `table_has_open_order`, `table_is_merged`
+
+---
+
+### POST `/api/reservations/:id/cancel` · `/no-show` · `/reopen`
+Close a pending booking, or put a seating made by mistake back on the sheet. Owner/manager.
+Reopening returns the booking with no table, since the one it had is now busy.
+
+**Response (409):** `reservation_not_seated` when reopening something that was never seated.
+
+---
+
 ## Joined tables
 
 ### POST `/api/tables/:id/merge`

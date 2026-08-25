@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, Map as MapIcon, PenLine, LayoutGrid } from 'lucide-react';
-import type { Room, Table, Order } from '@/lib/types';
+import type { Room, Table, Order, Reservation } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { useTranslations } from 'use-intl';
 import { RoomMap } from '@/components/tables/RoomMap';
@@ -44,6 +44,9 @@ export default function TablesPage() {
   const [deletingRoom, setDeletingRoom] = useState<Room | null>(null);
   const [mergingTable, setMergingTable] = useState<Table | null>(null);
   const [showLayouts, setShowLayouts] = useState(false);
+  const [unassigned, setUnassigned] = useState<Reservation[]>([]);
+  // A booking picked up from the strip, waiting for a table to be tapped.
+  const [armedBooking, setArmedBooking] = useState<Reservation | null>(null);
 
   // Promise chains rather than await: state updates land in a microtask instead
   // of synchronously inside the effect below, which is what React wants.
@@ -76,14 +79,27 @@ export default function TablesPage() {
     }),
   []);
 
-  const reload = useCallback(() => Promise.all([loadMap(), loadOrders()]), [loadMap, loadOrders]);
+  const loadUnassigned = useCallback(() => api.get('/reservations')
+    .then(({ data }) => setUnassigned(
+      (data.reservations || []).filter((booking: Reservation) => booking.status === 'booked' && !booking.table_id),
+    ))
+    .catch(() => {
+      // The map still draws; the strip just stays empty.
+    }),
+  []);
+
+  const reload = useCallback(
+    () => Promise.all([loadMap(), loadOrders(), loadUnassigned()]),
+    [loadMap, loadOrders, loadUnassigned],
+  );
 
   useEffect(() => {
     loadMap();
     loadOrders();
-    const interval = setInterval(() => { loadMap(); loadOrders(); }, 10000);
+    loadUnassigned();
+    const interval = setInterval(() => { loadMap(); loadOrders(); loadUnassigned(); }, 10000);
     return () => clearInterval(interval);
-  }, [loadMap, loadOrders]);
+  }, [loadMap, loadOrders, loadUnassigned]);
 
   // Derived rather than synced: no effect has to chase the room list.
   const activeRoom = rooms.find((room) => room.id === selectedRoomId) ?? rooms[0] ?? null;
@@ -107,7 +123,28 @@ export default function TablesPage() {
 
   const allTables = rooms.flatMap((room) => room.tables ?? []);
 
+  const assignArmed = async (table: Table) => {
+    const booking = armedBooking;
+    if (!booking) return;
+    setArmedBooking(null);
+    try {
+      const { data } = await api.post(`/reservations/${booking.id}/assign`, { table_id: table.id });
+      toast.success(data.displaced
+        ? tTables('bookingSwapped', { a: booking.name, b: data.displaced.name })
+        : tTables('bookingAssigned', { name: booking.name, table: table.name }));
+      reload();
+    } catch (error: unknown) {
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      toast.error(code === 'table_has_open_order' ? tTables('reservationBlockedByOrder') : tTables('bookingAssignFailed'));
+    }
+  };
+
   const handleSelect = (table: Table) => {
+    // A booking picked up from the strip turns the next tap into a placement.
+    if (armedBooking && !editing) {
+      assignArmed(table);
+      return;
+    }
     if (editing) {
       setTableForm({ table });
       return;
@@ -167,6 +204,27 @@ export default function TablesPage() {
         </div>
       ) : (
         <>
+          {!editing && unassigned.length > 0 && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-medium text-amber-800 mb-2">
+                {armedBooking ? tTables('pickTableFor', { name: armedBooking.name }) : tTables('unassignedBookings', { count: unassigned.length })}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {unassigned.map((booking) => (
+                  <button key={booking.id}
+                    onClick={() => setArmedBooking(armedBooking?.id === booking.id ? null : booking)}
+                    className={`px-2.5 py-1 text-xs rounded-lg border-2 transition-colors ${
+                      armedBooking?.id === booking.id
+                        ? 'border-brand bg-white text-brand font-medium'
+                        : 'border-amber-300 bg-white text-amber-900 hover:border-amber-400'
+                    }`}>
+                    {booking.booked_time ? `${booking.booked_time} · ` : ''}{booking.name} · {booking.guests}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {rooms.map((room) => (
               <button key={room.id} onClick={() => setSelectedRoomId(room.id)}

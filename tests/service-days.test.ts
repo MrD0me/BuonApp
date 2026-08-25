@@ -36,11 +36,12 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedManagerUser, seedCategory, seedProduct,
-  api, assert, assertEqual,
+  api, assert, assertEqual, getResults,
   closeDatabase, now,
 } = require('./helpers/test-setup');
 
 const { tableRoutes } = require('../main/routes/tables');
+const { roomRoutes } = require('../main/routes/rooms');
 const { orderRoutes } = require('../main/routes/orders');
 const { serviceDayRoutes } = require('../main/routes/service-days');
 const { MIGRATIONS } = require('../main/db');
@@ -57,14 +58,23 @@ async function main() {
 
   const app = createApp({
     '/api/tables': tableRoutes,
+    '/api/rooms': roomRoutes,
     '/api/orders': orderRoutes,
     '/api/service-days': serviceDayRoutes,
   });
   const { baseUrl, server } = await startServer(app);
 
+  // Rooms replaced the free-text `floor` in phase 2; the order labels read the
+  // room's name, so the suite needs a real one.
+  let roomId = '';
   const createTable = async (number: string) => {
+    if (!roomId) {
+      const room = await api(baseUrl, '/api/rooms', { method: 'POST', headers: authHeader, body: { name: 'Sala Interna' } });
+      assertEqual(room.status, 201, 'room Sala Interna created');
+      roomId = room.data.room.id;
+    }
     const res = await api(baseUrl, '/api/tables', {
-      method: 'POST', headers: authHeader, body: { number, capacity: 4, floor: 'Sala Interna' },
+      method: 'POST', headers: authHeader, body: { number, capacity: 4, room_id: roomId },
     });
     assertEqual(res.status, 201, `table ${number} created`);
     return res.data.table;
@@ -366,9 +376,15 @@ async function main() {
 
 main()
   .then(() => {
+    // The assertion helpers count failures rather than throwing, so without
+    // this a red assertion would still exit 0 and the suite would read green.
+    const { passed, failed, total } = getResults();
+    console.log('='.repeat(50));
+    console.log(`${passed}/${total} passed, ${failed} failed`);
     closeDatabase();
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
+    process.exit(failed === 0 ? 0 : 1);
   })
   .catch((error) => {
     try { closeDatabase(); } catch { }
