@@ -1899,6 +1899,7 @@
     "elapsedMinutes": "{count} دقیقه",
     "floor": "طبقه",
     "floorPlaceholder": "سالن اصلی",
+    "freeBlockedByOrder": "این میز در حال سرو یک سفارش است. ابتدا آن را ببندید یا به میز دیگری منتقل کنید.",
     "joinedWith": "ادغام شده با {names}",
     "kotPending": "غذایی که هنوز به آشپزخانه فرستاده نشده",
     "kotPendingShort": "ارسال‌نشده",

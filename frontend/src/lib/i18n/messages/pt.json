@@ -1899,6 +1899,7 @@
     "elapsedMinutes": "{count} min",
     "floor": "Andar",
     "floorPlaceholder": "Salão principal",
+    "freeBlockedByOrder": "Esta mesa está servindo um pedido. Feche-o, ou mova-o para outra mesa, primeiro.",
     "joinedWith": "Juntada a {names}",
     "kotPending": "Prato ainda a enviar para a cozinha",
     "kotPendingShort": "a enviar",

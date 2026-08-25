@@ -689,6 +689,20 @@ router.patch('/:id/status', requireRole('owner', 'manager'), (req: Request, res:
       return res.status(404).json({ error: 'Table not found' });
     }
 
+    // This endpoint is a manual correction for a status that has drifted out of
+    // step with the floor, not a way to overrule it. A table with people eating
+    // at it is occupied whatever anyone types, and saying otherwise only makes
+    // the map contradict the order it is still showing.
+    if (status !== 'occupied') {
+      const working = db.prepare(`SELECT id FROM orders WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL}`).get(req.params.id);
+      if (working) {
+        return res.status(409).json({
+          error: 'This table is serving an order. Close it, or move it to another table, first.',
+          code: 'table_has_open_order',
+        });
+      }
+    }
+
     const updated = withTxn(() => {
       // Freeing a reserved table means the party is not coming, or is already
       // seated; either way the booking stops standing.

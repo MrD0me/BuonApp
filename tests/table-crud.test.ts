@@ -174,6 +174,27 @@ async function main() {
     assert(db.prepare('SELECT id FROM tables WHERE id = ?').get(busy.id), 'table survived the refused delete');
 
     // ═══════════════════════════════════════════════════════════════════
+    // Scenario C2: a working table cannot be talked out of being occupied
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n─── Scenario C2: freeing a table mid-service ───');
+
+    const freeing = await api(baseUrl, `/api/tables/${busy.id}/status`, {
+      method: 'PATCH', headers: authHeader, body: { status: 'available' },
+    });
+    assertEqual(freeing.status, 409, 'a table serving an order refuses to be marked available');
+    assertEqual(freeing.data.code, 'table_has_open_order', 'refusal carries a stable code');
+    assertEqual(
+      db.prepare('SELECT status FROM tables WHERE id = ?').get(busy.id).status,
+      'occupied',
+      'and the table stays occupied',
+    );
+
+    const cleaning = await api(baseUrl, `/api/tables/${busy.id}/status`, {
+      method: 'PATCH', headers: authHeader, body: { status: 'cleaning' },
+    });
+    assertEqual(cleaning.status, 409, 'nor can it be moved to any other state');
+
+    // ═══════════════════════════════════════════════════════════════════
     // Scenario D: deletion refused while a held cart sits on the table
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario D: DELETE blocked by a held cart ───');

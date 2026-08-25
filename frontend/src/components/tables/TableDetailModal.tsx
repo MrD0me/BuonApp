@@ -86,8 +86,9 @@ export function TableDetailModal({
       await api.patch(`/tables/${table.id}/status`, { status });
       onChanged();
       onClose();
-    } catch {
-      toast.error(tTables('tableUpdateFailed'));
+    } catch (error: unknown) {
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      toast.error(code === 'table_has_open_order' ? tTables('freeBlockedByOrder') : tTables('tableUpdateFailed'));
       setSaving(false);
     }
   };
@@ -174,7 +175,9 @@ export function TableDetailModal({
         )}
 
         <div className="flex flex-wrap gap-2">
-          {(table.status === 'occupied' || table.status === 'reserved') && (
+          {/* Only offered when the status has drifted: a table that is genuinely
+              working or being held has its own actions below. */}
+          {table.status !== 'available' && !order && !booking && (
             <Button type="button" variant="outline" onClick={() => setStatus('available')} disabled={saving}>
               {tTables('markAvailable')}
             </Button>

@@ -1899,6 +1899,7 @@
     "elapsedMinutes": "{count} min",
     "floor": "Piano",
     "floorPlaceholder": "Sala interna",
+    "freeBlockedByOrder": "Questo tavolo sta servendo un ordine. Chiudilo, o spostalo su un altro tavolo, prima.",
     "joinedWith": "Unito a {names}",
     "kotPending": "Portata ancora da mandare in cucina",
     "kotPendingShort": "da mandare",

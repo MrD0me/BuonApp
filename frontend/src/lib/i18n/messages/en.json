@@ -1899,6 +1899,7 @@
     "elapsedMinutes": "{count} min",
     "floor": "Floor",
     "floorPlaceholder": "Main room",
+    "freeBlockedByOrder": "This table is serving an order. Close it, or move it to another table, first.",
     "joinedWith": "Joined with {names}",
     "kotPending": "Course still to send to the kitchen",
     "kotPendingShort": "to send",
