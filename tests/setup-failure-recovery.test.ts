@@ -31,7 +31,6 @@ const express = require('express');
 const request = require('supertest');
 import { closeDatabase, getDatabase, initDatabase } from '../main/db';
 import { authRoutes } from '../main/routes/auth';
-import { cloudSync } from '../main/services/cloud-sync';
 import { isMasterPinSet, verifyMasterPin } from '../main/services/master-pin';
 
 async function run() {
@@ -51,9 +50,6 @@ async function run() {
     master_pin: '1234',
   };
 
-  const originalReload = cloudSync.reload.bind(cloudSync);
-  const originalRefresh = cloudSync.refreshRegistrationProfile.bind(cloudSync);
-
   try {
     encryptionShouldFail = true;
     const pinFailure = await request(app).post('/api/auth/setup/initialize').send(setupPayload);
@@ -62,11 +58,8 @@ async function run() {
     assert.equal(isMasterPinSet(), false, 'failed PIN persistence does not create a PIN file');
 
     encryptionShouldFail = false;
-    cloudSync.reload = (() => { throw new Error('simulated cloud reload failure'); }) as typeof cloudSync.reload;
-    cloudSync.refreshRegistrationProfile = (() => { throw new Error('simulated cloud profile failure'); }) as typeof cloudSync.refreshRegistrationProfile;
-
-    const cloudFailure = await request(app).post('/api/auth/setup/initialize').send(setupPayload);
-    assert.equal(cloudFailure.status, 200, 'cloud initialization failure does not make local setup appear to fail');
+    const secondAttempt = await request(app).post('/api/auth/setup/initialize').send(setupPayload);
+    assert.equal(secondAttempt.status, 200, 'setup succeeds once the PIN store recovers');
     assert.equal((getDatabase().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }).count, 1, 'owner is committed exactly once');
     assert.equal(isMasterPinSet(), true, 'Master PIN remains available after successful local setup');
     assert.equal(verifyMasterPin('1234'), true, 'persisted Master PIN verifies after setup');
@@ -79,8 +72,6 @@ async function run() {
 
     console.log('✅ Setup post-commit failure tests passed');
   } finally {
-    cloudSync.reload = originalReload;
-    cloudSync.refreshRegistrationProfile = originalRefresh;
     closeDatabase();
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });

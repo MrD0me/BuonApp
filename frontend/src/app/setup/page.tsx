@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { COUNTRIES, getCountryByCode, getLocalizedCountryName, countryMatchesQuery, sortCountriesByLocalizedName, type Country } from '@/lib/countries';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
@@ -50,9 +50,7 @@ const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).
   (lang) => LANGUAGES[lang].selectable,
 );
 
-// Mirrors main/services/cloud-sync.ts DEFAULT_CLOUD_SERVER_URL — kept in sync
 // manually since the frontend can't import backend TS modules directly.
-const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SUSPECT_EMAIL_TLDS = new Set(['example', 'invalid', 'lcaol', 'local', 'localhost', 'test']);
 
@@ -97,8 +95,6 @@ export default function SetupPage() {
     business_name: '',
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [productUpdates, setProductUpdates] = useState(false);
-  const [marketing, setMarketing] = useState(false);
   const passwordsEntered = form.password.length > 0 && form.confirmPassword.length > 0;
   const passwordsMatch = !passwordsEntered || form.password === form.confirmPassword;
   const ownerEmail = form.email.trim().toLowerCase();
@@ -111,8 +107,6 @@ export default function SetupPage() {
   const [masterPinConfirm, setMasterPinConfirm] = useState('');
   const masterPinValid = /^\d{4}$/.test(masterPin) && masterPin === masterPinConfirm;
 
-  const cloudEnabled = true;
-  const [cloudServerUrl, setCloudServerUrl] = useState(DEFAULT_CLOUD_SERVER_URL);
 
   const isPasswordValid = (password: string) => {
     if (!password || password.length < 8) return false;
@@ -208,23 +202,6 @@ export default function SetupPage() {
       return;
     }
 
-    if (cloudEnabled && cloudServerUrl.trim()) {
-      try {
-        const parsed = new URL(cloudServerUrl.trim());
-        const localHttp = parsed.protocol === 'http:'
-          && ['localhost', '127.0.0.1', '::1', '[::1]'].includes(parsed.hostname);
-        if (parsed.protocol !== 'https:' && !localHttp) {
-          toast.error(t('cloudUrlHttpsRequired'));
-          setStep(5);
-          return;
-        }
-      } catch {
-        toast.error(t('cloudUrlInvalid'));
-        setStep(5);
-        return;
-      }
-    }
-
     setLoading(true);
     try {
       const countryProfile = selectedCountry;
@@ -246,10 +223,6 @@ export default function SetupPage() {
         service_model: serviceModel,
         terms_accepted: termsAccepted,
         master_pin: masterPinAvailable ? masterPin : undefined,
-        cloud_sync_enabled: true,
-        cloud_server_url: cloudServerUrl.trim() || DEFAULT_CLOUD_SERVER_URL,
-        email_product_updates: productUpdates,
-        email_marketing: marketing,
         ...countryPayload,
       });
       completeSetup();
@@ -616,29 +589,6 @@ export default function SetupPage() {
                     </span>
                   </label>
 
-                  <div className="rounded-lg border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-                    <p className="font-medium text-foreground">{t('anonymousDataTitle')}</p>
-                    <p className="mt-1">{t('anonymousDataDescription')}</p>
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-primary">{t('anonymousDataDetails')}</summary>
-                      <p className="mt-1">{t('anonymousDataFields')}</p>
-                    </details>
-                  </div>
-
-                  <div className="space-y-3 rounded-lg border border-border px-3 py-3 text-sm">
-                    <p className="font-medium text-foreground">{t('emailCommunicationTitle')}</p>
-                    <p className="text-muted-foreground">{t('emailCommunicationDescription')}</p>
-                    <label className="flex items-start gap-2">
-                      <input type="checkbox" checked={productUpdates} onChange={(e) => setProductUpdates(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" />
-                      <span>{t('productUpdatesOptional')}</span>
-                    </label>
-                    <label className="flex items-start gap-2">
-                      <input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" />
-                      <span>{t('marketingOptional')}</span>
-                    </label>
-                  </div>
-
-
                   <Button type="submit" disabled={ownerEmailInvalid || !passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
                     {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                   </Button>
@@ -705,61 +655,6 @@ export default function SetupPage() {
               <div className="space-y-6">
                 <button
                   onClick={() => setStep(4)}
-                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('back')}
-                </button>
-
-                <div className="text-center">
-                  <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                    <Cloud className="w-5 h-5 text-primary" />
-                  </div>
-                  <h2 className="text-xl font-semibold mb-2">{t('cloudTitle')}</h2>
-                  <p className="text-muted-foreground text-sm">{t('cloudSubtitle')}</p>
-                </div>
-
-                <label className="flex items-start gap-3 cursor-pointer p-4 rounded-xl border-2 border-gray-200">
-                  <input
-                    type="checkbox"
-                    checked={cloudEnabled}
-                    disabled
-                    className="mt-0.5 h-4 w-4 rounded border-gray-300"
-                  />
-                  <span>
-                    <span className="font-medium text-foreground">{t('cloudManagedAutomaticallyTitle')}</span>
-                    <span className="block text-sm text-muted-foreground mt-1">{t('cloudManagedAutomaticallyDescription')}</span>
-                  </span>
-                </label>
-
-                {cloudEnabled && (
-                  <div className="space-y-2">
-                    <Label htmlFor="cloud-server-url">{t('cloudUrlLabel')}</Label>
-                    <Input
-                      id="cloud-server-url"
-                      type="url"
-                      value={cloudServerUrl}
-                      onChange={(e) => setCloudServerUrl(e.target.value)}
-                      placeholder={DEFAULT_CLOUD_SERVER_URL}
-                      dir="ltr"
-                    />
-                    <p className="text-xs text-muted-foreground">{t('cloudUrlHint')}</p>
-                  </div>
-                )}
-
-                <p className="text-xs text-muted-foreground bg-muted rounded-lg p-3">
-                  {cloudEnabled ? t('cloudRecoveryNoteEnabled') : t('cloudRecoveryNoteDisabled')}
-                </p>
-
-                <Button onClick={() => setStep(6)} className="w-full" size="lg">
-                  {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
-                </Button>
-              </div>
-            )}
-
-            {step === 6 && (
-              <div className="space-y-6">
-                <button
-                  onClick={() => setStep(5)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('back')}

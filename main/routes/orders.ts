@@ -10,7 +10,6 @@ import {
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
-import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
 import { resolveOrderTable } from './tables';
@@ -626,8 +625,6 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
     if (!result.idempotentReplay) {
       notifyKdsUpdate();
-      cloudSync.recordOrderChanged(result.order.id, 'order.created');
-
       if (customer_id) {
         try {
           syncCustomerTagCounts(db, customer_id, items);
@@ -891,7 +888,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
     });
 
     if (result.replayResponse) return res.json(result.replayResponse);
-    cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyKdsUpdate();
 
     res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
@@ -1068,7 +1064,6 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
     });
 
     if (changed) {
-      cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
       notifyKdsUpdate();
     }
 
@@ -1113,7 +1108,6 @@ router.patch('/:id/customer', orderWriteRateLimit, requireRole('owner', 'manager
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get(updatedOrder.customer_id)
       : null;
 
-    cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyOrderUpdated();
 
     res.json({ order: { ...updatedOrder, customer } });
@@ -1156,7 +1150,6 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole('owner
     const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
     const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
 
-    cloudSync.recordOrderChanged(req.params.id as string, 'order.type_changed');
     notifyKdsUpdate();
 
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table: null }) });

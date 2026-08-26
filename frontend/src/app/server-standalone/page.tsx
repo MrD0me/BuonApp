@@ -83,6 +83,10 @@ export default function ServerStandalonePage() {
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  // A business with no customer book has nobody to file the ticket under, so
+  // the two guest fields come off the screen entirely (the backend refuses to
+  // create customers in that state anyway).
+  const [customersEnabled, setCustomersEnabled] = useState(true);
   const [sending, setSending] = useState(false);
 
   async function loadAll() {
@@ -119,7 +123,10 @@ export default function ServerStandalonePage() {
     if (!api) return;
     let cancelled = false;
     api.get('/api/server-app/info')
-      .then(() => api.get('/api/auth/me'))
+      .then((info) => {
+        if (!cancelled) setCustomersEnabled(info.data?.customers_enabled !== false);
+        return api.get('/api/auth/me');
+      })
       .then((res) => {
         if (!cancelled) setUser(res.data.user);
       })
@@ -210,7 +217,7 @@ export default function ServerStandalonePage() {
   }
 
   async function ensureCustomer(): Promise<string | null> {
-    if (!api) return null;
+    if (!api || !customersEnabled) return null;
     const name = customerName.trim();
     const rawPhone = customerPhone.trim();
     if (!name && !rawPhone) return null;
@@ -394,10 +401,12 @@ export default function ServerStandalonePage() {
 
         <section className="rounded-lg border border-gray-200 bg-white p-3 lg:sticky lg:top-16 lg:self-start">
           <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder={t('customerNamePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
-            <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} dir="ltr" placeholder={t('phonePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
-          </div>
+          {customersEnabled && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder={t('customerNamePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
+              <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} dir="ltr" placeholder={t('phonePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
+            </div>
+          )}
 
           {currentOrder?.items && currentOrder.items.length > 0 && (
             <div className="mt-4 border-t border-gray-100 pt-3">

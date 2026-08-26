@@ -8,7 +8,6 @@ import { getCurrentSchemaVersion, getDatabase, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
-import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
 import { resolveRoomForNewTable, findFreeSlot } from '../services/tables';
 import { defaultTableSize } from '../lib/table-geometry';
@@ -773,9 +772,6 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       billing_type,
       terms_accepted,
       master_pin,
-      cloud_server_url,
-      email_product_updates,
-      email_marketing,
     } = req.body;
     const email = normalizeEmail(req.body.email);
     const displayName = String(name || '').trim();
@@ -830,18 +826,6 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid service model' });
     }
 
-    // Cloud v2 registers the POS automatically on first boot. There is no
-    // pending/claim step, so new installs start with cloud coordination on.
-    const cloudSyncEnabled = true;
-    let normalizedCloudServerUrl: string | undefined;
-    if (cloudSyncEnabled) {
-      try {
-        normalizedCloudServerUrl = normalizeCloudServerUrl(cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
-      } catch {
-        return res.status(400).json({ error: 'Cloud server URL must be a valid HTTPS URL' });
-      }
-    }
-
     let userId = '';
     const hashedPassword = bcrypt.hashSync(password, 10);
 
@@ -890,36 +874,11 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         service_model: normalizedServiceModel,
         setup_profile: normalizedSetupProfile,
         onboarding_completed: 'true',
-        anonymous_data_consent: 'true',
-        telemetry_enabled: 'true',
-        telemetry_scope: 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
         split_checks_enabled: 'false',
-        // '1'/'0', not 'true'/'false' — mirrors FloAdmin's own `stores` table and
-        // matches how cloud-sync.ts reads this key everywhere else.
-        cloud_sync_enabled: cloudSyncEnabled ? '1' : '0',
-        cloud_server_url: normalizedCloudServerUrl || DEFAULT_CLOUD_SERVER_URL,
-        email_product_updates: email_product_updates === true ? 'true' : 'false',
-        email_marketing: email_marketing === true ? 'true' : 'false',
-        cloud_services_disabled_by_user: 'false',
       });
 
       seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);
     })();
-
-    // Pick up the cloud settings just written without requiring a restart —
-    // mirrors PUT /api/settings/cloud's own reload() call. Cloud coordination
-    // is best-effort: a network/profile failure must not make a completed local
-    // setup appear to have failed.
-    try {
-      cloudSync.reload();
-    } catch (error) {
-      console.warn('[Auth] Cloud settings reload deferred after setup:', error);
-    }
-    try {
-      cloudSync.refreshRegistrationProfile();
-    } catch (error) {
-      console.warn('[Auth] Cloud registration profile refresh deferred after setup:', error);
-    }
 
     const token = jwt.sign(
       { userId, email, role: INITIAL_ADMIN_ROLE, jti: uuidv4() },

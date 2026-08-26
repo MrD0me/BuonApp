@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard,
   ShoppingCart,
   ClipboardList,
   CalendarClock,
@@ -19,7 +18,6 @@ import {
   ChefHat,
   UserCircle,
   MessageCircle,
-  LifeBuoy,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -57,7 +55,6 @@ interface NavItem {
 // null = show for all business types
 const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/pos', labelKey: 'pos', icon: ShoppingCart, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
-  { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard, roles: ['owner'], businessTypes: null },
   { href: '/orders', labelKey: 'orders', icon: ClipboardList, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/service-days', labelKey: 'serviceDays', icon: CalendarClock, roles: ['owner', 'manager'], businessTypes: null },
   { href: '/whatsapp', labelKey: 'whatsapp', icon: MessageCircle, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
@@ -73,12 +70,11 @@ const ALL_NAV_ITEMS: NavItem[] = [
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, currentTenant, logout } = useAuthStore();
-  const { tablesRequired, kdsEnabled, whatsappEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled } = usePosSettingsStore();
+  const { tablesRequired, kdsEnabled, whatsappEnabled, customersEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled } = usePosSettingsStore();
   const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
   const { confirm, ConfirmDialog } = useConfirm();
-  const [emailNeedsAttention, setEmailNeedsAttention] = useState(false);
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
 
   const role = currentTenant?.role || 'cashier';
@@ -89,6 +85,8 @@ export default function AppSidebar() {
     if (item.href === '/settings?tab=kds' && !kdsEnabled) return false;
     // WhatsApp integration not enabled on this tenant → hide the nav entry.
     if (item.href === '/whatsapp' && !whatsappEnabled) return false;
+    // No customer book on this business → the page has nothing to show.
+    if (item.href === '/customers' && !customersEnabled) return false;
     return item.roles.includes(role)
       && (item.businessTypes === null || item.businessTypes.includes(businessType));
   });
@@ -104,6 +102,9 @@ export default function AppSidebar() {
     api.get('/settings/kds_enabled')
       .then((res) => setKdsEnabled(res.data.setting?.value !== 'false'))
       .catch(() => { });
+    api.get('/settings/customers_enabled')
+      .then((res) => setCustomersEnabled(res.data.setting?.value !== 'false'))
+      .catch(() => { });
     // Sync the WhatsApp enabled flag from the backend so the sidebar shows
     // the nav entry only when the integration is actually enabled on this
     // tenant. The WhatsApp page also writes the store on enable/disable so
@@ -111,34 +112,7 @@ export default function AppSidebar() {
     api.get('/whatsapp/status')
       .then((res) => setWhatsappEnabled(!!res.data?.enabled))
       .catch(() => { });
-  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled]);
-
-  useEffect(() => {
-    if (role !== 'owner') return;
-    let active = true;
-    const refreshCloudAttention = async () => {
-      try {
-        const [accountResponse, cloudResponse] = await Promise.all([
-          api.get('/settings/cloud/account'),
-          api.get('/settings/cloud'),
-        ]);
-        if (!active) return;
-        const deletionStatus = accountResponse.data?.deletion_request?.status || cloudResponse.data?.cloud_deletion_status;
-        setEmailNeedsAttention(
-          (accountResponse.data?.cloud_account_available !== false && Boolean(accountResponse.data?.email) && !accountResponse.data?.verified)
-          || ['pending', 'processing', 'failed'].includes(deletionStatus)
-        );
-      } catch {
-        if (active) setEmailNeedsAttention(false);
-      }
-    };
-    void refreshCloudAttention();
-    window.addEventListener('flo:cloud-account-status-changed', refreshCloudAttention);
-    return () => {
-      active = false;
-      window.removeEventListener('flo:cloud-account-status-changed', refreshCloudAttention);
-    };
-  }, [role]);
+  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled]);
 
   return (
     <Sidebar collapsible="icon">
@@ -170,12 +144,7 @@ export default function AppSidebar() {
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
                       <Link href={item.href} onClick={closeMobile}>
-                        <span className="relative flex size-4 shrink-0 items-center justify-center">
-                          <item.icon className="size-4 shrink-0" />
-                          {item.href === '/settings' && emailNeedsAttention && (
-                            <span aria-label="Email verification required" className="absolute -end-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
-                          )}
-                        </span>
+                        <item.icon className="size-4 shrink-0" />
                         <span>{t(item.labelKey)}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -189,14 +158,6 @@ export default function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={pathname === '/support'} tooltip={t('support')}>
-              <Link href="/support" onClick={closeMobile}>
-                <LifeBuoy />
-                <span>{t('support')}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={toggleSidebar} tooltip={t('toggleSidebar')}>
               <PanelLeft />

@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { X, Search, UserPlus } from 'lucide-react';
 import type { Table, Customer } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
+import { usePosSettingsStore } from '@/store/pos-settings';
 import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
 import { useTranslations } from 'use-intl';
@@ -29,6 +30,7 @@ interface ReserveModalProps {
 
 export function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
   const { currentTenant } = useAuthStore();
+  const customersEnabled = usePosSettingsStore((state) => state.customersEnabled);
   const tTables = useTranslations('tables');
   const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
@@ -64,7 +66,9 @@ export function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
     debounceRef.current = setTimeout(async () => {
       try {
         const { data } = await api.get(`/customers-search?q=${encodeURIComponent(value)}`);
-        setResults(data.customers || []);
+        // The endpoint answers with a bare array; older callers also accepted
+        // a `{ customers }` envelope, so keep taking both.
+        setResults(Array.isArray(data) ? data : (data.customers || []));
       } catch { setResults([]); }
     }, 300);
   };
@@ -182,8 +186,9 @@ export function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
           </div>
 
-          {/* Linking a guest already in the book is a convenience, never a step. */}
-          {customerId ? (
+          {/* Linking a guest already in the book is a convenience, never a step,
+              and there is no book to link to when it is switched off. */}
+          {!customersEnabled ? null : customerId ? (
             <div className="flex items-center justify-between px-3 py-2 bg-brand-light rounded-xl">
               <p className="text-sm text-brand font-medium">{tTables('linkCustomer')}</p>
               <button type="button" onClick={() => setCustomerId(null)} className="text-brand hover:text-brand-hover">

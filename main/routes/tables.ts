@@ -3,7 +3,6 @@ import { getDatabase, now, parseRowJson, withTxn } from '../db';
 import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
 import { notifyKdsUpdate } from '../services/kds';
-import { cloudSync } from '../services/cloud-sync';
 import {
   defaultTableSize, isTableShape, DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, ROOM_MARGIN, TABLE_GAP,
 } from '../lib/table-geometry';
@@ -508,7 +507,6 @@ router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'serve
       };
     });
 
-    cloudSync.recordOrderChanged(moved.order.id, 'order.table_moved');
     notifyKdsUpdate();
 
     res.json({

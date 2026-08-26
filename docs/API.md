@@ -988,7 +988,8 @@ List customers.
 ---
 
 ### POST `/api/customers`
-Create customer.
+Create customer. Returns `403` with `code: "customers_disabled"` when the
+`customers_enabled` setting is off (the business keeps no customer book).
 
 **Request:**
 ```json
@@ -996,6 +997,24 @@ Create customer.
   "name": "John Doe",
   "phone": "+919876543210",
   "email": "john@email.com"
+}
+```
+
+---
+
+### DELETE `/api/customers/:id`
+Erase a customer for good (owner/manager). The row is removed, not flagged
+inactive. Orders, bills, held orders, reservations and WhatsApp messages keep
+their amounts and only lose the link, so reporting totals are unaffected; the
+customer's loyalty ledger is deleted with them.
+
+**Response:**
+```json
+{
+  "deleted": true,
+  "detached_orders": 12,
+  "discarded_ledger_entries": 3,
+  "discarded_wallet_balance": 40
 }
 ```
 
@@ -1029,32 +1048,70 @@ Earn loyalty points.
 
 ## Reports
 
-### GET `/api/reports/sales`
-Daily/monthly sales report.
+The owner dashboard these once fed is gone; a service day's own close summary
+(`GET /api/service-days/:id`) is where a restaurant reads its numbers. What
+remains here is the money-and-tax read side over a date range. All three are
+owner/manager only. Dates are UTC `YYYY-MM-DD`; a malformed date falls back to
+today rather than erroring.
 
-**Headers:** `Authorization: Bearer <token>`
-
-**Query params:** `?date=2025-03-31`
+### GET `/api/reports/summary`
+One day's takings. **Query params:** `?date=2026-03-31` (defaults to today).
 
 **Response:**
 ```json
 {
-  "date": "2025-03-31",
-  "total_revenue": 15000,
-  "order_count": 45,
-  "avg_order_value": 333.33
+  "summary": {
+    "date": "2026-03-31",
+    "orders": { "count": 45, "total": 15000 },
+    "bills": { "count": 44, "total": 14800, "collected": 14650 },
+    "customers": { "new": 3 },
+    "ordersByStatus": [{ "status": "completed", "count": 42 }],
+    "paymentMethods": [{ "method": "cash", "count": 20, "total": 6400 }]
+  }
 }
 ```
 
 ---
 
-### GET `/api/reports/x-report`
-X Report (current shift).
+### GET `/api/reports/sales`
+Takings over a range, split by day, payment method and order type. Payment
+lines are attributed to their own timestamp, falling back to the bill's
+`paid_at` then `created_at`.
+
+**Query params:** `?start_date=2026-03-01&end_date=2026-03-31`
+
+**Response:**
+```json
+{
+  "sales": {
+    "startDate": "2026-03-01",
+    "endDate": "2026-03-31",
+    "dailySales": [{ "date": "2026-03-01", "orders": 45, "total": 15000 }],
+    "byPaymentMethod": [{ "method": "cash", "count": 320, "total": 98400 }],
+    "byOrderType": [{ "type": "dine_in", "count": 400, "total": 120000 }]
+  }
+}
+```
 
 ---
 
-### GET `/api/reports/z-report`
-Z Report (close shift).
+### GET `/api/reports/tax-components`
+Tax carried by the bills in a range, aggregated by component.
+
+**Query params:** `?start_date=2026-03-01&end_date=2026-03-31`
+
+**Response:**
+```json
+{
+  "taxComponents": {
+    "startDate": "2026-03-01",
+    "endDate": "2026-03-31",
+    "billCount": 128,
+    "taxAmount": 640.5,
+    "components": [{ "title": "GST", "rate": 5, "amount": 640.5 }]
+  }
+}
+```
 
 ---
 
@@ -1275,26 +1332,6 @@ Successful responses report what actually happened. When there is nothing new to
 `reason` is `nothing_pending` for a normal send with an empty queue, or `batch_not_found` when a re-print names a round that does not exist. If the print fails, the round claim is released so the rows return to the queue and the cashier can simply send again.
 
 Owners, managers, cashiers, and servers may call this route. The `server` role is included because on a handheld, sending the order is the act of firing the ticket; the Server App on port `3003` forwards `POST /api/printers/print-kot` to this endpoint for exactly that reason. Receipt printing (`print-bill`) remains closed to servers.
-
----
-
-## Mobile Pairing
-
-### GET `/api/mobile/pairing-code`
-Get current pairing code.
-
-**Response:**
-```json
-{
-  "pairing_code": "123456",
-  "rotated_at": "2025-03-31T10:00:00Z"
-}
-```
-
----
-
-### POST `/api/mobile/rotate-code`
-Generate new pairing code.
 
 ---
 

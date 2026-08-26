@@ -23,7 +23,6 @@ import { kdsRoutes } from './kds';
 import { kdsInfoRoutes } from './kds-info';
 import { posInfoRoutes } from './pos-info';
 import { serverAppInfoRoutes } from './server-app-info';
-import { moreAppsRoutes } from './more-apps';
 import { notifyKdsUpdate } from '../services/kds';
 import { printerRoutes } from './printers';
 import { databaseRoutes } from './database';
@@ -32,8 +31,7 @@ import { menuCsvRoutes } from './menu-csv';
 import { taxPackRoutes } from './tax-packs';
 import { heldOrderRoutes } from './held-orders';
 import { whatsappRoutes } from './whatsapp';
-import { supportTicketRoutes } from './support-ticket';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
 import {
   calculateConfiguredChargeTaxes,
@@ -42,32 +40,9 @@ import {
   invertTaxBreakdown,
   invertTaxSnapshot,
 } from '../services/tax';
-import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
-import QRCode from 'qrcode';
 import { asyncHandler } from '../middleware/async-handler';
 import expressRateLimit from 'express-rate-limit';
-
-// "Cloud POS is not registered" (thrown synchronously by cloud-sync.ts's
-// signedFetch, no network call even attempted) means this store was never
-// claimed in FloAdmin — a distinct, actionable state from a genuine
-// connectivity failure reaching FloAdmin, and the two need different status
-// codes/messages so the frontend (and anyone reading server logs) doesn't
-// mistake "not claimed yet" for "FloAdmin is down".
-function isUnregisteredCloudError(error: any): boolean {
-  return typeof error?.message === 'string' && error.message.includes('is not registered');
-}
-
-function mobilePairingErrorStatus(error: any): number {
-  return isUnregisteredCloudError(error) ? 409 : 502;
-}
-
-function mobilePairingErrorMessage(error: any): string {
-  if (isUnregisteredCloudError(error)) {
-    return 'This POS hasn’t been claimed in FloAdmin yet. Complete registration in FloAdmin, then try generating a pairing code again.';
-  }
-  return error?.message || 'Could not reach FloAdmin';
-}
 
 const inlineCustomerLookupRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
 const inlineOrderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
@@ -100,7 +75,6 @@ export function registerRoutes(app: Express): void {
   app.use('/api/kds-info', kdsInfoRoutes);
   app.use('/api/pos-info', posInfoRoutes);
   app.use('/api/server-app-info', serverAppInfoRoutes);
-  app.use('/api/more-apps', moreAppsRoutes);
   app.use('/api/printers', printerRoutes);
   app.use('/api/db', databaseRoutes);
   app.use('/api/db-tools', databaseToolsRoutes);
@@ -108,7 +82,6 @@ export function registerRoutes(app: Express): void {
   app.use('/api/tax-packs', taxPackRoutes);
   app.use('/api/held-orders', heldOrderRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
-  app.use('/api/support-ticket', supportTicketRoutes);
 
   // Tax preview
   app.post('/api/tax/preview', asyncHandler(async (req, res) => {
@@ -150,57 +123,6 @@ export function registerRoutes(app: Express): void {
     } catch (error: any) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
-    }
-  }));
-
-  // Mobile pairing code — proxies FloAdmin (see cloud-sync.ts generatePairingCode).
-  // Cache-first: repeat GETs (e.g. reopening Settings) must NOT generate a new
-  // code or disconnect paired devices — only a stale/missing cache calls out.
-  app.get('/api/mobile/pairing-code', requireRole('owner'), asyncHandler(async (req, res) => {
-    try {
-      const cached = getCachedPairingCode();
-      if (cached) {
-        return res.json({
-          pairing_code: cached.code,
-          expires_at: cached.expiresAt,
-          qr_data_url: await QRCode.toDataURL(cached.code, { errorCorrectionLevel: 'M', width: 256 }),
-        });
-      }
-      const { code, expires_at } = await cloudSync.generatePairingCode(false);
-      setCachedPairingCode(code, expires_at);
-      res.json({
-        pairing_code: code,
-        expires_at,
-        qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
-      });
-    } catch (error: any) {
-      res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
-    }
-  }));
-
-  // Explicit rotate — disconnects every currently-paired RevFlo device.
-  app.post('/api/mobile/rotate-code', requireRole('owner'), asyncHandler(async (req, res) => {
-    try {
-      const { code, expires_at } = await cloudSync.generatePairingCode(true);
-      setCachedPairingCode(code, expires_at);
-      res.json({
-        pairing_code: code,
-        expires_at,
-        qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
-      });
-    } catch (error: any) {
-      res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
-    }
-  }));
-
-  // Paired RevFlo devices for this store — Settings > Mobile App session list.
-  app.get('/api/mobile/devices', requireRole('owner'), asyncHandler(async (req, res) => {
-    try {
-      const devices = await cloudSync.listPairedDevices();
-      res.json({ devices });
-    } catch (error: any) {
-      console.error('[API] FloAdmin request failed:', error);
-      res.status(502).json({ error: 'Could not reach FloAdmin' });
     }
   }));
 
@@ -536,7 +458,6 @@ export function registerRoutes(app: Express): void {
       });
 
       if (result.eventType) {
-        cloudSync.recordOrderChanged(orderId, result.eventType);
         notifyKdsUpdate();
       }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
@@ -700,7 +621,6 @@ export function registerRoutes(app: Express): void {
       });
 
       if (result.changed) {
-        cloudSync.recordOrderChanged(orderId, 'order.item_restored');
         notifyKdsUpdate();
       }
       res.json({ order: { ...result.updatedOrder, items: result.items } });

@@ -215,7 +215,6 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
 
 export default function OrderHistoryGrid() {
   const tOrders = useTranslations('orders');
-  const tDashboard = useTranslations('dashboard');
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const country = getCountryByCode(currentTenant?.country ?? 'IN');
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', country?.locale);
@@ -226,7 +225,7 @@ export default function OrderHistoryGrid() {
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">{tOrders('historyTitle')}</h1>
-        <Badge variant="outline">{tDashboard('ordersCount', { count: orders.length })}</Badge>
+        <Badge variant="outline">{tOrders('ordersCount', { count: orders.length })}</Badge>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-max content-start items-start">

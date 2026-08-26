@@ -50,6 +50,11 @@ export interface PosSettingsState {
   // from the backend (default true, matching pre-toggle always-on behavior).
   kdsEnabled: boolean;
   kotPrintingEnabled: boolean;
+  // Whether this business keeps a customer book at all. Off means no customer
+  // page, no customer field on the POS and no customer link on a booking —
+  // bookings carry their own name and phone, so they are unaffected. Synced
+  // from the backend on auth load (see Sidebar.tsx).
+  customersEnabled: boolean;
   // Whether the WhatsApp integration is enabled on this tenant. Synced from
   // the backend on auth load so the sidebar can hide the nav entry when the
   // feature is off, and updated by the WhatsApp page after the user toggles.
@@ -84,6 +89,7 @@ export interface PosSettingsState {
   setPrinterTrimDecimals: (v: boolean) => void;
   setKdsEnabled: (v: boolean) => void;
   setKotPrintingEnabled: (v: boolean) => void;
+  setCustomersEnabled: (v: boolean) => void;
   setWhatsappEnabled: (v: boolean) => void;
 }
 
@@ -122,6 +128,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       printerTrimDecimals: false,
       kdsEnabled: true,
       kotPrintingEnabled: true,
+      customersEnabled: true,
       // Default false so the sidebar hides the WhatsApp nav entry until the
       // tenant actually enables the integration. Synced from /api/whatsapp/status
       // on auth load (see Sidebar.tsx) and updated by the WhatsApp page after
@@ -157,6 +164,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setPrinterTrimDecimals: (v) => set({ printerTrimDecimals: v }),
       setKdsEnabled: (v) => set({ kdsEnabled: v }),
       setKotPrintingEnabled: (v) => set({ kotPrintingEnabled: v }),
+      setCustomersEnabled: (v) => set({ customersEnabled: v }),
       setWhatsappEnabled: (v: boolean) => set({ whatsappEnabled: v }),
     }),
     {

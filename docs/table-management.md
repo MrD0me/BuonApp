@@ -245,7 +245,9 @@ read only `status` — so "reserved" was a colour and nothing else, and the POS 
 as `undefined`. That whole path is gone. A booking is now a row with a name, a head count, and
 optionally a time, a phone, a note and a link to a customer already in the book. `POST
 /tables/:id/reserve` books, re-posting corrects, `DELETE` cancels, an order seats it, and the day
-close expires whoever did not turn up.
+close expires whoever did not turn up. The customer link is the only part that can disappear: a
+business that switches the customer book off (`customers_enabled`) keeps booking exactly as before,
+because the booking carries its own name and phone.
 
 **Joining tables** (migration v77). `tables.merged_into` points a folded table at the one leading its
 group. Deliberately one level deep: a member can never itself lead, so there are no chains to walk

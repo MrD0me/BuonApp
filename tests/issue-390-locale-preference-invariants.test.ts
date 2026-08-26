@@ -48,7 +48,6 @@ const {
 } = require('./helpers/test-setup');
 
 const { settingsRoutes } = require('../main/routes/settings');
-const { cloudSync } = require('../main/services/cloud-sync');
 
 function setSetting(db, key, value) {
   db.prepare(
@@ -65,8 +64,6 @@ async function main() {
   console.log('Issue #390: country-scoped regional preference invariants');
   console.log('='.repeat(60));
 
-  const originalRefreshRegistrationProfile = cloudSync.refreshRegistrationProfile.bind(cloudSync);
-  cloudSync.refreshRegistrationProfile = () => {};
 
   const db = initTestDb();
   const app = createApp({ '/api/settings': settingsRoutes });
@@ -176,7 +173,6 @@ async function main() {
 
     console.log('\n✅ Issue #390 locale-preference invariant checks passed');
   } finally {
-    cloudSync.refreshRegistrationProfile = originalRefreshRegistrationProfile;
     server.close();
     try { closeDatabase(); } catch {}
     Module._load = originalLoad;

@@ -13,7 +13,11 @@ import { parsePhoneE164 } from '../lib/phone';
 const router = Router();
 
 // Settings keys stripped from export — these are secrets; exporting them would
-// allow token forgery or cloud credential theft (vuln-0005).
+// allow token forgery or credential theft (vuln-0005). The `cloud_*` and
+// `mobile_pairing_*` keys belong to a cloud bridge this fork no longer has
+// (migration v80 purges them), but they stay on the list: an export can be
+// taken from a database restored out of a backup old enough to still carry
+// them, and a stale secret is exactly what must not travel.
 const EXPORT_SETTINGS_REDACT = new Set([
   'jwt_secret',
   'cloud_api_key',
@@ -21,9 +25,8 @@ const EXPORT_SETTINGS_REDACT = new Set([
   'cloud_pos_hash',
   'mobile_pairing_code',
   'mobile_pairing_code_expires_at',
-  // Bearer-like token used to poll a pending cloud account-deletion request
-  // (see main/services/cloud-sync.ts) — same exposure risk as the cloud
-  // credentials above.
+  // Bearer-like token that used to poll a pending cloud account-deletion
+  // request — same exposure risk as the credentials above.
   'cloud_deletion_status_token',
   // Legacy builds persisted arbitrary upstream errors here; keep exports
   // from carrying that text even before an upgraded database is reopened.
@@ -33,7 +36,8 @@ const EXPORT_SETTINGS_REDACT = new Set([
 // User columns stripped from export — hashes must never leave the server.
 const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 
-// Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
+// Tables excluded entirely. The outbox tables are dropped by migration v80;
+// they are listed for the same reason as the keys above — an old backup.
 const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'kds_pairing_tokens']);
 const USER_ROLES = new Set(['owner', 'manager', 'cashier', 'server', 'chef']);
 

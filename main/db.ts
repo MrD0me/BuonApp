@@ -305,7 +305,6 @@ export function withDatabaseMaintenanceLock<T>(operation: (signal: AbortSignal) 
   });
 }
 
-const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
 function randomSecret(): string {
   return crypto.randomBytes(32).toString('base64')
@@ -634,66 +633,6 @@ export function initDatabase(recoverInterruptedReplacement = true, allowDuringSh
   autoRepairDefaultPrinter();
 }
 
-export function ensureCloudIdentity(): { posHash: string; deviceSecret: string } {
-  let deviceSecret = getSettingValue('cloud_device_secret');
-  if (!deviceSecret) {
-    deviceSecret = randomSecret();
-    upsertSetting('cloud_device_secret', deviceSecret);
-  }
-
-  let posHash = getSettingValue('cloud_pos_hash');
-  if (!posHash) {
-    posHash = `pos_${sha256Hex(deviceSecret).slice(0, 40)}`;
-    upsertSetting('cloud_pos_hash', posHash);
-  }
-
-  insertSettingIfMissing('cloud_device_created_at', now());
-  return { posHash, deviceSecret };
-}
-
-/** Locally-cached RevFlo pairing code (plaintext) — FloAdmin only ever returns it once. */
-export function getCachedPairingCode(): { code: string; expiresAt: string } | null {
-  const code = getSettingValue('mobile_pairing_code');
-  const expiresAt = getSettingValue('mobile_pairing_code_expires_at');
-  if (!code || !expiresAt) return null;
-  if (new Date(expiresAt).getTime() <= Date.now()) return null;
-  return { code, expiresAt };
-}
-
-export function setCachedPairingCode(code: string, expiresAt: string): void {
-  upsertSetting('mobile_pairing_code', code);
-  upsertSetting('mobile_pairing_code_expires_at', expiresAt);
-}
-
-/** Random UUID, generated once and persisted — never derived from store/device identity. */
-export function ensureTelemetryAnonId(): string {
-  let anonId = getSettingValue('telemetry_anon_id');
-  if (!anonId) {
-    anonId = crypto.randomUUID();
-    upsertSetting('telemetry_anon_id', anonId);
-  }
-  return anonId;
-}
-
-/**
- * Anonymous usage telemetry is on by default for new installs and is switched
- * off in Settings > Privacy. First-run setup discloses it rather than asking:
- * a pre-ticked consent box is not valid consent, so we do not present one.
- * Tier 2 store-attributed diagnostics is a separate, explicit opt-in and is
- * never bundled into this stream.
- */
-export function isTelemetryEnabled(): boolean {
-  return getSettingValue('telemetry_enabled') === 'true';
-}
-
-/**
- * Tier 2 store-attributed diagnostics, kept separate from anonymous telemetry.
- * New installs default to enabled; an owner can switch it off in Settings.
- */
-export function isDiagnosticsConsentEnabled(): boolean {
-  return getSettingValue('diagnostics_consent') !== 'false';
-}
-
 /**
  * Kitchen Display System on/off switch (issue #133). Defaults to enabled
  * (missing/anything but the literal 'false') so pre-existing installs that
@@ -701,6 +640,19 @@ export function isDiagnosticsConsentEnabled(): boolean {
  */
 export function isKdsEnabled(): boolean {
   return getSettingValue('kds_enabled') !== 'false';
+}
+
+/**
+ * Customer book on/off switch. A place that only wants bookings and tickets
+ * has no use for a customer registry: turning this off hides the customer
+ * page, the POS customer field and the customer link on a booking, and stops
+ * every surface from creating customer rows. Bookings are unaffected — they
+ * carry their own name and phone (see RESERVATIONS_SCHEMA_SQL). The loyalty
+ * wallet is per-customer, so it cannot outlive the book and is forced off
+ * with it. Defaults to enabled so existing installs keep their book.
+ */
+export function areCustomersEnabled(): boolean {
+  return getSettingValue('customers_enabled') !== 'false';
 }
 
 /**
@@ -720,10 +672,6 @@ export function isServerAppEnabled(): boolean {
  */
 export function isKotPrintingEnabled(): boolean {
   return getSettingValue('kot_printing_enabled') !== 'false';
-}
-
-export function upsertTelemetryLastPing(): void {
-  upsertSetting('telemetry_last_ping_at', now());
 }
 
 /** Atomic multi-statement mutation. Use for anything touching >1 row or >1 table. */
@@ -1379,33 +1327,18 @@ export function captureKitchenStationSecurityState(dbInstance: Database.Database
 
 export type KdsEnabledSettingState = { present: boolean; value: string | null };
 export type RestoreProtectedSettingState = { key: string; present: boolean; value: string | null };
-export type RestoreOutboxState = {
-  cloud: Record<string, unknown>[];
-  support: Record<string, unknown>[];
-  diagnostics: Record<string, unknown>[];
-};
-const RESTORE_PROTECTED_SETTING_KEYS = [
-  'jwt_secret', 'cloud_api_key', 'cloud_device_secret', 'cloud_pos_hash',
-  'telemetry_enabled', 'diagnostics_consent',
-  'mobile_pairing_code', 'mobile_pairing_code_expires_at',
-];
+// Installation-local secrets that must survive a restore rather than being
+// overwritten by whatever the backup file happened to carry.
+const RESTORE_PROTECTED_SETTING_KEYS = ['jwt_secret'];
 
 export function captureRestoreProtectedSettings(dbInstance: Database.Database): RestoreProtectedSettingState[] {
-  const fixedRows = dbInstance.prepare(
+  const rows = dbInstance.prepare(
     `SELECT key, value FROM settings WHERE key IN (${RESTORE_PROTECTED_SETTING_KEYS.map(() => '?').join(',')})`,
   ).all(...RESTORE_PROTECTED_SETTING_KEYS) as { key: string; value: string | null }[];
-  const cloudRows = dbInstance.prepare("SELECT key, value FROM settings WHERE key LIKE 'cloud_%'").all() as { key: string; value: string | null }[];
-  const byKey = new Map([...fixedRows, ...cloudRows].map((row) => [row.key, row.value]));
-  const keys = [...new Set([...RESTORE_PROTECTED_SETTING_KEYS, ...cloudRows.map((row) => row.key)])];
-  const deviceSecret = byKey.get('cloud_device_secret');
-  return keys.map((key) => ({
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  return RESTORE_PROTECTED_SETTING_KEYS.map((key) => ({
     key,
-    // Pairing codes are installation-local, short-lived credentials. Never
-    // carry one across a restore, even if the live installation had one.
-    // A position hash without its device secret is also unsafe to preserve.
-    present: !key.startsWith('mobile_pairing_code')
-      && !(key === 'cloud_pos_hash' && !deviceSecret)
-      && byKey.has(key),
+    present: byKey.has(key),
     value: byKey.get(key) ?? null,
   }));
 }
@@ -1415,37 +1348,21 @@ export function mergeRestoreProtectedSettings(dbInstance: Database.Database, sta
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `);
-  // Cloud identity/configuration is installation-local. Remove every backup
-  // cloud key first so a future or backup-only key cannot cross installations.
-  dbInstance.prepare("DELETE FROM settings WHERE key LIKE 'cloud_%'").run();
   for (const state of states) {
     if (state.present) upsert.run(state.key, state.value, now());
-    else if (!state.key.startsWith('cloud_')) dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
+    else dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
   }
-  const hasDeviceSecret = states.some((state) => state.key === 'cloud_device_secret' && state.present);
-  const hasPosHash = states.some((state) => state.key === 'cloud_pos_hash' && state.present);
-  if (!hasDeviceSecret || !hasPosHash) ensureCloudIdentity();
-}
-
-export function captureRestoreOutboxState(dbInstance: Database.Database): RestoreOutboxState {
-  const pending = (table: string) => dbInstance.prepare(`SELECT * FROM ${table} WHERE status IN ('pending', 'failed', 'sending')`).all() as Record<string, unknown>[];
-  return { cloud: pending('cloud_sync_outbox'), support: pending('support_ticket_outbox'), diagnostics: pending('store_diagnostics_outbox') };
-}
-
-export function mergeRestoreOutboxState(dbInstance: Database.Database, state: RestoreOutboxState): void {
-  dbInstance.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox');
-  const cloud = dbInstance.prepare(`INSERT OR REPLACE INTO cloud_sync_outbox
-    (id, event_type, entity_type, entity_id, payload, status, attempt_count, next_attempt_at, last_error, delivered_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  for (const row of state.cloud) cloud.run(row.id, row.event_type, row.entity_type, row.entity_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.delivered_at || null, row.created_at || now(), row.updated_at || now());
-  const support = dbInstance.prepare(`INSERT OR REPLACE INTO support_ticket_outbox
-    (client_ticket_id, payload, status, support_code, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  for (const row of state.support) support.run(row.client_ticket_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.support_code || null, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.created_at || now(), row.updated_at || now(), row.delivered_at || null);
-  const diagnostics = dbInstance.prepare(`INSERT OR REPLACE INTO store_diagnostics_outbox
-    (event_id, payload, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  for (const row of state.diagnostics) diagnostics.run(row.event_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.created_at || now(), row.updated_at || now(), row.delivered_at || null);
+  // A backup taken before the cloud bridge was removed still carries its API
+  // key, device secret and pairing codes. Migration v80 cleared those from the
+  // live database and a restore must not walk them back in — the data comes
+  // from the backup, the decision not to have them does not.
+  dbInstance.prepare(`
+    DELETE FROM settings
+    WHERE key LIKE 'cloud_%'
+       OR key LIKE 'telemetry_%'
+       OR key LIKE 'mobile_pairing_code%'
+       OR key IN ('anonymous_data_consent', 'diagnostics_consent')
+  `).run();
 }
 
 export function captureKdsEnabledSetting(dbInstance: Database.Database): KdsEnabledSettingState {
@@ -1778,7 +1695,6 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
   const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
   const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
   const preservedProtectedSettings = captureRestoreProtectedSettings(currentDb);
-  const preservedOutboxes = captureRestoreOutboxState(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
 
@@ -1853,7 +1769,6 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
       mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
       mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
       freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
-      mergeRestoreOutboxState(freshDb, preservedOutboxes);
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
@@ -1923,7 +1838,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, preservedOutboxes, signal);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, signal);
 }
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
@@ -2001,7 +1916,6 @@ function dataOnlyRestore(
   preservedStationSecurity: KitchenStationSecurityState[] = [],
   preservedKdsEnabled: KdsEnabledSettingState = { present: false, value: null },
   preservedProtectedSettings: RestoreProtectedSettingState[] = [],
-  preservedOutboxes: RestoreOutboxState = { cloud: [], support: [], diagnostics: [] },
   signal?: AbortSignal,
 ): RestoreResult {
   throwIfDatabaseMaintenanceAborted(signal);
@@ -2112,7 +2026,6 @@ function dataOnlyRestore(
     mergeKdsEnabledSetting(currentDb, preservedKdsEnabled);
     mergeRestoreProtectedSettings(currentDb, preservedProtectedSettings);
     currentDb.prepare('DELETE FROM kds_pairing_tokens').run();
-    mergeRestoreOutboxState(currentDb, preservedOutboxes);
     mergeRevocations(currentDb, preservedRevocations);
     const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
       .filter((key) => !baselineForeignKeyViolations.has(key));
@@ -2386,8 +2299,10 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 3,
     name: 'cloud_identity_and_outbox',
     up: () => {
-      createCloudSyncSchema();
-      seedCloudSyncDefaults();
+      // Was: the cloud outbox table and the settings that armed the bridge to
+      // FloAdmin. This fork does not talk to a cloud, so there is nothing to
+      // create — v80 drops what installs that ran the original step still
+      // carry. The version stamp stays so the sequence keeps its numbering.
     },
   },
   {
@@ -4295,6 +4210,39 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.exec(TABLE_LAYOUTS_SCHEMA_SQL);
     },
   },
+  {
+    version: 79,
+    name: 'add_customers_enabled_setting',
+    up: () => {
+      // Existing installs have been keeping a customer book all along, so the
+      // upgrade leaves it on; only an explicit toggle turns it off.
+      insertSettingIfMissing('customers_enabled', 'true');
+    },
+  },
+  {
+    version: 80,
+    name: 'remove_cloud_bridge',
+    up: () => {
+      // The bridge to FloAdmin and the usage telemetry stream are gone from
+      // the code. What they left behind in the database is worse than dead
+      // weight: `cloud_api_key` and `cloud_device_secret` are live credentials
+      // for a service this install no longer speaks to, and a store that once
+      // registered has its identifiers sitting here for good. Take them out.
+      db.exec(`
+        DROP TABLE IF EXISTS cloud_sync_outbox;
+        DROP TABLE IF EXISTS support_ticket_outbox;
+        DROP TABLE IF EXISTS store_diagnostics_outbox;
+      `);
+      const removed = db.prepare(`
+        DELETE FROM settings
+        WHERE key LIKE 'cloud_%'
+           OR key LIKE 'telemetry_%'
+           OR key LIKE 'mobile_pairing_code%'
+           OR key IN ('anonymous_data_consent', 'diagnostics_consent')
+      `).run().changes;
+      console.log(`[MIGRATION v80] cloud bridge removed; ${removed} setting(s) purged`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4956,31 +4904,6 @@ function createTaxPackSchema(): void {
   `);
 }
 
-function createCloudSyncSchema(): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS cloud_sync_outbox (
-      id TEXT PRIMARY KEY,
-      event_type TEXT NOT NULL,
-      entity_type TEXT,
-      entity_id TEXT,
-      payload TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'sending', 'delivered', 'failed')),
-      attempt_count INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TEXT,
-      last_error TEXT,
-      delivered_at TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_cloud_sync_outbox_status
-      ON cloud_sync_outbox(status, next_attempt_at, created_at);
-    CREATE INDEX IF NOT EXISTS idx_cloud_sync_outbox_entity
-      ON cloud_sync_outbox(entity_type, entity_id);
-  `);
-}
-
 function createWhatsAppSchema(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS whatsapp_messages (
@@ -5025,25 +4948,6 @@ function createWhatsAppSchema(): void {
   `);
 }
 
-function seedCloudSyncDefaults(): void {
-  createCloudSyncSchema();
-
-  const serverUrl = getSettingValue('cloud_server_url');
-  if (!serverUrl) upsertSetting('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
-
-  // Mirrors FloAdmin's own `stores` table defaults (sync + reports on, orders off —
-  // see specs/floadmin.md § api surface). Harmless pre-claim: every send path in
-  // cloud-sync.ts is gated on api_key being present, which only exists after a
-  // human claims the store on FloAdmin, so nothing transmits before then.
-  insertSettingIfMissing('cloud_sync_enabled', '1');
-  insertSettingIfMissing('cloud_orders_enabled', '0');
-  insertSettingIfMissing('cloud_reports_enabled', '1');
-  insertSettingIfMissing('cloud_command_polling_enabled', '1');
-  insertSettingIfMissing('cloud_connected', 'false');
-  insertSettingIfMissing('cloud_registration_status', 'unregistered');
-
-  ensureCloudIdentity();
-}
 
 function seedWhatsAppDefaults(): void {
   insertSettingIfMissing('whatsapp_enabled', 'false');
@@ -5082,18 +4986,8 @@ function seedInstallDefaults(): void {
   insert('tables_required', 'true');
   insert('service_model', 'finedine');
   insert('setup_profile', '');
-  insert('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
-  insert('cloud_connected', 'false');
-  insert('cloud_sync_enabled', '1');
-  insert('cloud_orders_enabled', '0');
-  insert('cloud_reports_enabled', '1');
-  insert('cloud_command_polling_enabled', '1');
-  insert('cloud_registration_status', 'unregistered');
-  insert('anonymous_data_consent', 'true');
-  insert('telemetry_enabled', 'true');
-  insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
-  insert('diagnostics_consent', 'true');
   insert('kds_enabled', 'true');
+  insert('customers_enabled', 'true');
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
   insert('printer_trim_decimals', 'false');
@@ -5116,7 +5010,6 @@ function seedInstallDefaults(): void {
   insert('invoice_financial_year_start_month', '4');
   insert('invoice_financial_year_start_day', '1');
 
-  seedCloudSyncDefaults();
 
   console.log('[DB] Install defaults loaded; first-run setup pending');
 }
@@ -5279,7 +5172,7 @@ export function now(): string {
  * machine-LOCAL time, so `new Date(ts)` silently shifts by the host's offset
  * on machines outside UTC. ISO rows (`...T10:00:00.123Z`, pre-v40 data) parse
  * as UTC natively. Use this everywhere a stored timestamp is turned into a
- * Date (reports, receipts, KDS clocks, auth token staleness, telemetry).
+ * Date (reports, receipts, KDS clocks, auth token staleness).
  */
 export function parseDbTimestamp(ts: string | null | undefined): Date {
   if (!ts) return new Date(NaN);

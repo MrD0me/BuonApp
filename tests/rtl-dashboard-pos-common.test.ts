@@ -6,7 +6,6 @@
  * (Batch D), and extends the same guarantees to the core merchant/cashier
  * operational screens:
  *
- *   - dashboard
  *   - POS ordering, cart, product grid, customer search, held orders
  *   - products/categories (and the product image uploader)
  *   - customers, tables
@@ -23,8 +22,8 @@
  *
  *   2. Directional icons (`ArrowLeft`/`ArrowRight`/`ChevronLeft`/
  *      `ChevronRight`) must carry the shared `.rtl-flip` class so they
- *      mirror under `[dir="rtl"]` (e.g. the dashboard "view all" arrows and
- *      the expandable tax / print-history chevrons).
+ *      mirror under `[dir="rtl"]` (e.g. the expandable tax / print-history
+ *      chevrons).
  *
  *   3. An icon rendered BEFORE its label/text (e.g. `<Plus size={16} ... />
  *      Add product`) needs the gap on its inline-end side, so it must use the
@@ -53,7 +52,6 @@ const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.j
 /** Batch E screen files that must use logical direction utilities. */
 const SCREEN_FILES = [
   'frontend/src/app/(dashboard)/pos/page.tsx',
-  'frontend/src/app/(dashboard)/dashboard/page.tsx',
   'frontend/src/app/(dashboard)/orders/page.tsx',
   'frontend/src/app/(dashboard)/products/page.tsx',
   'frontend/src/app/(dashboard)/customers/page.tsx',

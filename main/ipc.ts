@@ -12,7 +12,7 @@ import { getStatus as getWhatsAppStatus } from './services/whatsapp';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
-// Sensitive keys (jwt_secret, cloud_api_key, cloud_*, tax_registration_number, etc.) are excluded.
+// Sensitive keys (jwt_secret, tax_registration_number, etc.) are excluded.
 const ALLOWED_IPC_KEYS = new Set([
   'business_name', 'timezone', 'currency', 'country',
   'state_code', 'business_address', 'business_phone',
@@ -22,19 +22,13 @@ const ALLOWED_IPC_KEYS = new Set([
   'tax_scheme',
   'loyalty_enabled',
   'printer_method', 'paper_size', 'bill_template', 'bill_footer_message',
-  'telemetry_enabled',
 ]);
 
 const SENSITIVE_SETTING_KEYS = new Set([
   'jwt_secret',
-  'cloud_api_key',
-  'cloud_device_secret',
-  'cloud_deletion_status_token',
-  'cloud_last_error',
 ]);
 
 function maskSetting(key: string, value: string): string {
-  if (key === 'cloud_last_error') return value ? 'Cloud service request failed' : '';
   if (!SENSITIVE_SETTING_KEYS.has(key)) return value;
   return value ? `****${value.slice(-4)}` : '';
 }

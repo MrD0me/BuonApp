@@ -10,9 +10,6 @@ import { getCountryByCode } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate } from '../services/print-templates';
 import { correlationId, type FloErrorCode } from '../errors';
-import { sendEvent } from '../services/telemetry';
-import { cloudSync } from '../services/cloud-sync';
-import { randomUUID } from 'crypto';
 
 export type PrintResult = {
   ok: boolean;
@@ -633,11 +630,11 @@ export async function printKOT(order: any, items: any[], stationName: string, us
 }
 
 /**
- * Reports a print failure on both telemetry tiers: an anonymous, aggregate
- * Tier 1 event (specs/floadmin.md § 6.1) and, only where the merchant has
- * given the separate opt-in, a Tier 2 store-attributed diagnostic event
- * (§ 6.2). Both are best-effort and must never affect the caller's result —
- * a slow or unreachable telemetry endpoint cannot make checkout wait.
+ * Records a print failure in the local log. This used to go out on two
+ * telemetry tiers — an anonymous event and a store-attributed diagnostic —
+ * both of which left the building. The log is where the person standing next
+ * to the printer can read it, and it stays best-effort: nothing here may
+ * affect the caller's result or make checkout wait.
  */
 function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void {
   let connectionType = 'unknown';
@@ -646,42 +643,19 @@ function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void 
   } catch { /* best-effort only */ }
 
   const failureClass = result.failureClass || classifyPrintFailure(result.detail);
-  void sendEvent('print_failed', {
+  console.error('[Printer] print failed', {
     kind,
     code: result.code,
     stage: result.stage,
     connection_type: connectionType,
     correlation_id: result.correlationId,
     failure_class: failureClass,
+    detail: (result.detail || '').slice(0, 300),
     ...(result.platformErrorCode !== undefined ? { platform_error_code: result.platformErrorCode } : {}),
     ...(result.jobId !== undefined ? { job_id: result.jobId } : {}),
+    ...(result.driverName ? { driver_name: result.driverName.slice(0, 160) } : {}),
+    ...(result.printerStatus !== undefined ? { printer_status: result.printerStatus } : {}),
   });
-
-  try {
-    cloudSync.reportDiagnostic({
-      event_id: randomUUID(),
-      event_code: result.code || `print.${kind}.failed`,
-      severity: 'error',
-      correlation_id: result.correlationId,
-      message: (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300),
-      metadata: {
-        connection_type: connectionType,
-        kind,
-        os_platform: process.platform,
-        failure_class: failureClass,
-        ...(result.platformErrorCode !== undefined ? { platform_error_code: result.platformErrorCode } : {}),
-        ...(result.jobId !== undefined ? { job_id: result.jobId } : {}),
-        ...(result.driverName ? { driver_name: result.driverName.slice(0, 160) } : {}),
-        ...(result.printerStatus !== undefined ? { printer_status: result.printerStatus } : {}),
-      },
-      occurred_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    // Never let a diagnostics-plumbing error (e.g. a mid-migration DB) turn a
-    // printer failure into an unhandled rejection — the caller must still get
-    // back the real PrintResult so the cashier sees the actual printer error.
-    console.error('[Printer] reportDiagnostic failed (non-fatal):', err);
-  }
 }
 
 /** Typed adapters used by API callers while legacy boolean callers migrate. */

@@ -30,8 +30,6 @@ import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
-import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import {
   buildAppendItemsFingerprint,
@@ -76,10 +74,9 @@ export default function POSPage() {
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
-  const { customerMandatory, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
+  const { customerMandatory, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, customersEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
-  const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
 
@@ -101,11 +98,6 @@ export default function POSPage() {
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [supportError, setSupportError] = useState<{ code: string; message: string; payload: Record<string, unknown> } | null>(null);
-  const [sentTicketId, setSentTicketId] = useState<string | null>(null);
-  const delivery = useSupportTicketStatus(sentTicketId);
-  const diagnosticsPreview = useSupportDiagnosticsPreview(
-    supportError ? String(supportError.payload.category || 'general') : null,
-  );
   const activeUserId = user?.id == null ? null : String(user.id);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
@@ -451,7 +443,7 @@ export default function POSPage() {
       toast.error(t('cartEmpty'));
       return;
     }
-    if (customerMandatory && !cart.customerId) {
+    if (customersEnabled && customerMandatory && !cart.customerId) {
       setShowCustomerPrompt(true);
       return;
     }
@@ -921,61 +913,21 @@ export default function POSPage() {
 
   return (
     <>
+      {/* A print failure used to offer to file a support ticket with the
+          vendor. There is no vendor to file with any more, so the panel does
+          what is actually useful on the floor: name the failure and show the
+          detail, for whoever walks over to the printer. */}
       {supportError && (
         <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-white p-4 shadow-xl">
-          {sentTicketId ? (
-            <>
-              <p className="font-semibold text-red-800">{tSupport('requestQueued')}</p>
-              {delivery.status === 'delivered' && delivery.supportCode ? (
-                <>
-                  <p className="mt-1 text-sm font-semibold text-gray-800">{tSupport('supportCode')}: <Ltr as="span" className="font-mono">{delivery.supportCode}</Ltr></p>
-                  <p className="mt-0.5 text-xs text-gray-500">{tSupport('supportCodeHint')}</p>
-                </>
-              ) : (
-                <p className="mt-1 text-xs text-gray-500">
-                  {delivery.status === 'failed' ? tSupport('stillQueuedLocally') : tSupport('confirmingDelivery')}
-                </p>
-              )}
-              <div className="mt-3">
-                <button className="rounded border px-3 py-2 text-sm" onClick={() => { setSupportError(null); setSentTicketId(null); }}>{tSupport('dismiss')}</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="font-semibold text-red-800">{t('printingFailed')}</p>
-              <p className="mt-1 text-sm text-gray-600">{supportError.message}</p>
-              <details className="mt-2 text-xs text-gray-500">
-                <summary className="cursor-pointer">{tSupport('showPayload')}</summary>
-                <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2">{JSON.stringify(
-                  diagnosticsPreview
-                    ? { ...supportError.payload, diagnostics: { ...(supportError.payload.diagnostics as Record<string, unknown> | undefined), ...diagnosticsPreview } }
-                    : supportError.payload,
-                  null, 2,
-                )}</Ltr>
-              </details>
-              <div className="mt-3 flex gap-2">
-                <button
-                  className="rounded bg-brand px-3 py-2 text-sm font-medium text-white"
-                  onClick={async () => {
-                    const clientTicketId = crypto.randomUUID();
-                    try {
-                      await api.post('/support-ticket', {
-                        ...supportError.payload,
-                        subject: 'FloCafe printing problem',
-                        correlation_id: crypto.randomUUID(),
-                        client_ticket_id: clientTicketId,
-                      });
-                      toast.success(tSupport('queued'));
-                      setSentTicketId(clientTicketId);
-                    } catch {
-                      toast.error(t('supportRequestQueueFailed'));
-                    }
-                  }}
-                >{tSupport('getHelp')}</button>
-                <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>{tSupport('dismiss')}</button>
-              </div>
-            </>
-          )}
+          <p className="font-semibold text-red-800">{t('printingFailed')}</p>
+          <p className="mt-1 text-sm text-gray-600">{supportError.message}</p>
+          <details className="mt-2 text-xs text-gray-500">
+            <summary className="cursor-pointer">{t('printFailureDetail')}</summary>
+            <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2">{JSON.stringify(supportError.payload, null, 2)}</Ltr>
+          </details>
+          <div className="mt-3">
+            <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>{t('dismiss')}</button>
+          </div>
         </div>
       )}
       <PosTopbar tables={tables} onShowTablePicker={() => setShowTablePicker(true)} />

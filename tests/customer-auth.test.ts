@@ -77,6 +77,7 @@ async function main() {
     ['GET',    `/api/customers/${custId}/wallet`],
     ['POST',   '/api/customers/', { name: 'Attacker', phone: '5559999999' }],
     ['PUT',    `/api/customers/${custId}`, { name: 'Modified' }],
+    ['DELETE', `/api/customers/${custId}`],
     ['DELETE', '/api/customers/admin/cleanup'],
   ];
 
@@ -111,7 +112,7 @@ async function main() {
   console.log('\n── 4. Write endpoints: cashier, manager + owner allowed to PUT ──');
 
   // Cashiers can correct a customer's name/phone from the POS (e.g. a typo
-  // caught at checkout). There's no DELETE to worry about — see 4b below.
+  // caught at checkout), but erasing one is owner/manager work — see 4b below.
   for (const [label, auth] of [['cashier', cashierAuth], ['manager', managerAuth], ['owner', ownerAuth]]) {
     const putRes = await request(app)
       .put(`/api/customers/${custId}`)
@@ -120,18 +121,42 @@ async function main() {
     assertEqual(putRes.status, 200, `${label} can PUT /api/customers/:id`);
   }
 
-  console.log('\n── 4b. Customers are never deletable — DELETE /:id does not exist ──');
+  console.log('\n── 4b. Deleting a customer: owner/manager only, and it erases ──');
 
-  // Product decision: a customer record must never be removed (soft or hard)
-  // — orders/bills/loyalty_ledger reference it with no FK, and every
-  // customer's history/loyalty standing outweighs the cost of a stale row.
-  // Assert this for the highest-privilege role too, so the route can't
-  // quietly come back gated behind "owner only".
+  // A guest who asks to be forgotten has to actually be gone: `is_active = 0`
+  // was never a delete, since the phone lookup that de-duplicates the book
+  // ignores the flag and walks an "archived" guest straight back in. What the
+  // delete must not touch is the money — orders and bills keep every amount
+  // and only lose the name attached to them.
+  db.prepare(
+    `INSERT INTO orders (order_number, customer_id, type, status, total, created_at, updated_at)
+     VALUES (?, ?, 'takeaway', 'completed', 42.5, ?, ?)`
+  ).run('ORD-DEL-001', custId, now(), now());
+  db.prepare(
+    `INSERT INTO loyalty_ledger (customer_id, type, amount, description, created_at, updated_at)
+     VALUES (?, 'credit', 10, 'test credit', ?, ?)`
+  ).run(custId, now(), now());
+
+  for (const [label, auth] of [['server', waiterAuth], ['cashier', cashierAuth]]) {
+    const res = await request(app).delete(`/api/customers/${custId}`).set(auth as any);
+    assertEqual(res.status, 403, `${label} cannot DELETE /api/customers/:id`);
+  }
+
   const ownerDeleteRes = await request(app).delete(`/api/customers/${custId}`).set(ownerAuth);
-  assertEqual(ownerDeleteRes.status, 404, 'DELETE /api/customers/:id does not exist, even for owner');
+  assertEqual(ownerDeleteRes.status, 200, 'owner can DELETE /api/customers/:id');
 
-  const stillActive = db.prepare('SELECT is_active FROM customers WHERE id = ?').get(custId) as any;
-  assertEqual(stillActive.is_active, 1, 'customer row is untouched — not soft-deleted');
+  const gone = db.prepare('SELECT id FROM customers WHERE id = ?').get(custId) as any;
+  assertEqual(gone, undefined, 'customer row is really gone, not just flagged inactive');
+
+  const detached = db.prepare('SELECT customer_id, total FROM orders WHERE order_number = ?').get('ORD-DEL-001') as any;
+  assertEqual(detached.customer_id, null, 'the order keeps standing, detached from the deleted customer');
+  assertEqual(detached.total, 42.5, 'the order keeps its amount, so the takings are untouched');
+
+  const ledgerLeft = db.prepare('SELECT COUNT(*) AS count FROM loyalty_ledger WHERE customer_id = ?').get(custId) as any;
+  assertEqual(ledgerLeft.count, 0, 'the loyalty ledger goes with the customer it belonged to');
+
+  const missingDelete = await request(app).delete('/api/customers/no-such-customer').set(ownerAuth);
+  assertEqual(missingDelete.status, 404, 'deleting a customer that does not exist returns 404');
 
   console.log('\n── 5. Admin cleanup: owner only ─────────────────────────────');
 
@@ -145,6 +170,43 @@ async function main() {
 
   const chefList = await request(app).get('/api/customers/').set(chefAuth);
   assertEqual(chefList.status, 403, 'chef cannot GET /api/customers/');
+
+  console.log('\n── 7. Customer book switched off: nothing new gets written ──');
+
+  // A business that keeps no customer book must not gain one by the side door
+  // — the waiter app files a ticket under a guest, and that call has to be
+  // refused at the API, not just hidden in the UI. Reads stay open so orders
+  // linked back when the book was on still show who they belong to.
+  const bookOffCustId = 'cust-book-off-001';
+  db.prepare(
+    `INSERT INTO customers (id, name, phone, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, 1, ?, ?)`
+  ).run(bookOffCustId, 'Book Off Customer', '5550000002', now(), now());
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('customers_enabled', 'false', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(now());
+
+  const bookOffPost = await request(app)
+    .post('/api/customers/')
+    .set(ownerAuth)
+    .send({ name: 'Walk In', phone: '5551230000' });
+  assertEqual(bookOffPost.status, 403, 'POST /api/customers is refused while the book is off');
+  assertEqual(bookOffPost.body.code, 'customers_disabled', 'the refusal names the reason');
+
+  const bookOffPut = await request(app)
+    .put(`/api/customers/${bookOffCustId}`)
+    .set(ownerAuth)
+    .send({ name: 'Renamed' });
+  assertEqual(bookOffPut.status, 403, 'PUT /api/customers/:id is refused while the book is off');
+
+  const bookOffList = await request(app).get('/api/customers/').set(ownerAuth);
+  assertEqual(bookOffList.status, 200, 'reads stay open while the book is off');
+
+  const bookOffDelete = await request(app).delete(`/api/customers/${bookOffCustId}`).set(ownerAuth);
+  assertEqual(bookOffDelete.status, 200, 'erasing a customer still works while the book is off');
+
+  db.prepare("UPDATE settings SET value = 'true' WHERE key = 'customers_enabled'").run();
 
   const results = getResults();
   console.log(`\nResults: ${results.passed}/${results.total} passed`);

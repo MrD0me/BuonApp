@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
-import { sendEvent } from '../services/telemetry';
 
 const router = Router();
 
@@ -47,7 +46,6 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const max = db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS n FROM payment_methods').get() as { n: number };
     const result = db.prepare('INSERT INTO payment_methods (name, is_active, sort_order, created_at, updated_at) VALUES (?, 1, ?, ?, ?)')
       .run(name, Number(max.n) + 10, now(), now());
-    void sendEvent('feature_used', { feature: 'custom_payment_methods', action: 'added' });
     res.status(201).json({ payment_method: list(true).find((row) => row.id === Number(result.lastInsertRowid)) });
   } catch (error: any) {
     const duplicate = String(error.message || '').includes('UNIQUE constraint');
@@ -67,7 +65,6 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     if (!Number.isSafeInteger(order) || order < 0) return res.status(400).json({ error: 'Invalid sort order' });
     db.prepare('UPDATE payment_methods SET name = ?, is_active = ?, sort_order = ?, updated_at = ? WHERE id = ?')
       .run(name, active, order, now(), id);
-    if (active !== current.is_active) void sendEvent('feature_used', { feature: 'custom_payment_methods', action: active ? 'enabled' : 'disabled' });
     res.json({ payment_method: list(true).find((row) => row.id === id) });
   } catch (error: any) {
     const duplicate = String(error.message || '').includes('UNIQUE constraint');
@@ -128,7 +125,6 @@ router.post('/:id/merge', requireRole('owner', 'manager'), (req: Request, res: R
       return { source_name: source.name, target_name: targetName, affected_payments: affected };
     });
     res.json({ merge: result, payment_methods: list(true) });
-    void sendEvent('feature_used', { feature: 'custom_payment_methods', action: 'merged' });
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message || 'Unable to merge payment methods' });
   }
