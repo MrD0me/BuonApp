@@ -1,6 +1,5 @@
-const CACHE_NAME = 'flo-v17';
+const CACHE_NAME = 'flo-v18';
 const PRECACHE_URLS = [
-  '/dashboard',
   '/pos',
   '/manifest.json',
   '/icon-192.png',
@@ -54,7 +53,7 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => caches.match(event.request).then((cached) =>
         cached || (event.request.mode === 'navigate'
-          ? caches.match('/dashboard')
+          ? caches.match('/pos')
           : Promise.resolve(undefined))
       ).then((cached) => cached || new Response('Offline', { status: 503, statusText: 'Offline' })))
   );

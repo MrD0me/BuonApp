@@ -258,17 +258,258 @@ List all tables.
 ---
 
 ### POST `/api/tables`
-Create table.
+Create table. Owner/manager. Accepts `number` (or the legacy `name`), `capacity`, `room_id`,
+`shape` (`rect`/`round`), `width`, `height`, `section`, `position_x`, `position_y`,
+`kitchen_station_id`.
+
+Without `room_id` the table joins the first room, creating one if none exists. Without a position it
+is placed on the first free spot in that room; without a size it is sized from its seat count.
 
 ---
 
-### PATCH `/api/tables/:id`
-Update table.
+### PUT `/api/tables/:id`
+Update table. Owner/manager. Only the fields present in the body are written, so an optional
+field can be cleared by sending it as `""` or `null`. Renaming — or moving the table to another
+room — retags the labels on the table's open orders; closed orders keep the label they were served
+under. This is also how the map saves a drag: `{ "position_x": 320, "position_y": 180 }`.
 
 ---
 
 ### DELETE `/api/tables/:id`
-Delete table.
+Delete table for real. Owner/manager. History survives because each order carries its own
+`table_label`/`room_label` snapshot; the order's `table_id` is set to `NULL`.
+
+**Response (409):** refused while something live still points at the table.
+```json
+{ "error": "Cannot delete a table with an open order. Close or move the order first.",
+  "code": "table_has_open_order" }
+```
+`code` is `table_has_open_order` or `table_has_held_cart`.
+
+---
+
+## Rooms
+
+The dining rooms the map is drawn on. Sizes are abstract units, not pixels: the renderer scales a
+room to the width it is given. See `docs/table-management.md`.
+
+### GET `/api/rooms`
+The whole floor: every room with its tables, each table carrying its live order. Any authenticated
+role. Query: `tables=false` omits the tables, `active=1` hides deactivated rooms.
+
+**Response (200):**
+```json
+{
+  "rooms": [
+    {
+      "id": "room-a1b2c3d4", "name": "Sala Interna", "sort_order": 0,
+      "width": 1200, "height": 800, "is_active": 1,
+      "tables": [
+        { "id": "tbl-1", "name": "T1", "capacity": 4, "status": "occupied",
+          "position_x": 40, "position_y": 40, "width": 150, "height": 110, "shape": "rect",
+          "activeOrder": { } }
+      ]
+    }
+  ],
+  "orphanTables": []
+}
+```
+`orphanTables` holds any table with no room; it should stay empty, and is surfaced rather than
+hidden so such a table can still be opened and assigned.
+
+---
+
+### POST `/api/rooms`
+Create room. Owner/manager. Accepts `name` (required, unique), `width`, `height`, `sort_order`.
+Sizes must be between 400 and 6000.
+
+**Response (400):** `{ "code": "room_name_taken" }` when the name is in use.
+
+---
+
+### PUT `/api/rooms/:id`
+Rename, resize or reorder a room. Owner/manager. Only the fields present in the body are written.
+
+---
+
+### DELETE `/api/rooms/:id`
+Delete room. Owner/manager. Refused while it still holds tables, rather than scattering a floor plan
+or deleting the tables behind one click.
+
+**Response (409):** `{ "code": "room_not_empty", "tables": 6 }`
+
+---
+
+## Reservations
+
+Bookings for the service being run right now, held against a table that exists. See
+`docs/table-management.md`. A table's booking rides along on every read that returns tables
+(`GET /tables`, `GET /tables/:id`, `GET /rooms`) as a `reservation` field.
+
+### POST `/api/tables/:id/reserve`
+Book a table. Owner/manager. `name` is required; `guests` defaults to 2; `booked_time` (`HH:MM`),
+`phone`, `notes` and `customer_id` are optional. Re-posting replaces the standing booking, which is
+how a name or a head count gets corrected.
+
+**Response (400):** `reservation_name_required`, `reservation_time_invalid`
+**Response (409):** `table_has_open_order` — the table is already serving.
+
+---
+
+### DELETE `/api/tables/:id/reserve`
+Drop the standing booking and free the table. Owner/manager.
+
+**Response (404):** `{ "code": "no_reservation" }`
+
+---
+
+### GET `/api/reservations`
+The day's booking sheet, ordered the way the evening runs (timed first, then untimed).
+Owner/manager. Returns `{ "day": null, "reservations": [] }` when no day is open.
+
+---
+
+### POST `/api/reservations`
+Take a booking down. Owner/manager. `name` required, `guests` defaults to 2; `booked_time`
+(`HH:MM`), `phone`, `notes`, `customer_id` and `table_id` are optional. Without a table the booking
+waits on the sheet, which is the normal case.
+
+---
+
+### PATCH `/api/reservations/:id`
+Edit a pending booking. Owner/manager. Only the fields sent are written.
+
+**Response (409):** `{ "code": "reservation_not_pending" }`
+
+---
+
+### POST `/api/reservations/:id/assign`
+Give the booking a table, or take its table away with `{ "table_id": null }`. Owner/manager.
+
+Whatever was on the target table inherits what this booking had, so a swap is the same call as a
+plain assignment. The response carries `displaced` when another booking had to move.
+
+**Response (409):** `reservation_not_pending`, `table_has_open_order`, `table_is_merged`
+
+---
+
+### POST `/api/reservations/:id/cancel` · `/no-show` · `/reopen`
+Close a pending booking, or put a seating made by mistake back on the sheet. Owner/manager.
+Reopening returns the booking with no table, since the one it had is now busy.
+
+**Response (409):** `reservation_not_seated` when reopening something that was never seated.
+
+---
+
+## Joined tables
+
+### POST `/api/tables/:id/merge`
+Push tables together for one party. Owner/manager. The table in the path leads the group and keeps
+the order; `table_ids` lists the ones folded into it.
+
+**Response (409):** `table_has_open_order`, `table_has_held_cart`, `table_has_reservation`,
+`table_already_merged`, `table_leads_group` — the message names the table in the way.
+
+---
+
+### POST `/api/tables/:id/split`
+Break the group up. Owner/manager. Works from the leader or from any member.
+
+**Response (400):** `{ "code": "not_merged" }`
+
+---
+
+## Floor plans
+
+Saved maps, so a room emptied at close can be rebuilt in one action.
+
+### GET `/api/table-layouts`
+List saved plans with their room and table counts. Owner/manager.
+
+### POST `/api/table-layouts`
+Save the floor as it stands, under `name`. Owner/manager. Re-using a name overwrites that plan.
+
+**Response (400):** `layout_name_required`, `layout_empty`
+
+### POST `/api/table-layouts/:id/apply`
+Rebuild the floor from a plan. Owner/manager.
+
+**Response (409):** `{ "code": "layout_apply_blocked", "blockers": [{ "number": "T6", "reason": "table_has_open_order" }] }`
+
+### DELETE `/api/table-layouts/:id`
+Delete a plan. Owner/manager.
+
+---
+
+## Service Days
+
+The business-day cycle. Orders are stamped with the day that was open when they were placed, so a
+service running past midnight stays one day. See `docs/table-management.md`.
+
+### GET `/api/service-days/current`
+The day being served, with live totals and what would block a close. Owner/manager.
+
+**Response (200):**
+```json
+{
+  "day": { "id": "sd-20260824-a1b2c3", "business_date": "2026-08-24", "status": "open" },
+  "summary": { "orders": { "total": 42 }, "covers": 96, "takings": { "total": 1284.5 } },
+  "blockers": { "openOrders": [], "unpaidBills": [] }
+}
+```
+`day` is `null` when no day is open.
+
+---
+
+### GET `/api/service-days`
+List days, newest first. Owner/manager. Query: `limit` (default 60, max 200), `offset`.
+Rows carry `orders_count`, `covers` and `takings` for the picker.
+
+---
+
+### GET `/api/service-days/:id`
+One day with its summary and orders. Owner/manager. A closed day reports the totals frozen at
+close; an open or backfilled one reports totals computed live.
+
+---
+
+### POST `/api/service-days/open`
+Open the day explicitly, attributing it to the caller. Owner/manager. Placing an order with no day
+running opens one anyway — this exists so the opening has an operator, not to gate service.
+
+**Response (409):** `{ "code": "service_day_already_open", "day": { ... } }`
+
+---
+
+### POST `/api/service-days/:id/close`
+Close the day: freeze the totals, snapshot the room, clear held carts, free the tables.
+Owner/manager.
+
+**Body:** `{ "clear_tables": false, "force": false, "reason": null }`
+
+`clear_tables` deletes the tables so the next day starts from a blank map. `force` is owner-only,
+requires `reason`, and leaves open orders (and their tables) alone.
+
+**Response (200):**
+```json
+{ "day": { "status": "closed" }, "summary": { }, "tablesCleared": 12, "tablesKept": 0, "heldCartsCleared": 1 }
+```
+
+**Response (409):** `{ "code": "service_day_has_blockers", "blockers": { "openOrders": [], "unpaidBills": [] } }`
+
+---
+
+### POST `/api/service-days/:id/reopen`
+Reopen a closed day, dropping its frozen summary so totals go live again. Owner only, and only
+when no other day is open.
+
+---
+
+### POST `/api/service-days/:id/print`
+Print the closing report on the thermal printer. Owner/manager.
+
+**Body:** `{ "preview": false, "useUnicode": false }` — `preview: true` returns the rendered text
+instead of printing.
 
 ---
 
@@ -747,7 +988,8 @@ List customers.
 ---
 
 ### POST `/api/customers`
-Create customer.
+Create customer. Returns `403` with `code: "customers_disabled"` when the
+`customers_enabled` setting is off (the business keeps no customer book).
 
 **Request:**
 ```json
@@ -755,6 +997,24 @@ Create customer.
   "name": "John Doe",
   "phone": "+919876543210",
   "email": "john@email.com"
+}
+```
+
+---
+
+### DELETE `/api/customers/:id`
+Erase a customer for good (owner/manager). The row is removed, not flagged
+inactive. Orders, bills, held orders, reservations and WhatsApp messages keep
+their amounts and only lose the link, so reporting totals are unaffected; the
+customer's loyalty ledger is deleted with them.
+
+**Response:**
+```json
+{
+  "deleted": true,
+  "detached_orders": 12,
+  "discarded_ledger_entries": 3,
+  "discarded_wallet_balance": 40
 }
 ```
 
@@ -788,32 +1048,70 @@ Earn loyalty points.
 
 ## Reports
 
-### GET `/api/reports/sales`
-Daily/monthly sales report.
+The owner dashboard these once fed is gone; a service day's own close summary
+(`GET /api/service-days/:id`) is where a restaurant reads its numbers. What
+remains here is the money-and-tax read side over a date range. All three are
+owner/manager only. Dates are UTC `YYYY-MM-DD`; a malformed date falls back to
+today rather than erroring.
 
-**Headers:** `Authorization: Bearer <token>`
-
-**Query params:** `?date=2025-03-31`
+### GET `/api/reports/summary`
+One day's takings. **Query params:** `?date=2026-03-31` (defaults to today).
 
 **Response:**
 ```json
 {
-  "date": "2025-03-31",
-  "total_revenue": 15000,
-  "order_count": 45,
-  "avg_order_value": 333.33
+  "summary": {
+    "date": "2026-03-31",
+    "orders": { "count": 45, "total": 15000 },
+    "bills": { "count": 44, "total": 14800, "collected": 14650 },
+    "customers": { "new": 3 },
+    "ordersByStatus": [{ "status": "completed", "count": 42 }],
+    "paymentMethods": [{ "method": "cash", "count": 20, "total": 6400 }]
+  }
 }
 ```
 
 ---
 
-### GET `/api/reports/x-report`
-X Report (current shift).
+### GET `/api/reports/sales`
+Takings over a range, split by day, payment method and order type. Payment
+lines are attributed to their own timestamp, falling back to the bill's
+`paid_at` then `created_at`.
+
+**Query params:** `?start_date=2026-03-01&end_date=2026-03-31`
+
+**Response:**
+```json
+{
+  "sales": {
+    "startDate": "2026-03-01",
+    "endDate": "2026-03-31",
+    "dailySales": [{ "date": "2026-03-01", "orders": 45, "total": 15000 }],
+    "byPaymentMethod": [{ "method": "cash", "count": 320, "total": 98400 }],
+    "byOrderType": [{ "type": "dine_in", "count": 400, "total": 120000 }]
+  }
+}
+```
 
 ---
 
-### GET `/api/reports/z-report`
-Z Report (close shift).
+### GET `/api/reports/tax-components`
+Tax carried by the bills in a range, aggregated by component.
+
+**Query params:** `?start_date=2026-03-01&end_date=2026-03-31`
+
+**Response:**
+```json
+{
+  "taxComponents": {
+    "startDate": "2026-03-01",
+    "endDate": "2026-03-31",
+    "billCount": 128,
+    "taxAmount": 640.5,
+    "components": [{ "title": "GST", "rate": 5, "amount": 640.5 }]
+  }
+}
+```
 
 ---
 
@@ -1034,26 +1332,6 @@ Successful responses report what actually happened. When there is nothing new to
 `reason` is `nothing_pending` for a normal send with an empty queue, or `batch_not_found` when a re-print names a round that does not exist. If the print fails, the round claim is released so the rows return to the queue and the cashier can simply send again.
 
 Owners, managers, cashiers, and servers may call this route. The `server` role is included because on a handheld, sending the order is the act of firing the ticket; the Server App on port `3003` forwards `POST /api/printers/print-kot` to this endpoint for exactly that reason. Receipt printing (`print-bill`) remains closed to servers.
-
----
-
-## Mobile Pairing
-
-### GET `/api/mobile/pairing-code`
-Get current pairing code.
-
-**Response:**
-```json
-{
-  "pairing_code": "123456",
-  "rotated_at": "2025-03-31T10:00:00Z"
-}
-```
-
----
-
-### POST `/api/mobile/rotate-code`
-Generate new pairing code.
 
 ---
 

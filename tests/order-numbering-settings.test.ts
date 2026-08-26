@@ -84,6 +84,37 @@ async function main() {
     const badDay = await request(app).put('/api/settings/order-numbering').send({ invoice_financial_year_start_day: 0 });
     assertEqual(badDay.status, 400, 'rejects invalid FY day');
 
+    // The endpoint above is only half the story: the settings page buffers this
+    // card and commits it through the save bar, which appears only when the
+    // page's `isDirty` says something changed. The card was missing from that
+    // list, so a typed prefix looked accepted and was thrown away on the way
+    // out — no save button was ever offered. Guard the wiring, not just the API.
+    console.log('\n4. The settings page tracks the numbering card as unsaved work');
+    const settingsPage = fs.readFileSync(
+      path.join(__dirname, '..', 'frontend/src/app/(dashboard)/settings/page.tsx'),
+      'utf8',
+    );
+    const dirtyStart = settingsPage.indexOf('const isDirty');
+    assertEqual(dirtyStart > -1, true, 'the settings page still computes an isDirty flag');
+    const dirtyExpression = settingsPage.slice(dirtyStart, settingsPage.indexOf(';', dirtyStart));
+    for (const buffered of [
+      'orderNumberForm', 'savedOrderNumberForm',
+      'printingForm', 'savedPrinting',
+      'billForm', 'savedBillForm',
+      'savedBusiness',
+    ]) {
+      assertEqual(
+        dirtyExpression.includes(buffered),
+        true,
+        `isDirty compares ${buffered} — a buffered form left out of it loses the edit silently`,
+      );
+    }
+    assertEqual(
+      settingsPage.includes('saveOrderNumbering(true)'),
+      true,
+      'the save bar commits the numbering card along with the rest',
+    );
+
     console.log('\n' + '='.repeat(50));
     const results = getResults();
     console.log(`Results: ${results.passed}/${results.total} passed, ${results.failed} failed`);

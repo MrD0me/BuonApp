@@ -49,8 +49,14 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
     capacity: 4,
     status: 'occupied',
     kitchen_station_id: 1,
+    room_id: null,
     floor: 'Ground',
     section: 'Main',
+    position_x: null,
+    position_y: null,
+    width: null,
+    height: null,
+    shape: 'rect',
     is_active: true,
   };
 

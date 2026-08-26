@@ -128,7 +128,6 @@ async function main() {
     { method: 'get', path: '/api/printers' },
     { method: 'get', path: '/api/db/export' },
     { method: 'get', path: '/api/database-tools/health-check' },
-    { method: 'get', path: '/api/mobile/pairing-code' },
   ];
 
   for (const route of protectedRoutes) {
@@ -146,9 +145,6 @@ async function main() {
   const ownerOnlyRoutes = [
     { method: 'get', path: '/api/db/export' },
     { method: 'get', path: '/api/db-tools/health-check' },
-    { method: 'get', path: '/api/mobile/pairing-code' },
-    { method: 'get', path: '/api/mobile/devices' },
-    { method: 'post', path: '/api/mobile/rotate-code' },
   ];
 
   for (const route of ownerOnlyRoutes) {

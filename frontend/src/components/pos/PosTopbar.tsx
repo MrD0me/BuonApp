@@ -18,14 +18,17 @@ export default function PosTopbar({ tables, onShowTablePicker }: Props) {
   const cart = useCartStore();
   const { currentTenant } = useAuthStore();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
+  const customersEnabled = usePosSettingsStore((s) => s.customersEnabled);
   const t = useTranslations('pos');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const showTableBtn = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
 
   return (
     <div className="flex items-center gap-3 border-b bg-white shrink-0 px-4 py-2.5">
+      {/* No customer book on this business → nothing to search, and the
+          table button takes over the row. */}
       <div className="flex-1 min-w-0">
-        <CustomerSearch variant="topbar" />
+        {customersEnabled && <CustomerSearch variant="topbar" />}
       </div>
 
       {/* Select Table — between customer search and printer */}

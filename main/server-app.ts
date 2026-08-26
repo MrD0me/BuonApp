@@ -183,6 +183,10 @@ export function startServerApp(): Promise<void> {
         language: settings.language || null,
         country: settings.country || null,
         kds_enabled: settings.kds_enabled !== 'false',
+        // The waiter app asks for a name and a number to file the order under
+        // a customer. With the book switched off there is nobody to file it
+        // with, so those two fields come off the screen (see server-standalone).
+        customers_enabled: settings.customers_enabled !== 'false',
       });
     });
 

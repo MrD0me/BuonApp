@@ -2,7 +2,7 @@
   "name": "Flo",
   "short_name": "Flo",
   "description": "Smart Point of Sale for restaurants, salons, and retail",
-  "start_url": "/dashboard",
+  "start_url": "/pos",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#3248FF",

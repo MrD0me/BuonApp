@@ -44,16 +44,10 @@ const {
 } = require('./helpers/test-setup');
 
 const { settingsRoutes } = require('../main/routes/settings');
-const { cloudSync } = require('../main/services/cloud-sync');
 
 async function main() {
   console.log('Issue #389: tenant timezone override independent of country default');
   console.log('='.repeat(60));
-
-  // refreshRegistrationProfile is best-effort FloAdmin telemetry; there is no
-  // cloud account in this fixture, so pin it to a no-op for determinism.
-  const originalRefreshRegistrationProfile = cloudSync.refreshRegistrationProfile.bind(cloudSync);
-  cloudSync.refreshRegistrationProfile = () => {};
 
   const db = initTestDb();
   const app = createApp({ '/api/settings': settingsRoutes });
@@ -102,7 +96,6 @@ async function main() {
     console.log('  ✓ custom timezone persists and invalid timezones are rejected');
     console.log('\n✅ Issue #389 settings-route timezone checks passed');
   } finally {
-    cloudSync.refreshRegistrationProfile = originalRefreshRegistrationProfile;
     server.close();
     try { closeDatabase(); } catch {}
     Module._load = originalLoad;

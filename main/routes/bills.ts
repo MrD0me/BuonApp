@@ -24,7 +24,6 @@ import {
   scaleTaxSnapshots,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
-import { sendEvent } from '../services/telemetry';
 
 const router = Router();
 
@@ -1545,7 +1544,6 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
       });
       return billIds.map((id) => parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(id)));
     });
-    void sendEvent('feature_used', { feature: 'split_checks', action: 'created', check_count: result.length });
     notifyOrderUpdated();
     res.status(201).json({ bills: result });
   } catch (error: any) {

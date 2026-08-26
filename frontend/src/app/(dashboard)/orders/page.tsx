@@ -121,7 +121,7 @@ export default function OrdersPage() {
   const heldOrdersStore = useHeldOrdersStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { setTablesRequired, autoPrintBill, printerUseUnicode } = usePosSettingsStore();
+  const { setTablesRequired, autoPrintBill, printerUseUnicode, customersEnabled } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
@@ -1125,7 +1125,7 @@ export default function OrdersPage() {
                       <Plus size={12} /> {tOrders('newOrder')}
                     </button>
                   </div>
-                ) : isOwnerOrManager && !['completed', 'cancelled'].includes(order.status) ? (
+                ) : customersEnabled && isOwnerOrManager && !['completed', 'cancelled'].includes(order.status) ? (
                   <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
                     {linkCustomerOrderId === order.id ? (
                       <div className="flex items-center gap-2">

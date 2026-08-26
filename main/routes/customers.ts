@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { getDatabase, now, getSettingValue } from '../db';
-import { requireRole } from '../middleware/security';
+import { requireCustomersEnabled, requireRole } from '../middleware/security';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 
 export function parseCustomer(c: any): any {
@@ -274,7 +274,7 @@ router.get('/:id/wallet', customerReadRateLimit, requireRole('owner', 'manager',
   }
 });
 
-router.post('/', customerWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/', customerWriteRateLimit, requireCustomersEnabled, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const { phone, name, email, address, notes, country_code } = req.body;
 
@@ -354,7 +354,7 @@ router.post('/', customerWriteRateLimit, requireRole('owner', 'manager', 'cashie
   }
 });
 
-router.put('/:id', customerWriteRateLimit, requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.put('/:id', customerWriteRateLimit, requireCustomersEnabled, requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
   try {
     const {
       phone, name, email, address, notes, country_code
@@ -427,9 +427,49 @@ router.put('/:id', customerWriteRateLimit, requireRole('owner', 'manager', 'cash
   }
 });
 
-// Customers are never deletable — not even soft-deleted — by design: every
-// row is permanently referenced by orders/bills/loyalty_ledger with no FK,
-// and losing a customer's history/loyalty standing is worse than a stale
-// record. There is intentionally no DELETE /:id route.
+/**
+ * Erases one customer for good.
+ *
+ * `is_active = 0` was never a delete: the phone lookup that de-duplicates the
+ * book does not look at the flag, so an "archived" guest keeps their number
+ * reserved and walks straight back in on the next order. A guest who asks to
+ * be forgotten has to actually be gone.
+ *
+ * The takings stay. Orders and bills keep every amount and only lose the name
+ * attached to them, so the day's totals and every report still add up; the
+ * loyalty ledger is personal to the customer and goes with them, which is why
+ * a wallet balance is worth warning about before this is called.
+ */
+router.delete('/:id', customerWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const customerId = req.params.id as string;
+    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId) as any;
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    const walletBalance = getWalletBalance(customerId);
+
+    const detach = db.transaction(() => {
+      let detachedOrders = 0;
+      // whatsapp_messages carries a real FK to customers(id), so it has to let
+      // go before the row can be removed at all.
+      for (const table of ['orders', 'bills', 'held_orders', 'reservations', 'whatsapp_messages']) {
+        const result = db.prepare(`UPDATE ${table} SET customer_id = NULL WHERE customer_id = ?`).run(customerId);
+        if (table === 'orders') detachedOrders = result.changes;
+      }
+      const ledgerRows = db.prepare('DELETE FROM loyalty_ledger WHERE customer_id = ?').run(customerId).changes;
+      db.prepare('DELETE FROM customers WHERE id = ?').run(customerId);
+      return { detachedOrders, ledgerRows };
+    });
+
+    const { detachedOrders, ledgerRows } = detach();
+    res.json({ deleted: true, detached_orders: detachedOrders, discarded_ledger_entries: ledgerRows, discarded_wallet_balance: walletBalance });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 export const customerRoutes = router;

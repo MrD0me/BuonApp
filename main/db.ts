@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
+import { DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, defaultTableSize, createGridPlacer } from './lib/table-geometry';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -304,7 +305,6 @@ export function withDatabaseMaintenanceLock<T>(operation: (signal: AbortSignal) 
   });
 }
 
-const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
 function randomSecret(): string {
   return crypto.randomBytes(32).toString('base64')
@@ -633,66 +633,6 @@ export function initDatabase(recoverInterruptedReplacement = true, allowDuringSh
   autoRepairDefaultPrinter();
 }
 
-export function ensureCloudIdentity(): { posHash: string; deviceSecret: string } {
-  let deviceSecret = getSettingValue('cloud_device_secret');
-  if (!deviceSecret) {
-    deviceSecret = randomSecret();
-    upsertSetting('cloud_device_secret', deviceSecret);
-  }
-
-  let posHash = getSettingValue('cloud_pos_hash');
-  if (!posHash) {
-    posHash = `pos_${sha256Hex(deviceSecret).slice(0, 40)}`;
-    upsertSetting('cloud_pos_hash', posHash);
-  }
-
-  insertSettingIfMissing('cloud_device_created_at', now());
-  return { posHash, deviceSecret };
-}
-
-/** Locally-cached RevFlo pairing code (plaintext) — FloAdmin only ever returns it once. */
-export function getCachedPairingCode(): { code: string; expiresAt: string } | null {
-  const code = getSettingValue('mobile_pairing_code');
-  const expiresAt = getSettingValue('mobile_pairing_code_expires_at');
-  if (!code || !expiresAt) return null;
-  if (new Date(expiresAt).getTime() <= Date.now()) return null;
-  return { code, expiresAt };
-}
-
-export function setCachedPairingCode(code: string, expiresAt: string): void {
-  upsertSetting('mobile_pairing_code', code);
-  upsertSetting('mobile_pairing_code_expires_at', expiresAt);
-}
-
-/** Random UUID, generated once and persisted — never derived from store/device identity. */
-export function ensureTelemetryAnonId(): string {
-  let anonId = getSettingValue('telemetry_anon_id');
-  if (!anonId) {
-    anonId = crypto.randomUUID();
-    upsertSetting('telemetry_anon_id', anonId);
-  }
-  return anonId;
-}
-
-/**
- * Anonymous usage telemetry is on by default for new installs and is switched
- * off in Settings > Privacy. First-run setup discloses it rather than asking:
- * a pre-ticked consent box is not valid consent, so we do not present one.
- * Tier 2 store-attributed diagnostics is a separate, explicit opt-in and is
- * never bundled into this stream.
- */
-export function isTelemetryEnabled(): boolean {
-  return getSettingValue('telemetry_enabled') === 'true';
-}
-
-/**
- * Tier 2 store-attributed diagnostics, kept separate from anonymous telemetry.
- * New installs default to enabled; an owner can switch it off in Settings.
- */
-export function isDiagnosticsConsentEnabled(): boolean {
-  return getSettingValue('diagnostics_consent') !== 'false';
-}
-
 /**
  * Kitchen Display System on/off switch (issue #133). Defaults to enabled
  * (missing/anything but the literal 'false') so pre-existing installs that
@@ -700,6 +640,19 @@ export function isDiagnosticsConsentEnabled(): boolean {
  */
 export function isKdsEnabled(): boolean {
   return getSettingValue('kds_enabled') !== 'false';
+}
+
+/**
+ * Customer book on/off switch. A place that only wants bookings and tickets
+ * has no use for a customer registry: turning this off hides the customer
+ * page, the POS customer field and the customer link on a booking, and stops
+ * every surface from creating customer rows. Bookings are unaffected — they
+ * carry their own name and phone (see RESERVATIONS_SCHEMA_SQL). The loyalty
+ * wallet is per-customer, so it cannot outlive the book and is forced off
+ * with it. Defaults to enabled so existing installs keep their book.
+ */
+export function areCustomersEnabled(): boolean {
+  return getSettingValue('customers_enabled') !== 'false';
 }
 
 /**
@@ -719,10 +672,6 @@ export function isServerAppEnabled(): boolean {
  */
 export function isKotPrintingEnabled(): boolean {
   return getSettingValue('kot_printing_enabled') !== 'false';
-}
-
-export function upsertTelemetryLastPing(): void {
-  upsertSetting('telemetry_last_ping_at', now());
 }
 
 /** Atomic multi-statement mutation. Use for anything touching >1 row or >1 table. */
@@ -1378,33 +1327,18 @@ export function captureKitchenStationSecurityState(dbInstance: Database.Database
 
 export type KdsEnabledSettingState = { present: boolean; value: string | null };
 export type RestoreProtectedSettingState = { key: string; present: boolean; value: string | null };
-export type RestoreOutboxState = {
-  cloud: Record<string, unknown>[];
-  support: Record<string, unknown>[];
-  diagnostics: Record<string, unknown>[];
-};
-const RESTORE_PROTECTED_SETTING_KEYS = [
-  'jwt_secret', 'cloud_api_key', 'cloud_device_secret', 'cloud_pos_hash',
-  'telemetry_enabled', 'diagnostics_consent',
-  'mobile_pairing_code', 'mobile_pairing_code_expires_at',
-];
+// Installation-local secrets that must survive a restore rather than being
+// overwritten by whatever the backup file happened to carry.
+const RESTORE_PROTECTED_SETTING_KEYS = ['jwt_secret'];
 
 export function captureRestoreProtectedSettings(dbInstance: Database.Database): RestoreProtectedSettingState[] {
-  const fixedRows = dbInstance.prepare(
+  const rows = dbInstance.prepare(
     `SELECT key, value FROM settings WHERE key IN (${RESTORE_PROTECTED_SETTING_KEYS.map(() => '?').join(',')})`,
   ).all(...RESTORE_PROTECTED_SETTING_KEYS) as { key: string; value: string | null }[];
-  const cloudRows = dbInstance.prepare("SELECT key, value FROM settings WHERE key LIKE 'cloud_%'").all() as { key: string; value: string | null }[];
-  const byKey = new Map([...fixedRows, ...cloudRows].map((row) => [row.key, row.value]));
-  const keys = [...new Set([...RESTORE_PROTECTED_SETTING_KEYS, ...cloudRows.map((row) => row.key)])];
-  const deviceSecret = byKey.get('cloud_device_secret');
-  return keys.map((key) => ({
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  return RESTORE_PROTECTED_SETTING_KEYS.map((key) => ({
     key,
-    // Pairing codes are installation-local, short-lived credentials. Never
-    // carry one across a restore, even if the live installation had one.
-    // A position hash without its device secret is also unsafe to preserve.
-    present: !key.startsWith('mobile_pairing_code')
-      && !(key === 'cloud_pos_hash' && !deviceSecret)
-      && byKey.has(key),
+    present: byKey.has(key),
     value: byKey.get(key) ?? null,
   }));
 }
@@ -1414,37 +1348,21 @@ export function mergeRestoreProtectedSettings(dbInstance: Database.Database, sta
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `);
-  // Cloud identity/configuration is installation-local. Remove every backup
-  // cloud key first so a future or backup-only key cannot cross installations.
-  dbInstance.prepare("DELETE FROM settings WHERE key LIKE 'cloud_%'").run();
   for (const state of states) {
     if (state.present) upsert.run(state.key, state.value, now());
-    else if (!state.key.startsWith('cloud_')) dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
+    else dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
   }
-  const hasDeviceSecret = states.some((state) => state.key === 'cloud_device_secret' && state.present);
-  const hasPosHash = states.some((state) => state.key === 'cloud_pos_hash' && state.present);
-  if (!hasDeviceSecret || !hasPosHash) ensureCloudIdentity();
-}
-
-export function captureRestoreOutboxState(dbInstance: Database.Database): RestoreOutboxState {
-  const pending = (table: string) => dbInstance.prepare(`SELECT * FROM ${table} WHERE status IN ('pending', 'failed', 'sending')`).all() as Record<string, unknown>[];
-  return { cloud: pending('cloud_sync_outbox'), support: pending('support_ticket_outbox'), diagnostics: pending('store_diagnostics_outbox') };
-}
-
-export function mergeRestoreOutboxState(dbInstance: Database.Database, state: RestoreOutboxState): void {
-  dbInstance.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox');
-  const cloud = dbInstance.prepare(`INSERT OR REPLACE INTO cloud_sync_outbox
-    (id, event_type, entity_type, entity_id, payload, status, attempt_count, next_attempt_at, last_error, delivered_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  for (const row of state.cloud) cloud.run(row.id, row.event_type, row.entity_type, row.entity_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.delivered_at || null, row.created_at || now(), row.updated_at || now());
-  const support = dbInstance.prepare(`INSERT OR REPLACE INTO support_ticket_outbox
-    (client_ticket_id, payload, status, support_code, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  for (const row of state.support) support.run(row.client_ticket_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.support_code || null, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.created_at || now(), row.updated_at || now(), row.delivered_at || null);
-  const diagnostics = dbInstance.prepare(`INSERT OR REPLACE INTO store_diagnostics_outbox
-    (event_id, payload, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  for (const row of state.diagnostics) diagnostics.run(row.event_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.created_at || now(), row.updated_at || now(), row.delivered_at || null);
+  // A backup taken before the cloud bridge was removed still carries its API
+  // key, device secret and pairing codes. Migration v80 cleared those from the
+  // live database and a restore must not walk them back in — the data comes
+  // from the backup, the decision not to have them does not.
+  dbInstance.prepare(`
+    DELETE FROM settings
+    WHERE key LIKE 'cloud_%'
+       OR key LIKE 'telemetry_%'
+       OR key LIKE 'mobile_pairing_code%'
+       OR key IN ('anonymous_data_consent', 'diagnostics_consent')
+  `).run();
 }
 
 export function captureKdsEnabledSetting(dbInstance: Database.Database): KdsEnabledSettingState {
@@ -1777,7 +1695,6 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
   const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
   const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
   const preservedProtectedSettings = captureRestoreProtectedSettings(currentDb);
-  const preservedOutboxes = captureRestoreOutboxState(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
 
@@ -1852,7 +1769,6 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
       mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
       mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
       freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
-      mergeRestoreOutboxState(freshDb, preservedOutboxes);
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
@@ -1922,7 +1838,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, preservedOutboxes, signal);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, signal);
 }
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
@@ -2000,7 +1916,6 @@ function dataOnlyRestore(
   preservedStationSecurity: KitchenStationSecurityState[] = [],
   preservedKdsEnabled: KdsEnabledSettingState = { present: false, value: null },
   preservedProtectedSettings: RestoreProtectedSettingState[] = [],
-  preservedOutboxes: RestoreOutboxState = { cloud: [], support: [], diagnostics: [] },
   signal?: AbortSignal,
 ): RestoreResult {
   throwIfDatabaseMaintenanceAborted(signal);
@@ -2111,7 +2026,6 @@ function dataOnlyRestore(
     mergeKdsEnabledSetting(currentDb, preservedKdsEnabled);
     mergeRestoreProtectedSettings(currentDb, preservedProtectedSettings);
     currentDb.prepare('DELETE FROM kds_pairing_tokens').run();
-    mergeRestoreOutboxState(currentDb, preservedOutboxes);
     mergeRevocations(currentDb, preservedRevocations);
     const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
       .filter((key) => !baselineForeignKeyViolations.has(key));
@@ -2251,6 +2165,103 @@ export function buildIdealSchemaDb(): Database.Database {
 // Each entry runs exactly once, in order, wrapped in a transaction.
 // To add a schema change: append a new entry. Never edit existing entries.
 
+/**
+ * One row per business day of service. Orders point at it, so "the orders of
+ * 12 August" is an exact link instead of a guessed time range — which matters
+ * because a restaurant serving past midnight does not end its day when the UTC
+ * date rolls over. Shared by createSchema() and migration v74 so a fresh
+ * install and an upgraded one cannot drift apart.
+ * See docs/table-management.md.
+ */
+const SERVICE_DAYS_SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS service_days (
+      id TEXT PRIMARY KEY,
+      business_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      opened_at TEXT NOT NULL,
+      opened_by TEXT,
+      closed_at TEXT,
+      closed_by TEXT,
+      notes TEXT,
+      summary TEXT,
+      layout_snapshot TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_service_days_date ON service_days(business_date DESC);
+    -- At most one day may be open at a time; the whole model rests on it.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_service_days_single_open
+      ON service_days(status) WHERE status = 'open';
+`;
+
+/**
+ * Dining rooms. Replaces the free-text `tables.floor`, which could not carry a
+ * size, an order, or anything the map needs to draw. Shared by createSchema()
+ * and migration v75 so a fresh install and an upgraded one cannot drift apart.
+ * See docs/table-management.md.
+ */
+const ROOMS_SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS rooms (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      width INTEGER DEFAULT ${DEFAULT_ROOM_WIDTH},
+      height INTEGER DEFAULT ${DEFAULT_ROOM_HEIGHT},
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_name ON rooms(name);
+    CREATE INDEX IF NOT EXISTS idx_rooms_sort ON rooms(sort_order, name);
+`;
+
+/**
+ * Bookings for the service being run right now. Scoped to a service day and to
+ * a table that exists: the room is rebuilt daily and its tables deleted, so a
+ * booking cannot point at a table that will not exist yet. Name and guest count
+ * are what the floor needs; the time and phone are recorded when given.
+ * See docs/table-management.md.
+ */
+const RESERVATIONS_SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS reservations (
+      id TEXT PRIMARY KEY,
+      service_day_id TEXT NOT NULL,
+      table_id TEXT,
+      customer_id TEXT,
+      name TEXT NOT NULL,
+      guests INTEGER NOT NULL DEFAULT 2,
+      booked_time TEXT,
+      phone TEXT,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'booked',
+      created_by TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_reservations_day ON reservations(service_day_id, status);
+    CREATE INDEX IF NOT EXISTS idx_reservations_table ON reservations(table_id, status);
+    -- A table can only be promised to one party at a time.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_reservations_one_per_table
+      ON reservations(table_id) WHERE status = 'booked' AND table_id IS NOT NULL;
+`;
+
+/**
+ * Floor plans saved under a name ("sabato sera", "estate esterno"). Applying one
+ * rewrites the current rooms and tables in a single transaction, so a room that
+ * is emptied every night can be put back in one action instead of twenty.
+ * See docs/table-management.md.
+ */
+const TABLE_LAYOUTS_SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS table_layouts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_table_layouts_name ON table_layouts(name);
+`;
+
 export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   {
     version: 1,
@@ -2288,8 +2299,10 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 3,
     name: 'cloud_identity_and_outbox',
     up: () => {
-      createCloudSyncSchema();
-      seedCloudSyncDefaults();
+      // Was: the cloud outbox table and the settings that armed the bridge to
+      // FloAdmin. This fork does not talk to a cloud, so there is nothing to
+      // create — v80 drops what installs that ran the original step still
+      // carry. The version stamp stays so the sequence keeps its numbering.
     },
   },
   {
@@ -3966,6 +3979,270 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.prepare(`UPDATE order_items SET kot_batch = 1 WHERE kot_batch IS NULL`).run();
     },
   },
+  {
+    version: 73,
+    name: 'add_order_table_snapshot',
+    up: () => {
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('table_label')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN table_label TEXT`);
+      }
+      if (!orderColumns.includes('room_label')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN room_label TEXT`);
+      }
+      // Backfill from the tables still standing. v20 added `is_active` because
+      // hard-deleting tables orphaned orders.table_id; carrying the label on the
+      // order instead is what finally makes deletion safe, but only for history
+      // that has a label. Everything already in the database gets one here, once,
+      // before the first real delete can strand it.
+      db.prepare(`
+        UPDATE orders SET
+          table_label = (SELECT number FROM tables WHERE tables.id = orders.table_id),
+          room_label = (SELECT floor FROM tables WHERE tables.id = orders.table_id)
+        WHERE table_id IS NOT NULL AND table_label IS NULL
+      `).run();
+    },
+  },
+  {
+    version: 74,
+    name: 'add_service_days',
+    up: () => {
+      db.exec(SERVICE_DAYS_SCHEMA_SQL);
+
+      if (!getColumns(db, 'orders').includes('service_day_id')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN service_day_id TEXT`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_service_day ON orders(service_day_id)`);
+
+      // Give the history that predates this table a home: one closed day per
+      // business date the orders already fall on, bucketed in the tenant
+      // timezone rather than UTC so a service that ran past midnight stays a
+      // single day. These carry no frozen summary — totals are computed on
+      // read, which is exact for data that can no longer change.
+      const timezoneRow = db.prepare("SELECT value FROM settings WHERE key = 'timezone'").get() as { value?: string } | undefined;
+      let formatBusinessDate: (date: Date) => string;
+      try {
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: timezoneRow?.value || 'UTC',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        formatBusinessDate = (date: Date) => {
+          const parts = formatter.formatToParts(date);
+          const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+          return `${get('year')}-${get('month')}-${get('day')}`;
+        };
+      } catch {
+        formatBusinessDate = (date: Date) => date.toISOString().slice(0, 10);
+      }
+
+      const pending = db.prepare('SELECT id, created_at FROM orders WHERE service_day_id IS NULL').all() as { id: number; created_at: string }[];
+      if (pending.length === 0) return;
+
+      const buckets = new Map<string, { ids: number[]; first: string; last: string }>();
+      for (const row of pending) {
+        const parsed = parseDbTimestamp(row.created_at);
+        if (isNaN(parsed.getTime())) continue;
+        const businessDate = formatBusinessDate(parsed);
+        const bucket = buckets.get(businessDate);
+        if (!bucket) {
+          buckets.set(businessDate, { ids: [row.id], first: row.created_at, last: row.created_at });
+          continue;
+        }
+        bucket.ids.push(row.id);
+        if (row.created_at < bucket.first) bucket.first = row.created_at;
+        if (row.created_at > bucket.last) bucket.last = row.created_at;
+      }
+
+      const stamp = now();
+      const insertDay = db.prepare(`
+        INSERT OR IGNORE INTO service_days (id, business_date, status, opened_at, closed_at, notes, created_at, updated_at)
+        VALUES (?, ?, 'closed', ?, ?, 'Backfilled from order history', ?, ?)
+      `);
+      let backfilled = 0;
+      for (const [businessDate, bucket] of buckets) {
+        const dayId = `sd-${businessDate.replace(/-/g, '')}`;
+        insertDay.run(dayId, businessDate, bucket.first, bucket.last, stamp, stamp);
+        // Chunked so a long-running store stays under SQLite's bound-parameter
+        // limit instead of throwing partway through the upgrade.
+        for (let offset = 0; offset < bucket.ids.length; offset += 400) {
+          const chunk = bucket.ids.slice(offset, offset + 400);
+          db.prepare(`UPDATE orders SET service_day_id = ? WHERE id IN (${chunk.map(() => '?').join(',')})`)
+            .run(dayId, ...chunk);
+          backfilled += chunk.length;
+        }
+      }
+      console.log(`[MIGRATION v74] backfilled ${backfilled} order(s) into ${buckets.size} service day(s)`);
+    },
+  },
+  {
+    version: 75,
+    name: 'add_rooms_and_table_geometry',
+    up: () => {
+      db.exec(ROOMS_SCHEMA_SQL);
+
+      const tableColumns = getColumns(db, 'tables');
+      if (!tableColumns.includes('room_id')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN room_id TEXT`);
+      }
+      if (!tableColumns.includes('width')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN width REAL`);
+      }
+      if (!tableColumns.includes('height')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN height REAL`);
+      }
+      if (!tableColumns.includes('shape')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN shape TEXT DEFAULT 'rect'`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_tables_room ON tables(room_id)`);
+
+      const stamp = now();
+      const newRoomId = () => `room-${crypto.randomUUID().slice(0, 8)}`;
+      const insertRoom = db.prepare(`
+        INSERT OR IGNORE INTO rooms (id, name, sort_order, width, height, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const roomIdByName = (name: string) =>
+        (db.prepare('SELECT id FROM rooms WHERE name = ?').get(name) as { id?: string } | undefined)?.id;
+
+      // Promote whatever the free-text `floor` held into real rooms, one per
+      // distinct value, preserving which tables belonged where.
+      const floors = db.prepare(`
+        SELECT DISTINCT TRIM(floor) AS name FROM tables
+        WHERE floor IS NOT NULL AND TRIM(floor) != ''
+        ORDER BY name
+      `).all() as { name: string }[];
+
+      floors.forEach((row, index) => {
+        insertRoom.run(newRoomId(), row.name, index, DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, stamp, stamp);
+        db.prepare(`
+          UPDATE tables SET room_id = ?, updated_at = ?
+          WHERE room_id IS NULL AND TRIM(COALESCE(floor, '')) = ?
+        `).run(roomIdByName(row.name), stamp, row.name);
+      });
+
+      // Tables predating rooms usually have no floor at all, and a map needs
+      // somewhere to draw them. The name is a placeholder the owner renames.
+      const unassigned = db.prepare('SELECT COUNT(*) AS count FROM tables WHERE room_id IS NULL').get() as { count: number };
+      if (unassigned.count > 0) {
+        let fallbackId = roomIdByName('Main room');
+        if (!fallbackId) {
+          insertRoom.run(newRoomId(), 'Main room', floors.length, DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, stamp, stamp);
+          fallbackId = roomIdByName('Main room');
+        }
+        db.prepare('UPDATE tables SET room_id = ?, updated_at = ? WHERE room_id IS NULL').run(fallbackId, stamp);
+      }
+
+      // Nothing has ever written position_x/position_y, so without this every
+      // table would stack at the origin the first time the map is opened.
+      const rooms = db.prepare('SELECT id, width FROM rooms').all() as { id: string; width: number }[];
+      const place = db.prepare(`
+        UPDATE tables SET position_x = ?, position_y = ?, width = ?, height = ?, updated_at = ?
+        WHERE id = ?
+      `);
+      let placed = 0;
+      for (const room of rooms) {
+        const pending = db.prepare(`
+          SELECT id, capacity, shape, width, height FROM tables
+          WHERE room_id = ? AND (position_x IS NULL OR position_y IS NULL)
+          ORDER BY number
+        `).all(room.id) as { id: string; capacity: number; shape: string; width: number | null; height: number | null }[];
+        if (pending.length === 0) continue;
+
+        const nextSlot = createGridPlacer(room.width || DEFAULT_ROOM_WIDTH);
+        for (const table of pending) {
+          const fallbackSize = defaultTableSize(table.capacity, table.shape);
+          const width = table.width || fallbackSize.width;
+          const height = table.height || fallbackSize.height;
+          const slot = nextSlot(width, height);
+          place.run(slot.x, slot.y, width, height, stamp, table.id);
+          placed++;
+        }
+      }
+
+      // Any table already positioned but never sized still needs a size.
+      const unsized = db.prepare('SELECT id, capacity, shape FROM tables WHERE width IS NULL OR height IS NULL')
+        .all() as { id: string; capacity: number; shape: string }[];
+      for (const table of unsized) {
+        const size = defaultTableSize(table.capacity, table.shape);
+        db.prepare('UPDATE tables SET width = ?, height = ?, updated_at = ? WHERE id = ?')
+          .run(size.width, size.height, stamp, table.id);
+      }
+      db.exec(`UPDATE tables SET shape = 'rect' WHERE shape IS NULL OR shape = ''`);
+
+      const roomCount = (db.prepare('SELECT COUNT(*) AS count FROM rooms').get() as { count: number }).count;
+      console.log(`[MIGRATION v75] ${roomCount} room(s), ${placed} table(s) given a first position`);
+    },
+  },
+  {
+    version: 76,
+    name: 'add_reservations',
+    up: () => {
+      db.exec(RESERVATIONS_SCHEMA_SQL);
+
+      // Nothing to migrate: the reservation fields the UI has been posting
+      // since before this table existed (`reservation_customer_id` and friends)
+      // were never persisted anywhere — the handler read only `status` and the
+      // columns were never added. There is no data to carry over, only a table
+      // status left behind on rows someone once marked reserved.
+      const stranded = db.prepare("SELECT COUNT(*) AS count FROM tables WHERE status = 'reserved'").get() as { count: number };
+      if (stranded.count > 0) {
+        db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE status = 'reserved'").run(now());
+        console.log(`[MIGRATION v76] cleared ${stranded.count} table(s) marked reserved with no booking behind them`);
+      }
+    },
+  },
+  {
+    version: 77,
+    name: 'add_table_merging',
+    up: () => {
+      if (!getColumns(db, 'tables').includes('merged_into')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN merged_into TEXT`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_tables_merged_into ON tables(merged_into)`);
+    },
+  },
+  {
+    version: 78,
+    name: 'add_table_layouts',
+    up: () => {
+      db.exec(TABLE_LAYOUTS_SCHEMA_SQL);
+    },
+  },
+  {
+    version: 79,
+    name: 'add_customers_enabled_setting',
+    up: () => {
+      // Existing installs have been keeping a customer book all along, so the
+      // upgrade leaves it on; only an explicit toggle turns it off.
+      insertSettingIfMissing('customers_enabled', 'true');
+    },
+  },
+  {
+    version: 80,
+    name: 'remove_cloud_bridge',
+    up: () => {
+      // The bridge to FloAdmin and the usage telemetry stream are gone from
+      // the code. What they left behind in the database is worse than dead
+      // weight: `cloud_api_key` and `cloud_device_secret` are live credentials
+      // for a service this install no longer speaks to, and a store that once
+      // registered has its identifiers sitting here for good. Take them out.
+      db.exec(`
+        DROP TABLE IF EXISTS cloud_sync_outbox;
+        DROP TABLE IF EXISTS support_ticket_outbox;
+        DROP TABLE IF EXISTS store_diagnostics_outbox;
+      `);
+      const removed = db.prepare(`
+        DELETE FROM settings
+        WHERE key LIKE 'cloud_%'
+           OR key LIKE 'telemetry_%'
+           OR key LIKE 'mobile_pairing_code%'
+           OR key IN ('anonymous_data_consent', 'diagnostics_consent')
+      `).run().changes;
+      console.log(`[MIGRATION v80] cloud bridge removed; ${removed} setting(s) purged`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4206,15 +4483,32 @@ function createSchema(): void {
       FOREIGN KEY (station_id) REFERENCES kitchen_stations(id) ON DELETE CASCADE
     );
 
+    ${ROOMS_SCHEMA_SQL}
+
+    ${RESERVATIONS_SCHEMA_SQL}
+
+    ${TABLE_LAYOUTS_SCHEMA_SQL}
+
     CREATE TABLE IF NOT EXISTS tables (
       id TEXT PRIMARY KEY,
       number TEXT NOT NULL UNIQUE,
       capacity INTEGER DEFAULT 4,
       status TEXT DEFAULT 'available',
+      room_id TEXT,
+      -- Superseded by room_id. Kept so restoring an older backup still reads,
+      -- and so migration v75 has something to derive rooms from; new code
+      -- writes room_id only.
       floor TEXT,
       section TEXT,
+      -- Map geometry, in the abstract units the room is sized in.
       position_x REAL,
       position_y REAL,
+      width REAL,
+      height REAL,
+      shape TEXT DEFAULT 'rect',
+      -- Set on a table joined to another for one party: it points at the table
+      -- leading the group, which is where the order lives.
+      merged_into TEXT,
       kitchen_station_id TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -4257,10 +4551,19 @@ function createSchema(): void {
 
     -- ── Transactional tables ─────────────────────────────────────────────
 
+    ${SERVICE_DAYS_SCHEMA_SQL}
+
     CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_number TEXT UNIQUE NOT NULL,
       table_id TEXT,
+      -- Where this order was served, captured at creation. Tables are rebuilt
+      -- daily and deleted for real, so the live table_id link cannot be what
+      -- history relies on: these labels are what past orders display once the
+      -- table they name is gone. See docs/table-management.md.
+      table_label TEXT,
+      room_label TEXT,
+      service_day_id TEXT,
       customer_id TEXT,
       user_id TEXT,
       type TEXT DEFAULT 'takeaway',
@@ -4601,31 +4904,6 @@ function createTaxPackSchema(): void {
   `);
 }
 
-function createCloudSyncSchema(): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS cloud_sync_outbox (
-      id TEXT PRIMARY KEY,
-      event_type TEXT NOT NULL,
-      entity_type TEXT,
-      entity_id TEXT,
-      payload TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'sending', 'delivered', 'failed')),
-      attempt_count INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TEXT,
-      last_error TEXT,
-      delivered_at TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_cloud_sync_outbox_status
-      ON cloud_sync_outbox(status, next_attempt_at, created_at);
-    CREATE INDEX IF NOT EXISTS idx_cloud_sync_outbox_entity
-      ON cloud_sync_outbox(entity_type, entity_id);
-  `);
-}
-
 function createWhatsAppSchema(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS whatsapp_messages (
@@ -4670,25 +4948,6 @@ function createWhatsAppSchema(): void {
   `);
 }
 
-function seedCloudSyncDefaults(): void {
-  createCloudSyncSchema();
-
-  const serverUrl = getSettingValue('cloud_server_url');
-  if (!serverUrl) upsertSetting('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
-
-  // Mirrors FloAdmin's own `stores` table defaults (sync + reports on, orders off —
-  // see specs/floadmin.md § api surface). Harmless pre-claim: every send path in
-  // cloud-sync.ts is gated on api_key being present, which only exists after a
-  // human claims the store on FloAdmin, so nothing transmits before then.
-  insertSettingIfMissing('cloud_sync_enabled', '1');
-  insertSettingIfMissing('cloud_orders_enabled', '0');
-  insertSettingIfMissing('cloud_reports_enabled', '1');
-  insertSettingIfMissing('cloud_command_polling_enabled', '1');
-  insertSettingIfMissing('cloud_connected', 'false');
-  insertSettingIfMissing('cloud_registration_status', 'unregistered');
-
-  ensureCloudIdentity();
-}
 
 function seedWhatsAppDefaults(): void {
   insertSettingIfMissing('whatsapp_enabled', 'false');
@@ -4727,18 +4986,8 @@ function seedInstallDefaults(): void {
   insert('tables_required', 'true');
   insert('service_model', 'finedine');
   insert('setup_profile', '');
-  insert('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
-  insert('cloud_connected', 'false');
-  insert('cloud_sync_enabled', '1');
-  insert('cloud_orders_enabled', '0');
-  insert('cloud_reports_enabled', '1');
-  insert('cloud_command_polling_enabled', '1');
-  insert('cloud_registration_status', 'unregistered');
-  insert('anonymous_data_consent', 'true');
-  insert('telemetry_enabled', 'true');
-  insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
-  insert('diagnostics_consent', 'true');
   insert('kds_enabled', 'true');
+  insert('customers_enabled', 'true');
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
   insert('printer_trim_decimals', 'false');
@@ -4761,7 +5010,6 @@ function seedInstallDefaults(): void {
   insert('invoice_financial_year_start_month', '4');
   insert('invoice_financial_year_start_day', '1');
 
-  seedCloudSyncDefaults();
 
   console.log('[DB] Install defaults loaded; first-run setup pending');
 }
@@ -4924,7 +5172,7 @@ export function now(): string {
  * machine-LOCAL time, so `new Date(ts)` silently shifts by the host's offset
  * on machines outside UTC. ISO rows (`...T10:00:00.123Z`, pre-v40 data) parse
  * as UTC natively. Use this everywhere a stored timestamp is turned into a
- * Date (reports, receipts, KDS clocks, auth token staleness, telemetry).
+ * Date (reports, receipts, KDS clocks, auth token staleness).
  */
 export function parseDbTimestamp(ts: string | null | undefined): Date {
   if (!ts) return new Date(NaN);
@@ -4939,6 +5187,16 @@ export function parseDbTimestamp(ts: string | null | undefined): Date {
  */
 export function utcTodayDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * "Today" as `YYYY-MM-DD` in the tenant's configured timezone. Unlike
+ * `utcTodayDate()` this is what a business day is labelled with, so a service
+ * opened at 19:00 in Rome is dated that evening and not the next morning.
+ */
+export function businessDateToday(): string {
+  const stamp = dateStampInTimezone(getSettingValue('timezone') || 'Asia/Kolkata');
+  return `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}`;
 }
 
 /**

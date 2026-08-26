@@ -4,10 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
 import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError } from './db';
-import { computeTaxPackUpdates, fetchRemoteTaxPackCatalog } from './tax-packs/catalog';
 import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
-import { cloudSync } from './services/cloud-sync';
-import { telemetry, sendEvent as sendTelemetryEvent } from './services/telemetry';
 import { googleDrive } from './services/google-drive';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
@@ -170,37 +167,6 @@ function checkForUpdates(): void {
   } else {
     log.debug('[Update] Skipping update check in dev mode');
     mainWindow?.webContents.send('update-status', { status: 'dev-mode' });
-  }
-}
-
-// Separate from the app self-updater above: tax packs are the only plugin
-// type FloCafe currently supports, installed from the FloCafe-Plugins GitHub
-// Releases catalog rather than through electron-updater. This is a
-// best-effort, network-optional check — a store must keep working offline,
-// so a failure here only logs and never blocks startup.
-async function checkTaxPackUpdatesOnStartup(): Promise<void> {
-  try {
-    const remote = await fetchRemoteTaxPackCatalog();
-    const installedRows = getDatabase().prepare(`
-      SELECT pack.id AS pack_id, pack.country, pack.publisher, version.version
-      FROM country_packs AS pack
-      JOIN country_pack_versions AS version ON version.id = pack.active_version_id
-      WHERE pack.status = 'active'
-    `).all() as Array<{ pack_id: string; country: string; publisher: string; version: string }>;
-    const updates = computeTaxPackUpdates(
-      installedRows.map((row) => (
-        { packId: row.pack_id, country: row.country, publisher: row.publisher, version: row.version }
-      )),
-      remote.catalog,
-    );
-    if (updates.length > 0) {
-      const summary = updates.map((update) => `${update.packId} ${update.currentVersion} -> ${update.latestVersion}`).join(', ');
-      console.log(`[Tax Packs] ${updates.length} plugin update(s) available: ${summary}`);
-    } else {
-      console.log('[Tax Packs] Plugin update check: all installed tax packs are up to date');
-    }
-  } catch (error) {
-    console.warn('[Tax Packs] Startup plugin update check skipped (offline or catalog unavailable):', error);
   }
 }
 
@@ -660,8 +626,6 @@ async function initialize(): Promise<void> {
     await startServer();
     if (isShutdownRequested()) return;
 
-    cloudSync.start();
-    telemetry.start();
     googleDrive.start();
 
     console.log('[Flo] Starting KDS server on port 3002...');
@@ -732,7 +696,6 @@ async function initialize(): Promise<void> {
       setupAutoUpdater();
       setTimeout(() => checkForUpdates(), 5000);
     }
-    setTimeout(() => { void checkTaxPackUpdatesOnStartup(); }, 5000);
 
     console.log('[Flo] Ready!');
   } catch (error) {
@@ -752,21 +715,14 @@ async function initialize(): Promise<void> {
     }
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
 
-    // Best-effort: report the fatal startup failure so support can see which
-    // installs are stuck on a stale build without waiting for a user to
-    // describe the error message themselves. The cleanup below remains safe
-    // even when initialization failed before the database or listeners opened.
-    try {
-      const payload: Record<string, unknown> = {
-        error_message: String(error instanceof Error ? error.message : error).slice(0, 500),
-      };
-      if (error instanceof SchemaVersionMismatchError) {
-        payload.db_schema_version = error.dbVersion;
-        payload.app_schema_version = error.appVersion;
-      }
-      await sendTelemetryEvent('startup_failed', payload);
-    } catch (telemetryError) {
-      console.error('[Flo] Failed to report startup error via telemetry:', telemetryError);
+    // A fatal startup failure used to be reported home over telemetry. It is
+    // written to the local log instead — the log is where the person standing
+    // in front of the machine can actually read it.
+    if (error instanceof SchemaVersionMismatchError) {
+      log.error('[Flo] Startup failed on a schema mismatch', {
+        db_schema_version: error.dbVersion,
+        app_schema_version: error.appVersion,
+      });
     }
 
     isQuitting = true;
@@ -811,8 +767,6 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   { name: 'Server App', run: () => stopServerApp(), blocksDatabase: true },
   { name: 'Main server', run: () => stopServer(), blocksDatabase: true },
   { name: 'KDS server', run: () => stopKdsServer(), blocksDatabase: true },
-  { name: 'cloud sync', run: () => cloudSync.shutdown(), blocksDatabase: true },
-  { name: 'telemetry', run: () => telemetry.stop(), blocksDatabase: true },
   { name: 'Google Drive', run: () => googleDrive.stop(), blocksDatabase: true },
   { name: 'WhatsApp', run: () => shutdownWhatsApp(), blocksDatabase: true },
   { name: 'Bonjour', run: () => stopMdns() },

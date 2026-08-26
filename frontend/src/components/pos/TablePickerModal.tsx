@@ -8,7 +8,7 @@ import { useTranslations, type AppConfig } from 'use-intl';
 interface Props {
   tables: Table[];
   selectedTableId: string | null;
-  onSelectAvailable: (tableId: string, customer?: { id: number; name: string; phone: string } | null) => void;
+  onSelectAvailable: (tableId: string, customer?: { id: string | number; name: string; phone: string } | null) => void;
   onSelectOccupied: (table: Table) => void;
   onSelectHeld: (tableId: string) => void;
   onPlaceOrder: () => void;
@@ -42,8 +42,11 @@ export default function TablePickerModal({
       return;
     }
     if (table.status === 'available' || table.status === 'reserved') {
-      const customer = table.status === 'reserved' && table.reservation_customer_id
-        ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
+      // Carry the booked guest onto the order, but only when the booking was
+      // linked to a real customer record — a name typed on the phone is not one.
+      const booking = table.reservation;
+      const customer = booking?.customer_id
+        ? { id: booking.customer_id, name: booking.name, phone: booking.phone ?? '' }
         : null;
       onSelectAvailable(table.id, customer);
       return;

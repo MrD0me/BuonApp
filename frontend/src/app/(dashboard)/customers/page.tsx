@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 
 
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+import { Plus, Search, X, Edit, Trash2, Wallet, History, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 
 import type { Customer } from '@/lib/types';
@@ -18,6 +18,8 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
+import { usePosSettingsStore } from '@/store/pos-settings';
+import { useConfirm } from '@/hooks/use-confirm';
 
 function SortIcon({ field, sortField, sortOrder }: { field: string; sortField: string; sortOrder: 'asc' | 'desc' }) {
   if (sortField !== field) return <span className="text-gray-300 w-3 inline-block ms-1 opacity-0 group-hover:opacity-100 transition-opacity">↕</span>;
@@ -26,6 +28,8 @@ function SortIcon({ field, sortField, sortOrder }: { field: string; sortField: s
 
 export default function CustomersPage() {
   const { currentTenant } = useAuthStore();
+  const customersEnabled = usePosSettingsStore((state) => state.customersEnabled);
+  const { confirm, ConfirmDialog } = useConfirm();
   const tCustomer = useTranslations('customer');
   const tCustomers = useTranslations('customers');
   const tPos = useTranslations('pos');
@@ -87,6 +91,31 @@ export default function CustomersPage() {
     return () => { clearTimeout(timer); controller.abort(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, filter, sortField, sortOrder, refreshKey]);
+
+  useEffect(() => {
+    if (!customersEnabled) router.replace('/pos');
+  }, [customersEnabled, router]);
+
+  /**
+   * Erases the guest for good. Their orders and bills keep every amount and
+   * only lose the name on them, so the takings are untouched; the loyalty
+   * wallet is theirs alone and goes with them, which is what the warning is
+   * about when there is a balance left.
+   */
+  const handleDelete = async (c: Customer) => {
+    const balance = Number(c.wallet_balance) || 0;
+    const message = balance > 0
+      ? tCustomer('deleteConfirmWithWallet', { name: c.name, balance: fmtNum(balance) })
+      : tCustomer('deleteConfirm', { name: c.name });
+    if (!await confirm(message, { title: tCustomer('deleteTitle'), confirmLabel: tCustomer('deleteAction'), destructive: true })) return;
+    try {
+      await api.delete(`/customers/${c.id}`);
+      toast.success(tCustomer('deleted'));
+      setRefreshKey((k) => k + 1);
+    } catch {
+      toast.error(tCustomer('deleteFailed'));
+    }
+  };
 
   const openAdd = () => {
     setEditingCustomer(null);
@@ -225,9 +254,15 @@ export default function CustomersPage() {
                   )}
                 </td>
                 <td className="p-4 text-center">
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
-                    <Edit size={14} />
-                  </Button>
+                  <div className="flex items-center justify-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
+                      <Edit size={14} />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => handleDelete(c)} title={tCustomer('deleteTitle')}
+                      className="text-gray-400 hover:text-red-600">
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
                 </td>
                 <td className="p-4 text-center">
                   <Button variant="ghost" size="sm" onClick={() => openLedger(c)} title={tCustomer('viewLedgerTitle')}>
@@ -333,6 +368,8 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+
+      {ConfirmDialog}
     </div>
   );
 }

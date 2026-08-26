@@ -3,13 +3,18 @@ import { AlertCircle, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
+import { usePosSettingsStore } from '@/store/pos-settings';
 
 export default function GlobalNotifications() {
   const tCustomers = useTranslations('customers');
   const tCommon = useTranslations('common');
+  const customersEnabled = usePosSettingsStore((state) => state.customersEnabled);
   const [invalidPhonesCount, setInvalidPhonesCount] = useState(0);
 
   useEffect(() => {
+    // Nothing to chase up when the business keeps no customer book: the banner
+    // would point at a page that is no longer reachable.
+    if (!customersEnabled) return;
     const fetchAlerts = () => {
       api.get('/customers/alerts')
         .then(res => {
@@ -23,9 +28,9 @@ export default function GlobalNotifications() {
     fetchAlerts();
     const interval = setInterval(fetchAlerts, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [customersEnabled]);
 
-  if (invalidPhonesCount === 0) return null;
+  if (!customersEnabled || invalidPhonesCount === 0) return null;
 
   const displayMsg = tCustomers('invalidPhoneCount', { count: invalidPhonesCount });
 

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson, withTxn } from '../db';
 import { getOrderWithItems } from './bills';
+import { resolveOrderTable } from './tables';
 import { v4 as uuidv4 } from 'uuid';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
@@ -445,13 +446,13 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
     // Fetch order items
     order.items = getOrderWithItems(db, Number(bill.order_id), Number(bill.id))?.items || [];
 
-    // Fetch table info
-    if (order.table_id) {
-      const table: any = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
-      if (table) {
-        order.table = { name: table.number };
-      }
-    }
+    // Fetch table info. Falls back to the label the order captured when it was
+    // placed, so reprinting a bill still names the table after the room has been
+    // rebuilt and that table deleted. See docs/table-management.md.
+    const billTableRow: any = order.table_id
+      ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id)
+      : null;
+    order.table = resolveOrderTable(order, billTableRow);
 
     // Fetch business settings for bill template
     const settingsRows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];

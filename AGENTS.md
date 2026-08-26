@@ -36,7 +36,7 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 
 ## Core invariants
 
-1. **Offline-first operation:** Core POS operation (orders, billing, KDS, printing) must function without internet connectivity. Optional network features (Google Drive, WhatsApp, cloud reporting) run only when explicitly configured and must fail gracefully when offline.
+1. **Offline-first operation:** Core POS operation (orders, billing, KDS, printing) must function without internet connectivity. This fork carries no cloud bridge and no usage telemetry — they were removed, along with the settings that armed them (migration v80). The only things that may reach the network are features the owner explicitly configures (Google Drive backup, WhatsApp) and the update check against this fork's own GitHub releases; all of them must fail gracefully when offline. Do not reintroduce an outbound channel to a vendor.
 2. **Data safety:** Existing customer data must survive upgrades. Never reset, truncate, or drop user databases as a shortcut for migration design.
 3. **Architecture boundaries:** UI language, tenant regional settings, and tax/compliance behavior are separate, decoupled domains.
 4. **Business timestamps:** Persisted timestamps follow FloCafe's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.

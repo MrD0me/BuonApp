@@ -1,12 +1,10 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
-import { getDatabase, now } from '../db';
-import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
+import { getDatabase, now, areCustomersEnabled } from '../db';
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
-import { sendEvent } from '../services/telemetry';
 import { getCountryByCode, getCurrencySymbol, isValidTimeZone, type CountryLocaleOptions } from '../countries';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
@@ -47,10 +45,6 @@ function validBusinessLocation(timezone: unknown, currency: unknown, country: un
 
 const SENSITIVE_SETTING_KEYS = new Set([
   'jwt_secret',
-  'cloud_api_key',
-  'cloud_device_secret',
-  'cloud_deletion_status_token',
-  'cloud_last_error',
 ]);
 
 const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
@@ -65,7 +59,6 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
 };
 
 function maskSetting(key: string, value: string): string {
-  if (key === 'cloud_last_error') return value ? 'Cloud service request failed' : '';
   if (!SENSITIVE_SETTING_KEYS.has(key)) return value;
   return value ? `****${value.slice(-4)}` : '';
 }
@@ -118,20 +111,8 @@ function resolveStoredLocalePreference(key: LocalePreferenceKey, stored: string 
   return NEUTRAL_LOCALE_PREFERENCES[key];
 }
 
-// cloud_sync_enabled/cloud_orders_enabled/cloud_reports_enabled/cloud_command_polling_enabled
-// mirror FloAdmin's own `stores` table and are read elsewhere (cloud-sync.ts) as a strict
-// '1' check, not boolFlag()'s 'true'/'false' — keep this route's writes on that convention.
-function bool01Flag(value: unknown): string | undefined {
-  const flag = boolFlag(value);
-  return flag === undefined ? undefined : flag === 'true' ? '1' : '0';
-}
-
 function deriveCurrencySymbol(currency: string, country: string): string {
   return getCurrencySymbol(currency || 'INR', getCountryByCode(country || 'IN')?.locale) || currency || 'INR';
-}
-
-function isMaskedSecret(value: unknown): boolean {
-  return typeof value === 'string' && value.startsWith('****');
 }
 
 function businessShape(s: Record<string, string>) {
@@ -259,7 +240,6 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
       ...localeUpdates,
     });
-    cloudSync.refreshRegistrationProfile();
 
     res.json(businessShape(getAllSettings(db)));
   } catch (error: any) {
@@ -308,7 +288,6 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
         ? deriveCurrencySymbol(currentSettings.currency || 'INR', country || currentSettings.country || 'IN')
         : undefined,
     });
-    cloudSync.refreshRegistrationProfile();
     res.json(taxShape(getAllSettings(db)));
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -342,6 +321,10 @@ router.put('/loyalty', requireRole('owner', 'manager'), (req: Request, res: Resp
     }
 
     const db = getDatabase();
+    // The wallet is per-customer, so loyalty cannot outlive the customer book.
+    if (boolFlag(loyalty_enabled) === 'true' && !areCustomersEnabled()) {
+      return res.status(409).json({ error: 'Loyalty needs the customer book, which is switched off', code: 'customers_disabled' });
+    }
     upsertSettings(db, {
       loyalty_enabled,
       ...(finalGlobalCb !== undefined && { global_cashback_percent: String(finalGlobalCb) })
@@ -539,227 +522,6 @@ router.put('/order-numbering', requireRole('owner', 'manager'), (req: Request, r
   }
 });
 
-function publicDeletionRequest(request: Record<string, unknown> | null): Record<string, unknown> | null {
-  if (!request) return null;
-  const safe: Record<string, unknown> = {};
-  const requestId = request.request_id ?? request.id;
-  if (typeof requestId === 'string' && requestId) safe.id = requestId;
-  if (typeof request.status === 'string') safe.status = request.status;
-  if (typeof request.requested_at === 'string') safe.requested_at = request.requested_at;
-  if (typeof request.reviewed_at === 'string' || request.reviewed_at === null) safe.reviewed_at = request.reviewed_at;
-  if (typeof request.decision_note === 'string') safe.decision_note = request.decision_note;
-  return safe;
-}
-
-function publicEmailPreferences(data: Record<string, unknown>): Record<string, unknown> {
-  return {
-    email: typeof data.email === 'string' ? data.email : null,
-    verified: data.verified === true,
-    verified_at: typeof data.verified_at === 'string' || data.verified_at === null ? data.verified_at : null,
-    verification_sent_at: typeof data.verification_sent_at === 'string' || data.verification_sent_at === null ? data.verification_sent_at : null,
-    product_updates: data.product_updates === true,
-    marketing: data.marketing === true,
-  };
-}
-
-const CLOUD_ACCOUNT_UNAVAILABLE_ERROR = 'Cloud account services are unavailable while Cloud services are stopped or unregistered';
-
-// ─── Cloud Sync settings (must come BEFORE /:key wildcard) ──────────────────
-
-router.get('/cloud', requireRole('owner', 'manager'), (req: Request, res: Response) => {
-  try {
-    res.json(cloudSync.getStatus());
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Response) => {
-  try {
-    const {
-      cloud_server_url,
-      cloud_api_key,
-      cloud_store_id,
-      cloud_sync_enabled,
-      cloud_orders_enabled,
-      cloud_reports_enabled,
-      cloud_command_polling_enabled,
-    } = req.body;
-    const db = getDatabase();
-    const updates: Record<string, string | undefined> = {
-      cloud_store_id: cloud_store_id === undefined ? undefined : String(cloud_store_id || ''),
-      cloud_sync_enabled: bool01Flag(cloud_sync_enabled),
-      cloud_orders_enabled: bool01Flag(cloud_orders_enabled),
-      cloud_reports_enabled: bool01Flag(cloud_reports_enabled),
-      cloud_command_polling_enabled: bool01Flag(cloud_command_polling_enabled),
-    };
-
-    if (cloud_server_url !== undefined) {
-      updates.cloud_server_url = normalizeCloudServerUrl(cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
-    }
-    if (cloud_api_key !== undefined && !isMaskedSecret(cloud_api_key)) {
-      updates.cloud_api_key = String(cloud_api_key || '');
-    }
-    const enablingCloud = [cloud_sync_enabled, cloud_orders_enabled, cloud_reports_enabled, cloud_command_polling_enabled]
-      .some((value) => bool01Flag(value) === '1');
-    const resumingStoppedCloud = cloudSync.getStatus().cloud_services_disabled_by_user && enablingCloud;
-    if (resumingStoppedCloud) {
-      // Stop All disables every cloud feature. Re-enabling the Cloud Services
-      // control is a resume action, not just a sync preference change.
-      updates.cloud_sync_enabled = '1';
-      updates.cloud_orders_enabled = '1';
-      updates.cloud_reports_enabled = '1';
-      updates.cloud_command_polling_enabled = '1';
-    }
-    if (enablingCloud) updates.cloud_services_disabled_by_user = 'false';
-    if (enablingCloud && cloudSync.getStatus().cloud_deletion_blocked) {
-      return res.status(409).json({ error: 'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.' });
-    }
-
-    upsertSettings(db, updates);
-    cloudSync.reload();
-    cloudSync.refreshRegistrationProfile();
-    res.json(cloudSync.getStatus());
-  } catch (error: any) {
-    console.error('[API] Cloud settings update failed:', error);
-    res.status(400).json({ error: 'Invalid cloud settings' });
-  }
-});
-
-router.post('/cloud/register', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const deletionRequest = await cloudSync.getDeletionRequestStatus({
-      allowRemote: cloudSync.isCloudAccountAvailable(),
-      signal: getHttpRequestSignal(req),
-    });
-    if (deletionRequest?.status === 'pending') {
-      return res.status(409).json({ error: 'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.' });
-    }
-    if (cloudSync.getStatus().cloud_services_disabled_by_user) {
-      return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
-    }
-    if (req.body?.cloud_server_url !== undefined) {
-      upsertSettings(getDatabase(), {
-        cloud_server_url: normalizeCloudServerUrl(req.body.cloud_server_url || DEFAULT_CLOUD_SERVER_URL),
-      });
-    }
-    if (cloudSync.getStatus().cloud_deletion_blocked) {
-      return res.status(409).json({ error: 'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.' });
-    }
-    // Registration sends contact metadata for FloAdmin support; it does not
-    // create a cloud owner account or grant authentication access.
-    await cloudSync.register(getHttpRequestSignal(req));
-    upsertSettings(getDatabase(), {
-      cloud_sync_enabled: '1', cloud_reports_enabled: '1', cloud_command_polling_enabled: '1',
-      cloud_services_disabled_by_user: 'false',
-    });
-    cloudSync.reload();
-    res.json(cloudSync.getStatus());
-  } catch (error: any) {
-    console.error('[API] Cloud registration failed:', error);
-    res.status(502).json({ error: 'Cloud registration failed' });
-  }
-}));
-
-router.post('/cloud/test', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const result = await cloudSync.testConnection(getHttpRequestSignal(req));
-    res.json(result);
-  } catch (error: any) {
-    console.error('[API] Cloud test failed:', error);
-    res.status(502).json({ error: 'Cloud test failed' });
-  }
-}));
-
-router.get('/cloud/account', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const cloudAccountAvailable = cloudSync.isCloudAccountAvailable();
-    const signal = getHttpRequestSignal(req);
-    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: cloudAccountAvailable, signal });
-    const safeDeletionRequest = publicDeletionRequest(deletionRequest);
-    if (deletionRequest?.status === 'approved' || !cloudSync.isCloudAccountAvailable()) {
-      return res.json({
-        email: null,
-        verified: false,
-        verified_at: null,
-        verification_sent_at: null,
-        product_updates: false,
-        marketing: false,
-        cloud_account_available: false,
-        deletion_request: safeDeletionRequest,
-      });
-    }
-    res.json({
-      ...publicEmailPreferences(await cloudSync.getEmailPreferences(signal)),
-      cloud_account_available: true,
-      deletion_request: safeDeletionRequest,
-    });
-  } catch {
-    res.status(502).json({ error: 'Could not load cloud account status' });
-  }
-}));
-
-router.put('/cloud/account/preferences', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
-  if (!cloudSync.isCloudAccountAvailable()) {
-    return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
-  }
-  try {
-    res.json(publicEmailPreferences(await cloudSync.updateEmailPreferences({
-      product_updates: req.body?.product_updates,
-      marketing: req.body?.marketing,
-    }, getHttpRequestSignal(req))));
-  } catch {
-    res.status(502).json({ error: 'Could not update email preferences' });
-  }
-}));
-
-router.post('/cloud/account/verification', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
-  if (!cloudSync.isCloudAccountAvailable()) {
-    return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
-  }
-  try {
-    res.json(publicEmailPreferences(await cloudSync.requestEmailVerification({ source: 'settings' }, getHttpRequestSignal(req))));
-  } catch {
-    res.status(502).json({ error: 'Could not send verification email' });
-  }
-}));
-
-router.get('/cloud/delete-data/status', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: true, signal: getHttpRequestSignal(req) });
-    res.json({
-      cloud_account_available: cloudSync.isCloudAccountAvailable(),
-      deletion_request: publicDeletionRequest(deletionRequest),
-    });
-  } catch {
-    res.status(502).json({ error: 'Could not refresh cloud deletion status' });
-  }
-}));
-
-router.post('/cloud/stop-all', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
-  res.json(await cloudSync.stopAllCloudServices(getHttpRequestSignal(req)));
-}));
-
-router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
-  if (req.body?.confirmation !== 'DELETE CLOUD DATA') {
-    return res.status(400).json({ error: 'Type DELETE CLOUD DATA to confirm' });
-  }
-  try {
-    res.json(await cloudSync.deleteCloudData(getHttpRequestSignal(req)));
-  } catch {
-    res.status(502).json({ error: 'Cloud data deletion failed' });
-  }
-}));
-
-router.post('/cloud/delete-data/cancel', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
-  try {
-    res.json(await cloudSync.cancelDeletionRequest(getHttpRequestSignal(req)));
-  } catch {
-    res.status(502).json({ error: 'Could not cancel deletion request' });
-  }
-}));
-
 // ─── Google Drive backups (must come BEFORE /:key wildcard) ─────────────────
 // See #129. Off by default — connect/disconnect/backup-now are the only
 // actions that ever touch Google's API, and only owner can trigger them
@@ -827,7 +589,7 @@ router.post('/google-drive/backup-now', requireRole('owner'), asyncHandler(async
 // ── Generic key-value routes (wildcard — must be last) ─────────────────────
 
 // Only non-sensitive keys may be updated via the wildcard route.
-// Sensitive keys (cloud_*, tax_registration_number, etc.) must use their explicit routes above.
+// Sensitive keys (jwt_secret, tax_registration_number, etc.) must use their explicit routes above.
 const ALLOWED_WILDCARD_KEYS = new Set([
   'business_name', 'timezone', 'currency', 'country',
   'state_code', 'business_address', 'business_phone',
@@ -840,9 +602,8 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'language',
   'kds_default_view',
   'printer_method', 'paper_size', 'bill_template', 'bill_footer_message', 'printer_trim_decimals',
-  'telemetry_enabled',
-  'diagnostics_consent',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',
+  'customers_enabled',
   'split_checks_enabled',
   'currency_display', 'number_digits', 'calendar',
 ]);
@@ -945,6 +706,14 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
       }
     }
 
+    // Customer book turning off → loyalty goes with it. The wallet is per
+    // customer, so leaving `loyalty_enabled` on would arm cashback rules with
+    // nobody to credit them to, and they would silently come back the day the
+    // book is switched on again.
+    if (req.params.key === 'customers_enabled' && boolFlag(value) === 'false') {
+      upsertSettings(db, { loyalty_enabled: 'false' });
+    }
+
     let valueToPersist = value;
     if (req.params.key === 'business_phone') {
       const effectiveCountry = getAllSettings(db).country || 'IN';
@@ -959,26 +728,6 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
       INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(req.params.key, valueToPersist, now());
-
-    // Keep the legacy setting as a compatibility mirror. The canonical runtime
-    // switch is telemetry_enabled; this route is the only user-facing writer,
-    // so both stay aligned whenever the owner changes the toggle.
-    if (req.params.key === 'telemetry_enabled') {
-      db.prepare(`
-        INSERT INTO settings (key, value, updated_at) VALUES ('anonymous_data_consent', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-      `).run(value, now());
-    }
-
-    // Tell FloAdmin the merchant's current choice so stores.diagnostics_consent
-    // matches in both directions, not just inferred from "an event arrived."
-    // Best-effort — never blocks the setting save on cloud reachability.
-    if (req.params.key === 'diagnostics_consent') {
-      void cloudSync.setDiagnosticsConsent(boolFlag(value) === 'true');
-    }
-    if (req.params.key === 'split_checks_enabled' && boolFlag(value) === 'true') {
-      void sendEvent('feature_used', { feature: 'split_checks', action: 'enabled' });
-    }
 
     const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
     res.json({ setting });

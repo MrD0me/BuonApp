@@ -108,20 +108,108 @@ export interface Addon {
   sort_order: number;
 }
 
+/** A dining room: what the map is drawn on. Sizes are abstract units, not pixels. */
+export interface Room {
+  id: string;
+  name: string;
+  sort_order: number;
+  width: number;
+  height: number;
+  is_active: boolean;
+  tables?: Table[];
+}
+
+export type TableShape = 'rect' | 'round';
+
+/** A floor plan kept under a name, so a wiped room can be rebuilt in one action. */
+export interface TableLayout {
+  id: string;
+  name: string;
+  rooms: number;
+  tables: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * A booking for the service being run now. Scoped to a table that exists,
+ * because the room is rebuilt daily — see docs/table-management.md.
+ */
+export interface Reservation {
+  id: string;
+  service_day_id: string;
+  table_id: string | null;
+  customer_id: string | null;
+  name: string;
+  guests: number;
+  /** `HH:MM`, only when the guest gave one. */
+  booked_time: string | null;
+  phone: string | null;
+  notes: string | null;
+  status: 'booked' | 'seated' | 'cancelled' | 'no_show' | 'expired';
+  created_at: string;
+}
+
 export interface Table {
   id: string;
   name: string;
+  /** Schema column behind `name`; the API sends both. */
+  number?: string;
   capacity: number;
   status: 'available' | 'occupied' | 'reserved' | 'cleaning' | 'held';
   kitchen_station_id: number | null;
+  room_id: string | null;
+  /** Superseded by `room_id`; only older databases still carry it. */
   floor: string | null;
   section: string | null;
+  position_x: number | null;
+  position_y: number | null;
+  width: number | null;
+  height: number | null;
+  shape: TableShape;
+  /** Set when this table has been folded into another for one party; it names the leader. */
+  merged_into?: string | null;
   is_active: boolean;
   activeOrder?: Order | null;
   current_order?: Order | null;
-  reservation_customer_id?: number | null;
-  reservation_customer_name?: string | null;
-  reservation_customer_phone?: string | null;
+  /** The booking this table is being held for, when there is one. */
+  reservation?: Reservation | null;
+}
+
+/**
+ * One business day of service. Orders link to it, so a day's takings are an
+ * exact set of rows rather than a time range — see docs/table-management.md.
+ */
+export interface ServiceDay {
+  id: string;
+  business_date: string;
+  status: 'open' | 'closed';
+  opened_at: string;
+  opened_by: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  notes: string | null;
+  /** Totals frozen at close. Absent while the day is open. */
+  summary: string | null;
+  layout_snapshot: string | null;
+  /** Present on list rows only, so the picker can show numbers without a second call. */
+  orders_count?: number;
+  covers?: number;
+  takings?: number;
+}
+
+export interface ServiceDaySummary {
+  orders: { total: number; completed: number; cancelled: number };
+  covers: number;
+  bills: { count: number; paid: number; unpaid: number };
+  takings: { total: number; byMethod: { method: string; count: number; total: number }[] };
+  discounts: number;
+  topProducts: { name: string; quantity: number; total: number }[];
+}
+
+export interface ServiceDayBlockers {
+  openOrders: { id: number; order_number: string; status: string; table_label: string | null }[];
+  unpaidBills: { id: number; bill_number: string; total: number; paid_amount: number }[];
 }
 
 export interface Customer {
@@ -146,6 +234,11 @@ export interface Order {
   id: number;
   order_number: string;
   table_id: string | null;
+  /** Where the order was served, captured at creation and immune to the table being deleted. */
+  table_label?: string | null;
+  room_label?: string | null;
+  /** The business day this order belongs to. */
+  service_day_id?: string | null;
   customer_id: number | string | null;
   type: 'dine_in' | 'takeaway' | 'delivery' | 'online';
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';

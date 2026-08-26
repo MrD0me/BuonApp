@@ -114,17 +114,23 @@ function main() {
   console.log('   ✓ an old (pre-migration-array) install migrates through to the latest schema without crashing');
 
   const db = getDatabase();
-  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'cloud_sync_enabled'").get().value, '1',
-    'seed-written cloud sync defaults are flipped on during upgrade');
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM settings WHERE key = 'cloud_pending_store_id'").get().count, 0,
-    'pending registration state is removed during upgrade');
-  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'cloud_orders_enabled'").get().value, '0',
-    'explicitly edited settings remain unchanged during upgrade');
   assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'taxes_enabled'").get().value, 'false',
     'taxes remain off until the merchant enables them');
-  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'support_ticket_outbox'").get(),
-    'support ticket outbox exists after upgrade');
-  console.log('   ✓ v40/v41 preserves deliberate settings, flips untouched cloud sync, and creates the support outbox');
+  // An install old enough to predate the migration array carries cloud settings
+  // and outbox tables from every era of the bridge. v80 has to leave none of
+  // them behind, whatever route the database took to get here.
+  assert.equal(
+    (db.prepare(`SELECT COUNT(*) AS count FROM settings
+      WHERE key LIKE 'cloud_%' OR key LIKE 'telemetry_%'
+         OR key IN ('anonymous_data_consent', 'diagnostics_consent')`).get() as { count: number }).count,
+    0,
+    'upgrading an old install leaves no cloud or telemetry settings behind');
+  assert.equal(
+    (db.prepare(`SELECT COUNT(*) AS count FROM sqlite_master
+      WHERE type = 'table' AND name IN ('cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox')`).get() as { count: number }).count,
+    0,
+    'the outbox tables are dropped on upgrade');
+  console.log('   ✓ upgrading preserves deliberate settings and removes every trace of the cloud bridge');
   const ideal = buildIdealSchemaDb();
   const latestSchemaVersion = ideal.pragma('user_version', { simple: true }) as number;
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion,
@@ -344,14 +350,20 @@ function main() {
     'true',
     'v60 preserves an existing split-check choice',
   );
-  getDatabase().prepare(`UPDATE settings SET value = 'false' WHERE key = 'diagnostics_consent'`).run();
+  // Replaying from an older stamp must land in the same place: a rewound
+  // database walks the cloud migrations again and v80 has to sweep up after
+  // them every time, not only on the first pass.
+  getDatabase().prepare(
+    `INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('diagnostics_consent', 'false', datetime('now'))`,
+  ).run();
   getDatabase().pragma('user_version = 46');
   closeDatabase();
   initDatabase();
-  const diagnosticsSetting = getDatabase().prepare(
-    `SELECT value FROM settings WHERE key = 'diagnostics_consent'`,
-  ).get() as { value: string };
-  assert.equal(diagnosticsSetting.value, 'false', 'v47 preserves an existing diagnostics opt-out');
+  assert.equal(
+    getDatabase().prepare(`SELECT value FROM settings WHERE key = 'diagnostics_consent'`).get(),
+    undefined,
+    'replaying the migrations from an older stamp purges the cloud settings again',
+  );
   console.log('   ✓ reopening is idempotent and preserves an already-active country pack');
   closeDatabase();
 

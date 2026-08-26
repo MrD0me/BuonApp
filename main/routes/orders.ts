@@ -10,9 +10,12 @@ import {
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
-import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
+import { resolveOrderTable } from './tables';
+import { tableLabelSource, tableGroupLeader } from '../services/tables';
+import { getOrOpenServiceDay } from '../services/service-day';
+import { seatReservationForTable } from '../services/reservations';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -333,7 +336,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   return parsedOrders.map((order) => {
     const itemList = itemsByOrder.get(order.id) || [];
     const tableRow = order.table_id ? tablesById.get(order.table_id) : null;
-    const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
+    const table = resolveOrderTable(order, tableRow);
     const customer = order.customer_id ? customersById.get(order.customer_id) : null;
     const bills = billsByOrderId.get(order.id) || [];
     for (const billRow of bills) {
@@ -390,6 +393,18 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
     if (!type || !['dine_in', 'takeaway', 'delivery', 'online'].includes(type)) {
       return res.status(400).json({ error: 'Valid type is required (dine_in, takeaway, delivery, online)' });
+    }
+    if (table_id) {
+      // A table folded into a group is not seated on its own: the party is on
+      // the leader, and that is the only place its order can live.
+      const leaderId = tableGroupLeader(getDatabase(), String(table_id));
+      if (leaderId !== String(table_id)) {
+        return res.status(409).json({
+          error: 'This table is joined to another one. Place the order on the table leading the group.',
+          code: 'table_is_merged',
+          leader_table_id: leaderId,
+        });
+      }
     }
     if (guest_count !== undefined && guest_count !== null && (!Number.isSafeInteger(guest_count) || guest_count < 1 || guest_count > 99)) {
       return res.status(400).json({ error: 'guest_count must be a whole number between 1 and 99' });
@@ -460,12 +475,24 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
         service_charge_tax_category_id: chargeCategories.service_charge?.categoryId || null,
       };
 
+      // Capture where this order is being served. Tables are rebuilt daily and
+      // deleted for real, so `table_id` alone cannot carry history — these
+      // labels are what the order shows once its table is gone.
+      // See docs/table-management.md.
+      const orderTableRow = table_id ? tableLabelSource(db, table_id) : null;
+
+      // File the order under the day being served, opening one if the floor
+      // never started it. An offline-first till must not refuse an order
+      // because nobody pressed a button this morning.
+      const serviceDay = getOrOpenServiceDay(db, authenticatedUserId);
+
       const orderResult = db.prepare(`
-        INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
-          packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
-          service_charge_tax_category_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `).run(orderNumber, table_id || null, customer_id || null, authenticatedUserId, type, guest_count || null,
+        INSERT INTO orders (order_number, table_id, table_label, room_label, service_day_id, customer_id, user_id, type,
+          guest_count, special_instructions, packaging_charge, delivery_charge, packaging_tax_category_id,
+          delivery_tax_category_id, service_charge_tax_category_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      `).run(orderNumber, table_id || null, orderTableRow?.number ?? null, orderTableRow?.room ?? null,
+        serviceDay.id, customer_id || null, authenticatedUserId, type, guest_count || null,
         special_instructions || null, packaging_charge || 0, delivery_charge || 0,
         chargeContext.packaging_tax_category_id, chargeContext.delivery_tax_category_id,
         chargeContext.service_charge_tax_category_id, now(), now());
@@ -582,6 +609,8 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
       if (table_id && type === 'dine_in') {
         db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?").run(now(), table_id);
+        // The party the table was being held for has arrived.
+        seatReservationForTable(db, table_id);
       }
 
       const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)) as any;
@@ -596,8 +625,6 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
     if (!result.idempotentReplay) {
       notifyKdsUpdate();
-      cloudSync.recordOrderChanged(result.order.id, 'order.created');
-
       if (customer_id) {
         try {
           syncCustomerTagCounts(db, customer_id, items);
@@ -861,7 +888,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
     });
 
     if (result.replayResponse) return res.json(result.replayResponse);
-    cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyKdsUpdate();
 
     res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
@@ -918,7 +944,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
         // Idempotent same-state request for order
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
         const tableRow = currentOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(currentOrder.table_id) as any : null;
-        const tableObj = tableRow ? { ...tableRow, name: tableRow.number } : null;
+        const tableObj = resolveOrderTable(currentOrder, tableRow);
         return { updatedOrder: parseRowJson(currentOrder), orderItems: items, table: tableObj, changed: false };
       }
 
@@ -1033,12 +1059,11 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
       const tableRow2 = updatedOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any : null;
-      const table = tableRow2 ? { ...tableRow2, name: tableRow2.number } : null;
+      const table = resolveOrderTable(updatedOrder, tableRow2);
       return { updatedOrder, orderItems, table, changed: true };
     });
 
     if (changed) {
-      cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
       notifyKdsUpdate();
     }
 
@@ -1083,7 +1108,6 @@ router.patch('/:id/customer', orderWriteRateLimit, requireRole('owner', 'manager
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get(updatedOrder.customer_id)
       : null;
 
-    cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyOrderUpdated();
 
     res.json({ order: { ...updatedOrder, customer } });
@@ -1126,7 +1150,6 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole('owner
     const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
     const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
 
-    cloudSync.recordOrderChanged(req.params.id as string, 'order.type_changed');
     notifyKdsUpdate();
 
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table: null }) });

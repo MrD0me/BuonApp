@@ -20,7 +20,7 @@
   <img src="docs/images/flo-cafe-pos.webp" alt="FloCafe POS screen showing product selection and an active dine-in order" width="100%">
 </p>
 
-FloCafe runs directly on the business's own computer. Orders, customers, receipts, and backups are stored in a local SQLite database, allowing counter service and kitchen displays to continue operating without an internet connection. No hosted or cloud account is required for core POS operation. Optional integrations—such as Google Drive backup, WhatsApp bill delivery, and cloud-connected reporting—can be enabled when needed.
+FloCafe runs directly on the business's own computer. Orders, customers, receipts, and backups are stored in a local SQLite database, allowing counter service and kitchen displays to continue operating without an internet connection. No hosted or cloud account is required for core POS operation. Optional integrations—such as Google Drive backup and WhatsApp bill delivery—can be enabled when needed.
 
 ## Get FloCafe
 
@@ -84,7 +84,7 @@ Core POS operation and local data are offline-first. Order entry, billing, KDS c
 
 - **Data location:** The SQLite database and local backups reside in the operating system user-data directory, separate from installed application binaries. Standard in-place application updates do not remove them. As a best practice, create a manual backup before reinstalling, moving to a new machine, or changing distribution channels.
 - **Pre-migration backups:** FloCafe automatically creates a timestamped database backup before running schema migrations.
-- **Optional network features:** Services such as Google Drive backups, WhatsApp bill delivery, and cloud reporting communicate over the network only when explicitly configured and enabled by the store owner.
+- **Optional network features:** Services such as Google Drive backups and WhatsApp bill delivery communicate over the network only when explicitly configured and enabled by the store owner.
 
 ## Languages and regional support
 

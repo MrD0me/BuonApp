@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { createHash } from 'node:crypto';
-import { getDatabase, isKdsEnabled, now, parseDbTimestamp } from '../db';
+import { areCustomersEnabled, getDatabase, isKdsEnabled, now, parseDbTimestamp } from '../db';
 
 interface RateLimitRecord {
   count: number;
@@ -353,6 +353,19 @@ export function requireKdsEnabled(req: Request, res: Response, next: () => void)
 export function requireKdsEnabledOr404(req: Request, res: Response, next: () => void) {
   if (!isKdsEnabled()) {
     return res.status(404).json({ error: 'Not found' });
+  }
+  next();
+}
+
+/**
+ * Blocks the endpoints that would put a new name in the customer book while
+ * the book is switched off. Reads stay open: a business that turns the book
+ * off keeps whatever it already had, and nothing on screen should break for
+ * orders that were linked to a customer back when it was on.
+ */
+export function requireCustomersEnabled(req: Request, res: Response, next: () => void) {
+  if (!areCustomersEnabled()) {
+    return res.status(403).json({ error: 'The customer book is switched off for this business', code: 'customers_disabled' });
   }
   next();
 }

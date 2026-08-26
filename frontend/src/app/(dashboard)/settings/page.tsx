@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { LANGUAGES, type Language } from '@/lib/i18n';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
-import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
+import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, CloudOff, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -39,12 +39,6 @@ const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).
 function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' | 'inactive') => string): string {
   const key = (TENANT_STATUS_LABEL_KEYS as Record<string, 'active' | 'inactive' | undefined>)[status ?? ''];
   return key ? tCommon(key) : (status ?? '');
-}
-
-const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
-
-function notifyCloudAccountStatusChanged(): void {
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event(CLOUD_ACCOUNT_STATUS_CHANGED_EVENT));
 }
 
 const CLASSIC_PREVIEW = `   STORE NAME
@@ -265,10 +259,16 @@ export default function SettingsPage() {
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const language = posSettings.language;
   const setLanguage = posSettings.setLanguage;
-  const { formatDate, formatTime, formatDateTime } = useFormatDate();
+  const { formatDateTime } = useFormatDate();
   const isAdmin = currentTenant?.role === 'admin' || currentTenant?.role === 'owner';
   const canViewTaxConfiguration = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
   const { confirm, ConfirmDialog } = useConfirm();
+
+  // Whether this business keeps a customer book at all. Saved on the spot
+  // rather than with the rest of the form: switching it off also switches
+  // loyalty off server-side, and a pending "unsaved" toggle would hide that.
+  const [customersEnabledSetting, setCustomersEnabledSetting] = useState(true);
+  const [savingCustomersEnabled, setSavingCustomersEnabled] = useState(false);
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [savedLoyaltyEnabled, setSavedLoyaltyEnabled] = useState(false);
@@ -341,34 +341,12 @@ export default function SettingsPage() {
     | { mode: 'import'; payload: { data: ImportPayload; overwrite: boolean } }
     | { mode: 'restore'; payload: { backupPath: string } }
     | { mode: 'delete-backup'; payload: { fileName: string } }
-    | { mode: 'delete-cloud' }
-    | { mode: 'cancel-cloud-deletion' }
     | null;
   const [pinGate, setPinGate] = useState<PinGate>(() => searchParams?.get('action') === 'master-pin' ? { mode: 'set' } : null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   // The mount effect below always fetches backups unconditionally, so this starts true
   // rather than being set synchronously inside that effect.
   const [backupsLoading, setBackupsLoading] = useState(true);
-  const [cloudAccount, setCloudAccount] = useState<{ email?: string | null; cloud_account_available?: boolean; verified?: boolean; verified_at?: string | null; verification_sent_at?: string | null; product_updates?: boolean; marketing?: boolean; deletion_request?: { id?: string; status?: 'pending' | 'processing' | 'approved' | 'completed' | 'deleted' | 'failed' | 'rejected' | 'cancelled'; requested_at?: string; reviewed_at?: string | null; decision_note?: string | null } | null } | null>(null);
-  const [cloudAccountBusy, setCloudAccountBusy] = useState(false);
-  const [cloudAccountLoadFailed, setCloudAccountLoadFailed] = useState(false);
-  const [refreshingDeletionStatus, setRefreshingDeletionStatus] = useState(false);
-  const cloudAccountAvailable = !cloudAccountLoadFailed && cloudAccount?.cloud_account_available !== false;
-  const cloudDeletionStatus = cloudAccount?.deletion_request?.status || '';
-  const cloudDeletionPending = cloudDeletionStatus === 'pending';
-  const cloudDeletionNeedsResolution = ['pending', 'processing', 'failed'].includes(cloudDeletionStatus);
-  const cloudDeletionCanCancel = ['pending', 'processing'].includes(cloudDeletionStatus) && Boolean(cloudAccount?.deletion_request?.id);
-
-  const fetchCloudAccount = async () => {
-    try {
-      const { data } = await api.get('/settings/cloud/account');
-      setCloudAccount(data);
-      setCloudAccountLoadFailed(false);
-    } catch {
-      setCloudAccountLoadFailed(true);
-    }
-  };
-
   const fetchMasterPinStatus = async () => {
     try {
       const { data } = await api.get('/db-tools/master-pin/status');
@@ -414,15 +392,6 @@ export default function SettingsPage() {
         // ignore — history card just shows empty state until retried
       })
       .finally(() => setBackupsLoading(false));
-    if (currentTenant?.role === 'owner') {
-      api.get('/settings/cloud/account')
-        .then(({ data }) => {
-          setCloudAccount(data);
-          setCloudAccountLoadFailed(false);
-        })
-        .catch(() => setCloudAccountLoadFailed(true));
-    }
-
     if (searchParams?.get('action') === 'health-check') {
       api.get('/db-tools/health-check')
         .then(({ data }) => setHealthReport(data))
@@ -534,34 +503,6 @@ export default function SettingsPage() {
         return { success: true };
       } catch {
         return { success: false, error: t('backupDeleteFailed') };
-      }
-    }
-
-    if (pinGate.mode === 'delete-cloud') {
-      try {
-        await api.post('/settings/cloud/delete-data', { master_pin: pin, confirmation: 'DELETE CLOUD DATA' });
-        toast.success(t('cloudDeletionSubmitted'));
-        await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
-        notifyCloudAccountStatusChanged();
-        setPinGate(null);
-        return { success: true };
-      } catch {
-        await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
-        notifyCloudAccountStatusChanged();
-        return { success: false, error: t('cloudDeletionFailed') };
-      }
-    }
-
-    if (pinGate.mode === 'cancel-cloud-deletion') {
-      try {
-        await api.post('/settings/cloud/delete-data/cancel', { master_pin: pin });
-        toast.success(t('cloudDeletionCancelled'));
-        await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
-        notifyCloudAccountStatusChanged();
-        setPinGate(null);
-        return { success: true };
-      } catch {
-        return { success: false, error: t('cloudDeletionCancelFailed') };
       }
     }
 
@@ -736,36 +677,6 @@ export default function SettingsPage() {
       toast.error(t('posInfoFetchFailed'));
     }).finally(() => setPosInfoLoading(false));
   };
-
-  // ── More Apps ───────────────────────────────────────────────────────────────
-  type MoreApp = {
-    id: string;
-    name: string;
-    tagline: string;
-    ios_url: string | null;
-    android_url: string | null;
-    qr_data_url: string | null;
-    available: boolean;
-  };
-  const [moreApps, setMoreApps] = useState<MoreApp[]>([]);
-  // The mount effect below always fetches this unconditionally, so this starts true rather
-  // than being set synchronously inside that effect.
-  const [moreAppsLoading, setMoreAppsLoading] = useState(true);
-  const [revflo, setRevflo] = useState<MoreApp | null>(null);
-
-  useEffect(() => {
-    api.get('/more-apps').then((res) => {
-      setMoreApps(res.data.apps || []);
-    }).catch(() => {
-      // Silent — this tab is informational, not critical
-    }).finally(() => setMoreAppsLoading(false));
-
-    api.get('/more-apps/revflo').then((res) => {
-      setRevflo(res.data.app || null);
-    }).catch(() => {
-      // Silent — the card still shows the pairing code without the QR promo
-    });
-  }, []);
 
   // ── Updates ─────────────────────────────────────────────────────────────────
   const { updateStatus, appVersion, checkForUpdates: handleCheckUpdates } = useUpdateStatus();
@@ -1055,25 +966,6 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stations]);
 
-  // Mobile App Pairing
-  const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
-  const [pairingQrDataUrl, setPairingQrDataUrl] = useState<string | null>(null);
-  // Defaults to true (not false) so the "Generate Pairing Code" button can't
-  // render — and be clicked — before the /settings/cloud fetch below has told
-  // us whether this store is actually registered. Clicking it in that window
-  // used to hit the backend while registration status was still unknown and
-  // fail with a generic error even on stores that end up fully registered.
-  const [pairingUnavailable, setPairingUnavailable] = useState(true);
-  const [rotatingCode, setRotatingCode] = useState(false);
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [pairedDevices, setPairedDevices] = useState<Array<{
-    id: string; platform: string | null; app_version: string | null;
-    user_agent: string | null; country: string | null;
-    first_seen_at: string | null; last_seen_at: string | null;
-  }>>([]);
-  const [devicesLoading, setDevicesLoading] = useState(false);
-
   // Printing local state (buffered — saved only on explicit Save)
   type PrintingForm = {
     printerEnabled: boolean; printerPaperSize: PaperSize;
@@ -1207,81 +1099,6 @@ export default function SettingsPage() {
       return null;
     }
   })();
-
-  const [cloudSettings, setCloudSettings] = useState({
-    cloud_api_key: '',
-    cloud_store_id: '',
-    cloud_sync_enabled: false,
-    cloud_orders_enabled: false,
-    cloud_last_sync: null as string | null,
-  });
-  const [savedCloudSettings, setSavedCloudSettings] = useState(cloudSettings);
-  const [cloudStatus, setCloudStatus] = useState({
-    cloud_registration_status: 'unregistered',
-    cloud_services_disabled_by_user: false,
-    cloud_connected: false,
-    cloud_relay_mode: 'disconnected',
-    cloud_last_heartbeat: null as string | null,
-    cloud_last_error: null as string | null,
-    cloud_deletion_status: '',
-  });
-   
-  const [savingCloud, setSavingCloud] = useState(false);
-  const [registeringCloud, setRegisteringCloud] = useState(false);
-  const [showInitializeCloudConfirm, setShowInitializeCloudConfirm] = useState(false);
-
-  const cloudServicesStopped = cloudStatus.cloud_services_disabled_by_user;
-  const cloudDeletionFinal = cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
-  const cloudDeletionNeedsAction = !cloudDeletionFinal && (cloudDeletionNeedsResolution || ['processing', 'failed'].includes(cloudStatus.cloud_deletion_status));
-
-  const refreshCloudStatus = async () => {
-    try {
-      const { data } = await api.get('/settings/cloud');
-      setCloudStatus({
-        cloud_registration_status: data.cloud_registration_status || 'unregistered',
-        cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
-        cloud_connected: !!data.cloud_connected,
-        cloud_relay_mode: data.cloud_relay_mode || 'disconnected',
-        cloud_last_heartbeat: data.cloud_last_heartbeat || null,
-        cloud_last_error: data.cloud_last_error || null,
-        cloud_deletion_status: data.cloud_deletion_status || '',
-      });
-      setCloudSettings((previous) => ({
-        ...previous,
-        cloud_sync_enabled: !!data.cloud_sync_enabled,
-        cloud_orders_enabled: !!data.cloud_orders_enabled,
-        cloud_last_sync: data.cloud_last_sync || null,
-      }));
-      setSavedCloudSettings((previous) => ({
-        ...previous,
-        cloud_sync_enabled: !!data.cloud_sync_enabled,
-        cloud_orders_enabled: !!data.cloud_orders_enabled,
-        cloud_last_sync: data.cloud_last_sync || null,
-      }));
-    } catch {
-      // Keep the last known status if the local settings request fails.
-    }
-  };
-
-  const refreshDeletionStatus = async () => {
-    setRefreshingDeletionStatus(true);
-    try {
-      await api.get('/settings/cloud/delete-data/status');
-      await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
-      notifyCloudAccountStatusChanged();
-      toast.success(t('cloudDeletionStatusRefreshed'));
-    } catch {
-      toast.error(t('cloudDeletionStatusRefreshFailed'));
-    } finally {
-      setRefreshingDeletionStatus(false);
-    }
-  };
-
-  const [telemetryEnabled, setTelemetryEnabled] = useState(false);
-  const [savingTelemetry, setSavingTelemetry] = useState(false);
-
-  const [diagnosticsConsent, setDiagnosticsConsent] = useState(false);
-  const [savingDiagnosticsConsent, setSavingDiagnosticsConsent] = useState(false);
 
   type GoogleDriveStatus = {
     configured: boolean;
@@ -1452,18 +1269,6 @@ export default function SettingsPage() {
     });
   };
 
-  const loadPairedDevices = async () => {
-    setDevicesLoading(true);
-    try {
-      const res = await api.get('/mobile/devices');
-      setPairedDevices(res.data.devices || []);
-    } catch {
-      setPairedDevices([]);
-    } finally {
-      setDevicesLoading(false);
-    }
-  };
-
   useEffect(() => {
     fetchPrinters();
     // Inlined rather than calling fetchDetectedPrinters() (used by the manual "refresh"
@@ -1472,12 +1277,6 @@ export default function SettingsPage() {
       .then((res) => setDetectedPrinters(res.data.printers || []))
       .catch(() => setDetectedPrinters([]))
       .finally(() => setDetectingPrinters(false));
-    // Inlined rather than calling fetchKdsInfo() (used by the manual "refresh" button too) —
-    // kdsInfoLoading already starts true for this initial fetch.
-    api.get('/kds-info')
-      .then((res) => setKdsInfo(res.data))
-      .catch(() => toast.error(t('kdsInfoFetchFailed')))
-      .finally(() => setKdsInfoLoading(false));
     fetchStations();
     fetchStationCategories();
     fetchStationStaff();
@@ -1508,30 +1307,44 @@ export default function SettingsPage() {
       if (res.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!res.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!res.data.discount_requires_approval); }
     }).catch(() => {});
 
-    api.get('/settings/telemetry_enabled').then((res) => {
-      setTelemetryEnabled(res.data.setting?.value === 'true');
-    }).catch(() => {
-      // No row yet = consent never given (setup predates this feature, or
-      // declined) = stays off until explicitly turned on here.
-      setTelemetryEnabled(false);
-    });
-
-    api.get('/settings/diagnostics_consent').then((res) => {
-      setDiagnosticsConsent(res.data.setting?.value !== 'false');
-    }).catch(() => {
-      setDiagnosticsConsent(true);
-    });
-
     fetchGoogleDriveStatus();
 
-    api.get('/settings/kds_enabled').then((res) => {
-      const enabled = res.data.setting?.value !== 'false';
-      setKdsEnabledSetting(enabled);
-      posSettings.setKdsEnabled(enabled);
-    }).catch(() => {});
+    // Pairing details only exist while KDS is on: `/kds-info` sits behind
+    // requireKdsEnabled and answers 403 otherwise. Asking for them
+    // unconditionally meant a business with no kitchen screen got a "could not
+    // fetch KDS info" toast every single time it opened this page. Read the
+    // switch first, and only then the details — which the tab hides anyway
+    // when KDS is off. A failure to read the switch is treated as "on", so a
+    // genuinely broken backend still surfaces its error instead of going quiet.
+    api.get('/settings/kds_enabled')
+      .then((res) => {
+        const enabled = res.data.setting?.value !== 'false';
+        setKdsEnabledSetting(enabled);
+        posSettings.setKdsEnabled(enabled);
+        return enabled;
+      })
+      .catch(() => true)
+      .then((enabled) => {
+        if (!enabled) {
+          setKdsInfoLoading(false);
+          return;
+        }
+        // Inlined rather than calling fetchKdsInfo() (used by the manual
+        // "refresh" button too) — kdsInfoLoading already starts true here.
+        return api.get('/kds-info')
+          .then((res) => setKdsInfo(res.data))
+          .catch(() => toast.error(t('kdsInfoFetchFailed')))
+          .finally(() => setKdsInfoLoading(false));
+      });
 
     api.get('/settings/server_app_enabled').then((res) => {
       setServerAppEnabledSetting(res.data.setting?.value !== 'false');
+    }).catch(() => {});
+
+    api.get('/settings/customers_enabled').then((res) => {
+      const enabled = res.data.setting?.value !== 'false';
+      setCustomersEnabledSetting(enabled);
+      posSettings.setCustomersEnabled(enabled);
     }).catch(() => {});
 
     api.get('/settings/kot_printing_enabled').then((res) => {
@@ -1592,43 +1405,6 @@ export default function SettingsPage() {
     }).catch(() => {});
 
 
-    api.get('/settings/cloud').then((res) => {
-      const settings = {
-        cloud_api_key: res.data.cloud_api_key || '',
-        cloud_store_id: res.data.cloud_store_id || '',
-        cloud_sync_enabled: !!res.data.cloud_sync_enabled,
-        cloud_orders_enabled: !!res.data.cloud_orders_enabled,
-        cloud_last_sync: res.data.cloud_last_sync || null,
-      };
-      setCloudSettings(settings);
-      setSavedCloudSettings(settings);
-      setCloudStatus({
-        cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
-        cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
-        cloud_connected: !!res.data.cloud_connected,
-        cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
-        cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
-        cloud_last_error: res.data.cloud_last_error || null,
-        cloud_deletion_status: res.data.cloud_deletion_status || '',
-      });
-
-      // Mobile pairing requires cloud registration — skip the requests entirely
-      // for unregistered stores to avoid 502 noise in the console.
-      if (res.data.cloud_registration_status === 'registered') {
-        api.get('/mobile/pairing-code').then((pcRes) => {
-          setPairingCode(pcRes.data.pairing_code);
-          setPairingExpiresAt(pcRes.data.expires_at);
-          setPairingQrDataUrl(pcRes.data.qr_data_url || null);
-          setPairingUnavailable(false);
-        }).catch(() => {
-          setPairingUnavailable(true);
-        });
-        loadPairedDevices();
-      } else {
-        setPairingUnavailable(true);
-      }
-    }).catch(() => {});
-
     api.get('/settings/business').then((res) => {
       const d = res.data;
       const loaded: BusinessForm = {
@@ -1680,101 +1456,6 @@ export default function SettingsPage() {
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const saveCloud = async (silent = false) => {
-    setSavingCloud(true);
-    try {
-      const resumingStoppedCloud = cloudServicesStopped && cloudSettings.cloud_sync_enabled;
-      const res = await api.put('/settings/cloud', {
-        cloud_sync_enabled: cloudSettings.cloud_sync_enabled,
-        cloud_orders_enabled: resumingStoppedCloud ? true : cloudSettings.cloud_orders_enabled,
-        cloud_reports_enabled: resumingStoppedCloud ? true : undefined,
-        cloud_command_polling_enabled: resumingStoppedCloud ? true : undefined,
-      });
-      const next = { ...cloudSettings, ...res.data };
-      setCloudSettings(next);
-      setSavedCloudSettings(next);
-      setCloudStatus({
-        cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
-        cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
-        cloud_connected: !!res.data.cloud_connected,
-        cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
-        cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
-        cloud_last_error: res.data.cloud_last_error || null,
-        cloud_deletion_status: res.data.cloud_deletion_status || '',
-      });
-      await fetchCloudAccount();
-      notifyCloudAccountStatusChanged();
-      if (!silent) toast.success(t('cloudSaved'));
-    } catch (err) {
-      if (!silent) toast.error(t('cloudSaveFailed'));
-      throw err;
-    } finally {
-      setSavingCloud(false);
-    }
-  };
-
-  const resetCloud = () => {
-    setCloudSettings(savedCloudSettings);
-  };
-
-  const registerCloud = async (email: string) => {
-    setRegisteringCloud(true);
-    try {
-      const res = await api.post('/settings/cloud/register', { email });
-      setCloudStatus({
-        cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
-        cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
-        cloud_connected: !!res.data.cloud_connected,
-        cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
-        cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
-        cloud_last_error: res.data.cloud_last_error || null,
-        cloud_deletion_status: res.data.cloud_deletion_status || '',
-      });
-      setCloudSettings((prev) => ({
-        ...prev,
-        cloud_api_key: res.data.cloud_api_key || prev.cloud_api_key,
-        cloud_store_id: res.data.cloud_store_id || prev.cloud_store_id,
-      }));
-      await fetchCloudAccount();
-      notifyCloudAccountStatusChanged();
-      if (res.data.cloud_registration_status === 'registered') {
-        toast.success(t('cloudRegistrationSuccess'));
-      }
-    } catch {
-      toast.error(t('cloudRegistrationFailed'));
-    } finally {
-      setRegisteringCloud(false);
-    }
-  };
-
-  const saveTelemetry = async (enabled: boolean) => {
-    const previous = telemetryEnabled;
-    setTelemetryEnabled(enabled);
-    setSavingTelemetry(true);
-    try {
-      await api.put('/settings/telemetry_enabled', { value: enabled ? 'true' : 'false' });
-    } catch {
-      setTelemetryEnabled(previous);
-      toast.error(t('saveFailed'));
-    } finally {
-      setSavingTelemetry(false);
-    }
-  };
-
-  const saveDiagnosticsConsent = async (enabled: boolean) => {
-    const previous = diagnosticsConsent;
-    setDiagnosticsConsent(enabled);
-    setSavingDiagnosticsConsent(true);
-    try {
-      await api.put('/settings/diagnostics_consent', { value: enabled ? 'true' : 'false' });
-    } catch {
-      setDiagnosticsConsent(previous);
-      toast.error(t('saveFailed'));
-    } finally {
-      setSavingDiagnosticsConsent(false);
-    }
-  };
 
   const connectGoogleDrive = async () => {
     setConnectingGoogleDrive(true);
@@ -1849,6 +1530,10 @@ export default function SettingsPage() {
     setSavingKdsEnabled(true);
     try {
       await api.put('/settings/kds_enabled', { value: enabled ? 'true' : 'false' });
+      // The mount skips the pairing fetch while KDS is off, so switching it on
+      // has to go and get what was skipped — otherwise the pairing card opens
+      // empty until someone thinks to press refresh.
+      if (enabled && !kdsInfo) fetchKdsInfo();
       toast.success(enabled ? t('kdsEnabledOn') : t('kdsEnabledOff'));
     } catch {
       setKdsEnabledSetting(previous);
@@ -1856,6 +1541,34 @@ export default function SettingsPage() {
       toast.error(t('saveFailed'));
     } finally {
       setSavingKdsEnabled(false);
+    }
+  };
+
+  /**
+   * The customer book on/off switch. Turning it off takes the loyalty wallet
+   * with it — the wallet is per customer, so it cannot outlive the book — and
+   * the backend does the same on its side, so the local state follows rather
+   * than asking a second time.
+   */
+  const saveCustomersEnabled = async (enabled: boolean) => {
+    const previous = customersEnabledSetting;
+    setCustomersEnabledSetting(enabled);
+    posSettings.setCustomersEnabled(enabled);
+    setSavingCustomersEnabled(true);
+    try {
+      await api.put('/settings/customers_enabled', { value: enabled ? 'true' : 'false' });
+      if (!enabled) {
+        setLoyaltyEnabled(false);
+        setSavedLoyaltyEnabled(false);
+        if (activeTab === 'loyalty') handleSettingsTabChange('customers');
+      }
+      toast.success(enabled ? t('customersEnabledOn') : t('customersEnabledOff'));
+    } catch {
+      setCustomersEnabledSetting(previous);
+      posSettings.setCustomersEnabled(previous);
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingCustomersEnabled(false);
     }
   };
 
@@ -2039,15 +1752,18 @@ export default function SettingsPage() {
   };
 
   const saveOrderNumbering = async (silent = false) => {
+    // A rejected prefix throws rather than returning: saveAllSettings awaits
+    // this, and a quiet `return` would let it announce that everything was
+    // saved while this card was refused.
     const prefix = orderNumberForm.prefix.trim();
     if (prefix && !/^[A-Za-z0-9_-]{0,12}$/.test(prefix)) {
       toast.error(t('orderNumberPrefixInvalid'));
-      return;
+      throw new Error('invalid order number prefix');
     }
     const invoicePrefix = orderNumberForm.invoicePrefix.trim();
     if (invoicePrefix && !/^[A-Za-z0-9_-]{0,12}$/.test(invoicePrefix)) {
       toast.error(t('invoiceNumberPrefixInvalid'));
-      return;
+      throw new Error('invalid invoice number prefix');
     }
     setSavingOrderNumbering(true);
     try {
@@ -2076,13 +1792,12 @@ export default function SettingsPage() {
   const resetAllSettings = async () => {
     resetPrinting();
     resetBillTemplate();
-    resetCloud();
     await resetBusiness();
   };
 
   const saveAllSettings = async () => {
     try {
-      await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
+      await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveOrderNumbering(true)]);
       await savePrinting(true);
       await saveBillTemplate(true);
       toast.success(t('allSaved'));
@@ -2091,39 +1806,20 @@ export default function SettingsPage() {
     }
   };
 
-  const rotatePairingCode = async () => {
-    setRotatingCode(true);
-    try {
-      const res = await api.post('/mobile/rotate-code');
-      setPairingCode(res.data.pairing_code);
-      setPairingExpiresAt(res.data.expires_at);
-      setPairingQrDataUrl(res.data.qr_data_url || null);
-      setPairingUnavailable(false);
-      toast.success(t('pairingCodeRotated'));
-      loadPairedDevices();
-    } catch {
-      // Show a localized failure; the specific backend reason stays in logs.
-      toast.error(t('pairingCodeFailed'));
-    } finally {
-      setRotatingCode(false);
-    }
-  };
-
-  const copyPairingCode = () => {
-    if (!pairingCode) return;
-    navigator.clipboard.writeText(pairingCode.toUpperCase()).then(() => {
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 2000);
-    });
-  };
-
   const paperSizeOptions: { value: PaperSize; label: string }[] = [
     { value: 'thermal58', label: t('paperSize58') },
     { value: 'thermal80', label: t('paperSize80') },
   ];
 
+  // Every buffered form on this page has to be listed here. The save bar is
+  // the only way to commit them, and it only appears when something below says
+  // it is dirty — a form left out of this list can be typed into, looks
+  // accepted, and is silently discarded on the way out. That is what happened
+  // to the order/invoice number format: saveAllSettings has always saved it,
+  // but nothing ever told the bar to show up and offer.
   const isDirty = 
     JSON.stringify(form) !== JSON.stringify(savedBusiness) ||
+    JSON.stringify(orderNumberForm) !== JSON.stringify(savedOrderNumberForm) ||
     JSON.stringify(printingForm) !== JSON.stringify(savedPrinting) ||
     JSON.stringify(billForm) !== JSON.stringify(savedBillForm) ||
     loyaltyEnabled !== savedLoyaltyEnabled ||
@@ -2131,8 +1827,7 @@ export default function SettingsPage() {
     discountMaxPct !== savedDiscountMaxPct ||
     discountMaxAmount !== savedDiscountMaxAmount ||
     discountMode !== savedDiscountMode ||
-    discountRequiresApproval !== savedDiscountRequiresApproval ||
-    JSON.stringify(cloudSettings) !== JSON.stringify(savedCloudSettings);
+    discountRequiresApproval !== savedDiscountRequiresApproval;
 
   useEffect(() => {
     if (!isDirty) return;
@@ -2201,25 +1896,24 @@ export default function SettingsPage() {
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupCustomers')}</p>
             </div>
-            <SettingsNavItem label={t('loyalty')} value="loyalty" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('tabCustomers')} value="customers" active={activeTab} onClick={handleSettingsTabChange} />
+            {customersEnabledSetting && (
+              <SettingsNavItem label={t('loyalty')} value="loyalty" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
             <SettingsNavItem label={t('discounts')} value="discounts" active={activeTab} onClick={handleSettingsTabChange} />
 
             {/* Integrations group (formerly "Data") */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupData')}</p>
             </div>
-            <SettingsNavItem label={t('tabMobileAccess')} value="mobile-access" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabBackupData')} value="data" active={activeTab} onClick={handleSettingsTabChange} />
-            <SettingsNavItem label={t('tabOrderflow')} value="orderflow" active={activeTab} onClick={handleSettingsTabChange} />
 
             {/* Account group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupAccount')}</p>
             </div>
-            <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={handleSettingsTabChange} attention={cloudDeletionNeedsAction || (cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))} />
-            <SettingsNavItem label={t('privacy')} value="privacy" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabUpdates')} value="updates" active={activeTab} onClick={handleSettingsTabChange} />
-            <SettingsNavItem label={t('tabAbout')} value="about" active={activeTab} onClick={handleSettingsTabChange} />
 
           </nav>
         </div>
@@ -2687,27 +2381,33 @@ export default function SettingsPage() {
                 <h2 className="font-semibold text-gray-900">{t('posWorkflow')}</h2>
               </div>
               <div className="space-y-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('customerMandatory')}</p>
-                    <p className="text-sm text-gray-500">{t('customerMandatoryHint')}</p>
-                  </div>
-                  <Toggle value={posSettings.customerMandatory} onChange={(v) => {
-                    posSettings.setCustomerMandatory(v);
-                    toast.success(v ? t('customerMandatoryEnabled') : t('customerMandatoryDisabled'), { id: 'pos-local' });
-                  }} />
-                </div>
-                <p className="text-sm text-gray-500">{t('phoneDigitsDerived')}</p>
-                <div className="flex items-center justify-between gap-4 pt-2 border-t border-gray-100">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('enforcePhoneLength')}</p>
-                    <p className="text-sm text-gray-500">{t('enforcePhoneLengthHint')}</p>
-                  </div>
-                  <Toggle value={posSettings.enforcePhoneLength} onChange={(v) => {
-                    posSettings.setEnforcePhoneLength(v);
-                    toast.success(v ? t('enforcePhoneLengthEnabled') : t('enforcePhoneLengthDisabled'), { id: 'pos-local' });
-                  }} />
-                </div>
+                {/* Both of these ask the cashier for a customer, so neither has
+                    anything to act on once the customer book is switched off. */}
+                {customersEnabledSetting && (
+                  <>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900">{t('customerMandatory')}</p>
+                        <p className="text-sm text-gray-500">{t('customerMandatoryHint')}</p>
+                      </div>
+                      <Toggle value={posSettings.customerMandatory} onChange={(v) => {
+                        posSettings.setCustomerMandatory(v);
+                        toast.success(v ? t('customerMandatoryEnabled') : t('customerMandatoryDisabled'), { id: 'pos-local' });
+                      }} />
+                    </div>
+                    <p className="text-sm text-gray-500">{t('phoneDigitsDerived')}</p>
+                    <div className="flex items-center justify-between gap-4 pt-2 border-t border-gray-100">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900">{t('enforcePhoneLength')}</p>
+                        <p className="text-sm text-gray-500">{t('enforcePhoneLengthHint')}</p>
+                      </div>
+                      <Toggle value={posSettings.enforcePhoneLength} onChange={(v) => {
+                        posSettings.setEnforcePhoneLength(v);
+                        toast.success(v ? t('enforcePhoneLengthEnabled') : t('enforcePhoneLengthDisabled'), { id: 'pos-local' });
+                      }} />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -3207,6 +2907,34 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
+        <TabsContent value="customers">
+          <div className="pb-6 max-w-3xl space-y-6">
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Users size={20} className="text-gray-500" />
+                <h2 className="font-semibold text-gray-900">{t('tabCustomers')}</h2>
+              </div>
+              <div className="space-y-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900">{t('customersEnabled')}</p>
+                    <p className="text-sm text-gray-500">{t('customersEnabledHint')}</p>
+                  </div>
+                  <Toggle
+                    value={customersEnabledSetting}
+                    onChange={(v) => { if (!savingCustomersEnabled) saveCustomersEnabled(v); }}
+                  />
+                </div>
+                {!customersEnabledSetting && (
+                  <div className="pt-4 border-t border-gray-100">
+                    <p className="text-sm text-gray-500">{t('customersDisabledNote')}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
         <TabsContent value="loyalty">
           <div className="pb-6 max-w-3xl space-y-6">
             {/* Loyalty */}
@@ -3371,137 +3099,9 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-            {currentTenant?.role === 'owner' && (
-              <div className={`rounded-xl border p-6 ${cloudAccountAvailable && cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-white'}`}>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="font-semibold text-gray-900">{t('contactEmailTitle')}</h2>
-                    <p className="mt-1 text-sm text-gray-600">{cloudAccountLoadFailed ? t('cloudAccountLoadFailed') : cloudAccountAvailable ? <Ltr>{cloudAccount?.email || user?.email || t('noCloudContactEmail')}</Ltr> : t('cloudAccountUnavailable')}</p>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!cloudAccountAvailable ? 'bg-gray-100 text-gray-600' : cloudAccount?.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {cloudAccountLoadFailed ? t('cloudStatusUnavailable') : !cloudAccountAvailable ? t('cloudUnavailableBadge') : cloudAccount?.verified ? t('cloudVerified') : t('cloudPendingVerification')}
-                  </span>
-                </div>
-                <p className="mt-3 text-sm text-gray-600">{cloudAccountLoadFailed ? t('cloudAccountLoadError') : cloudAccountAvailable ? t('cloudVerificationHint') : cloudDeletionPending ? t('cloudDeletionPendingHint') : cloudDeletionStatus === 'processing' ? t('cloudDeletionProcessingHint') : cloudDeletionStatus === 'failed' || cloudStatus.cloud_deletion_status === 'failed' ? t('cloudDeletionFailedHint') : t('cloudEnableHintAccount')}</p>
-                {cloudAccountLoadFailed && (
-                  <Button variant="outline" className="mt-4" onClick={() => void fetchCloudAccount()}>{t('retry')}</Button>
-                )}
-                {cloudAccountAvailable && !cloudAccount?.verified && (
-                  <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
-                    setCloudAccountBusy(true);
-                    try { await api.post('/settings/cloud/account/verification'); toast.success(t('verificationEmailQueued')); await fetchCloudAccount(); }
-                    catch {
-                      toast.error(t('verificationEmailFailed'));
-                    }
-                    finally { setCloudAccountBusy(false); }
-                  }}>{cloudAccountBusy ? t('cloudSendingVerification') : t('cloudSendVerificationEmail')}</Button>
-                )}
-                {cloudAccountAvailable && (
-                  <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('cloudPrefProductUpdates')}</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error(t('couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('cloudPrefMarketing')}</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error(t('couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <p className="text-xs text-gray-500">{t('cloudPrefNote')}</p>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </TabsContent>
 
-        {/* Privacy — anonymous telemetry (from the old Integrations tab) + cloud privacy controls (from Account) */}
-        <TabsContent value="privacy">
-          <div className="pb-6 max-w-3xl space-y-6">
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <Lock size={20} className="text-gray-500" />
-                <div>
-                  <h2 className="font-semibold text-gray-900">{t('privacy')}</h2>
-                </div>
-              </div>
-
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={telemetryEnabled}
-                  disabled={savingTelemetry}
-                  onChange={(e) => saveTelemetry(e.target.checked)}
-                  className="rounded border-gray-300 text-brand focus:ring-brand"
-                />
-                <span className="text-sm text-gray-700">{t('anonymousTelemetry')}</span>
-              </label>
-              <p className="text-xs text-gray-500">{t('anonymousTelemetryHint')}</p>
-
-              <div className="border-t border-gray-100 pt-4">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={diagnosticsConsent}
-                    disabled={savingDiagnosticsConsent}
-                    onChange={(e) => saveDiagnosticsConsent(e.target.checked)}
-                    className="rounded border-gray-300 text-brand focus:ring-brand"
-                  />
-                  <span className="text-sm text-gray-700">{t('storeDiagnostics')}</span>
-                </label>
-                <p className="text-xs text-gray-500 mt-1">{t('storeDiagnosticsHint')}</p>
-              </div>
-            </div>
-
-            {currentTenant?.role === 'owner' && (
-              <div className="rounded-xl border border-gray-100 bg-white p-6">
-                <h2 className="font-semibold text-gray-900">{t('cloudPrivacyControls')}</h2>
-                <p className="mt-2 text-sm text-gray-600">{t('cloudStopReversible')}</p>
-                {cloudAccount?.deletion_request && (
-                  <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' || cloudAccount.deletion_request.status === 'processing' ? 'border-amber-200 bg-amber-50 text-amber-900' : cloudAccount.deletion_request.status === 'approved' || cloudAccount.deletion_request.status === 'completed' || cloudAccount.deletion_request.status === 'deleted' ? 'border-green-200 bg-green-50 text-green-800' : cloudAccount.deletion_request.status === 'failed' ? 'border-red-200 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
-                    <p className="font-semibold">{t('cloudDeletionRequest', { status: cloudAccount.deletion_request.status || '' })}</p>
-                    {cloudAccount.deletion_request.id && <p className="mt-1 font-mono text-xs"><Ltr>{cloudAccount.deletion_request.id}</Ltr></p>}
-                    {cloudAccount.deletion_request.decision_note && <p className="mt-2">{cloudAccount.deletion_request.decision_note}</p>}
-                  </div>
-                )}
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <Button variant="outline" onClick={async () => {
-                    if (!await confirm(t('cloudStopAllConfirm'))) return;
-                    try {
-                      const { data } = await api.post('/settings/cloud/stop-all');
-                      setCloudStatus({
-                        cloud_registration_status: data.cloud_registration_status || 'unregistered',
-                        cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
-                        cloud_connected: !!data.cloud_connected,
-                        cloud_relay_mode: data.cloud_relay_mode || 'disconnected',
-                        cloud_last_heartbeat: data.cloud_last_heartbeat || null,
-                        cloud_last_error: data.cloud_last_error || null,
-                        cloud_deletion_status: data.cloud_deletion_status || '',
-                      });
-                      setCloudSettings((previous) => ({ ...previous, cloud_sync_enabled: !!data.cloud_sync_enabled, cloud_orders_enabled: !!data.cloud_orders_enabled, cloud_last_sync: data.cloud_last_sync || null }));
-                      setSavedCloudSettings((previous) => ({ ...previous, cloud_sync_enabled: !!data.cloud_sync_enabled, cloud_orders_enabled: !!data.cloud_orders_enabled, cloud_last_sync: data.cloud_last_sync || null }));
-                      setTelemetryEnabled(false);
-                      setDiagnosticsConsent(false);
-                      await fetchCloudAccount();
-                      notifyCloudAccountStatusChanged();
-                      toast.success(t('cloudAllStopped'));
-                    }
-                    catch { toast.error(t('cloudStopFailed')); }
-                  }}><CloudOff size={16} className="me-2" />{t('cloudStopAllButton')}</Button>
-                  {!cloudDeletionFinal && <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'processing' || cloudAccount?.deletion_request?.status === 'approved' || cloudStatus.cloud_deletion_status === 'processing'} onClick={() => {
-                    const phrase = window.prompt(t('cloudDeletePrompt'));
-                    if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
-                    else if (phrase !== null) toast.error(t('confirmationPhraseMismatch'));
-                  }}><Trash2 size={16} className="me-2" />{t('cloudDeleteDataButton')}</Button>}
-                  {cloudDeletionNeedsAction && (
-                    <>
-                      <Button variant="outline" onClick={() => void refreshDeletionStatus()} disabled={refreshingDeletionStatus}>
-                        {refreshingDeletionStatus ? t('cloudRefreshingDeletion') : t('cloudRefreshDeletion')}
-                      </Button>
-                      {cloudDeletionCanCancel && <Button variant="outline" onClick={() => setPinGate({ mode: 'cancel-cloud-deletion' })}>{t('cloudCancelDeletion')}</Button>}
-                    </>
-                  )}
-                </div>
-                <p className="mt-3 text-xs text-gray-500">{t('cloudTelemetryNote')}</p>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        {/* Printers sub-page */}
         <TabsContent value="receipts-printers">
           <div className="pb-6 max-w-6xl space-y-6">
             <div className="space-y-6">
@@ -4333,351 +3933,7 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="mobile-access">
-          <div className="pb-6 max-w-3xl space-y-6">
-            <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">{t('tabMobileAccess')}</h2>
-
-            {/* FloAdmin — reporting sync */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
-              <div className="flex items-center gap-2">
-                <Cloud size={20} className="text-brand" />
-                <div>
-                  <h2 className="font-semibold text-gray-900">{t('floadminSalesReporting')}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('floadminSalesReportingHint')}</p>
-                </div>
-              </div>
-
-              {cloudStatus.cloud_registration_status === 'unregistered' ? (
-                <div className="bg-gray-50 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-4">
-                  <div className="p-3 bg-white rounded-full shadow-sm">
-                    <Cloud className="w-6 h-6 text-brand" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900">{t('cloudServicesDisabled')}</h3>
-                    <p className="text-sm text-gray-500 mt-1 max-w-sm">{t('cloudServicesDisabledHint')}</p>
-                  </div>
-                  <button
-                    onClick={() => setShowInitializeCloudConfirm(true)}
-                    className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:opacity-90"
-                  >
-                    {t('cloudInitializeButton')}
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="rounded-lg border border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
-                  {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped ? (
-                    <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-                  ) : (
-                    <CloudOff size={16} className="text-gray-400 shrink-0" />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {cloudStatus.cloud_registration_status === 'registered' && cloudServicesStopped && t('cloudServicesStopped')}
-                      {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped && (cloudStatus.cloud_connected ? t('connectedToFloadmin') : t('registeredReconnecting'))}
-                      {cloudStatus.cloud_registration_status === 'rejected' && t('registrationRejected')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && (cloudStatus.cloud_last_error || cloudStatus.cloud_deletion_status === 'failed') && t('cloudDeletionFailed')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && cloudStatus.cloud_deletion_status === 'processing' && t('cloudDeletionProcessing')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && !cloudStatus.cloud_last_error && cloudStatus.cloud_deletion_status !== 'failed' && cloudStatus.cloud_deletion_status !== 'processing' && t('cloudDeletionPending')}
-                      {cloudStatus.cloud_registration_status === 'deleted' && t('cloudDataDeleted')}
-                      {(cloudStatus.cloud_registration_status === 'unregistered' || cloudStatus.cloud_registration_status === 'registration_failed') && t('notRegistered')}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {cloudStatus.cloud_registration_status === 'registered' && cloudServicesStopped && t('cloudResumeHint')}
-                      {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped && (cloudStatus.cloud_last_heartbeat ? t('liveChannelHeartbeat', { mode: cloudStatus.cloud_relay_mode.replace('_', ' '), time: formatTime(cloudStatus.cloud_last_heartbeat) }) : t('liveChannel', { mode: cloudStatus.cloud_relay_mode.replace('_', ' ') }))}
-                      {cloudStatus.cloud_registration_status === 'rejected' && t('registrationContactSupport')}
-                      {cloudStatus.cloud_registration_status === 'registration_failed' && (cloudStatus.cloud_last_error ? t('registrationLastError', { error: cloudStatus.cloud_last_error }) : t('registrationLastFailed'))}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && (cloudStatus.cloud_last_error || cloudStatus.cloud_deletion_status === 'failed') && t('cloudDeletionFailedHint2')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && cloudStatus.cloud_deletion_status === 'processing' && t('cloudDeletionProcessingHint2')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && !cloudStatus.cloud_last_error && cloudStatus.cloud_deletion_status !== 'failed' && cloudStatus.cloud_deletion_status !== 'processing' && t('cloudServicesStoppedHint')}
-                      {cloudStatus.cloud_registration_status === 'deleted' && t('cloudDataDeletedHint')}
-                      {cloudStatus.cloud_registration_status === 'unregistered' && t('registrationRegisterHelp')}
-                    </p>
-                  </div>
-                </div>
-                {cloudStatus.cloud_registration_status !== 'registered' && cloudStatus.cloud_registration_status !== 'deletion_pending' && cloudStatus.cloud_registration_status !== 'deleted' && (
-                  <button
-                    onClick={() => registerCloud('')}
-                    disabled={registeringCloud}
-                    className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
-                  >
-                    {registeringCloud ? t('registering') : t('registerWithFloadmin')}
-                  </button>
-                )}
-              </div>
-
-              {cloudStatus.cloud_registration_status !== 'deleted' && (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-600">{t('cloudManagedAutomatically')}</p>
-
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={cloudSettings.cloud_sync_enabled}
-                    onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_sync_enabled: e.target.checked })}
-                    className="mt-0.5 rounded border-gray-300 text-brand focus:ring-brand"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-gray-900 block">{cloudServicesStopped ? t('cloudEnableButton') : t('enableBillSync')}</span>
-                    <p className="text-xs text-gray-500 mt-1">{cloudServicesStopped ? t('cloudResumeHintStopped') : t('enableBillSyncHint')}</p>
-                  </div>
-                </label>
-
-                    {cloudSettings.cloud_last_sync && (
-                      <p className="text-xs text-gray-400">{t('lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
-                    )}
-                  </div>
-              )}
-                </>
-              )}
-            </div>
-
-            {/* RevFlo — consolidated: download/QR + app (pairing) code + paired devices */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
-              <div className="flex items-center gap-2">
-                <Smartphone size={20} className="text-gray-500" />
-                <div>
-                  <h2 className="font-semibold text-gray-900">{revflo?.name || t('revflo')}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{revflo?.tagline || t('revfloHint')}</p>
-                </div>
-              </div>
-
-              {revflo?.available && (
-                <div className="flex flex-col sm:flex-row gap-5 items-start border border-gray-100 rounded-xl p-5">
-                  <div className="shrink-0">
-                    {revflo.qr_data_url ? (
-                      <img src={revflo.qr_data_url} alt={t('appQrAlt', { name: revflo.name })}
-                        className="w-28 h-28 rounded-lg border border-gray-200" />
-                    ) : (
-                      <div className="w-28 h-28 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400">
-                        <QrCode size={32} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-3 text-sm">
-                    {revflo.ios_url && (
-                      <a href={revflo.ios_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
-                        {t('downloadForIos')}
-                      </a>
-                    )}
-                    {revflo.android_url && (
-                      <a href={revflo.android_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
-                        {t('downloadForAndroid')}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <p className="text-sm font-medium text-gray-900 mb-1">{t('mobileApp')}</p>
-                <p className="text-xs text-gray-500 mb-4">{t('mobileAppHint')}</p>
-                {pairingUnavailable ? (
-                  <p className="text-sm text-gray-500">{t('mobilePairingNeedsCloud')}</p>
-                ) : pairingCode ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-4">
-                      {pairingQrDataUrl && (
-                        <img src={pairingQrDataUrl} alt={t('pairingQrAlt')} className="w-28 h-28 rounded-lg border border-gray-200" />
-                      )}
-                      <div className="flex items-center gap-3 flex-1">
-                      <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
-                        <span className="font-mono text-2xl font-bold tracking-[0.3em] text-gray-900">
-                          <Ltr>{pairingCode.toUpperCase()}</Ltr>
-                        </span>
-                      </div>
-                      <button
-                        onClick={copyPairingCode}
-                        className="p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500"
-                        title={t('copyCode')}
-                      >
-                        {copiedCode ? <Check size={18} className="text-green-600" /> : <Copy size={18} />}
-                      </button>
-                      </div>
-                    </div>
-                    {pairingExpiresAt && (
-                      <p className="text-xs text-gray-400">
-                        {t('codeExpires', { date: formatDate(pairingExpiresAt) })}
-                      </p>
-                    )}
-                    <p className="text-xs text-gray-500">
-                      {t('pairingCodeSingleUse')}
-                    </p>
-                    <button
-                      onClick={rotatePairingCode}
-                      disabled={rotatingCode}
-                      className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50"
-                    >
-                      <RefreshCw size={14} className={rotatingCode ? 'animate-spin' : ''} />
-                      {rotatingCode ? t('generating') : t('generateNewCode')}
-                    </button>
-                    <p className="text-xs text-amber-600">
-                      {t('disconnectDevicesWarning')}
-                    </p>
-                  </div>
-                ) : (
-                  <button
-                    onClick={rotatePairingCode}
-                    disabled={rotatingCode}
-                    className="px-5 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium"
-                  >
-                    {rotatingCode ? t('generating') : t('generatePairingCode')}
-                  </button>
-                )}
-              </div>
-
-              {!pairingUnavailable && (
-                <div className="pt-5 border-t border-gray-100">
-                  <p className="text-sm font-medium text-gray-900 mb-3">{t('pairedDevices')}</p>
-                  {devicesLoading ? (
-                    <p className="text-sm text-gray-400">{t('loading')}</p>
-                  ) : pairedDevices.length === 0 ? (
-                    <p className="text-sm text-gray-500">{t('noPairedDevices')}</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {pairedDevices.map((d) => (
-                        <div key={d.id} className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium text-gray-900 capitalize">
-                              {d.platform || t('unknownPlatform')}
-                              {d.country ? ` · ${d.country}` : ''}
-                            </span>
-                            <span className="text-xs text-gray-400">
-                              {t('lastActive', { date: formatDate(d.last_seen_at) })}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {t('firstPaired', { date: formatDate(d.first_seen_at) })}
-                            {d.app_version ? ` · v${d.app_version}` : ''}
-                          </p>
-                          {d.user_agent && (
-                            <p className="text-xs text-gray-400 mt-1 truncate" title={d.user_agent}>{d.user_agent}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="orderflow">
-          <div className="pb-6 max-w-3xl space-y-6">
-            <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">{t('tabOrderflow')}</h2>
-
-            {/* OrderFlow — online orders */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <Zap size={20} className="text-amber-500" />
-                <div>
-                  <h2 className="font-semibold text-gray-900">{t('orderflowOnlineOrders')}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('orderflowOnlineOrdersHint')}</p>
-                </div>
-              </div>
-
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={cloudSettings.cloud_orders_enabled}
-                  onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_orders_enabled: e.target.checked })}
-                  className="rounded border-gray-300 text-brand focus:ring-brand"
-                />
-                <span className="text-sm text-gray-700">{t('enableOnlineOrderPolling')}</span>
-              </label>
-
-            </div>
-            </div>
-          </div>
-        </TabsContent>
-
         {/* About tab */}
-        <TabsContent value="about">
-          <div className="pb-6 max-w-3xl space-y-6">
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">{t('aboutFloCafe')}</h2>
-              <p className="text-sm text-gray-600 mb-6">
-                {t('aboutDescription')}
-              </p>
-              <div className="space-y-3">
-                <a href="https://github.com/FreeOpenSourcePOS/FloCafe" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
-                  {t('aboutGithub')}
-                </a>
-                <a href="https://flopos.com/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
-                  {t('aboutWebsite')}
-                </a>
-              </div>
-            </div>
-
-            {/* More Apps — moved here from the old Integrations tab */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Smartphone size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('moreApps')}</h2>
-              </div>
-              <p className="text-sm text-gray-500 mb-5">
-                {t('moreAppsHint')}
-              </p>
-
-              {moreAppsLoading && (
-                <div className="flex items-center justify-center py-10">
-                  <div className="w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-
-              {!moreAppsLoading && (
-                <div className="space-y-4">
-                  {moreApps.map((app) => (
-                    <div key={app.id} className="flex flex-col sm:flex-row gap-5 items-start border border-gray-100 rounded-xl p-5">
-                      <div className="shrink-0">
-                        {app.qr_data_url ? (
-                          <img src={app.qr_data_url} alt={t('appQrAlt', { name: app.name })}
-                            className="w-32 h-32 rounded-lg border border-gray-200" />
-                        ) : (
-                          <div className="w-32 h-32 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400">
-                            <QrCode size={36} />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-gray-900">{app.name}</h3>
-                          {!app.available && (
-                            <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{t('comingSoon')}</span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-500 mb-3">{app.tagline}</p>
-                        <div className="flex gap-3 text-sm">
-                          {app.ios_url && (
-                            <a href={app.ios_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
-                              {t('downloadForIos')}
-                            </a>
-                          )}
-                          {app.android_url && (
-                            <a href={app.android_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
-                              {t('downloadForAndroid')}
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {moreApps.length === 0 && (
-                    <p className="text-sm text-gray-400 text-center py-10">{t('noAppsToShow')}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
         {/* Software Updates tab */}
         <TabsContent value="updates">
           <div className="pb-6 max-w-3xl space-y-6">
@@ -4789,29 +4045,6 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Initialize Cloud Disclaimer Dialog */}
-      <Dialog open={showInitializeCloudConfirm} onOpenChange={setShowInitializeCloudConfirm}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('cloudInitializeDialogTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('cloudInitializeDialogBody')}
-              <br /><br />
-              {t('cloudInitializeDialogBody2')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInitializeCloudConfirm(false)}>{t('cancel')}</Button>
-            <Button
-              disabled={registeringCloud}
-              onClick={() => { setShowInitializeCloudConfirm(false); registerCloud(''); }}
-            >
-              {registeringCloud ? t('registering') : t('cloudInitializeAccept')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <MasterPinPrompt
         open={pinGate !== null}
         mode={pinGate?.mode === 'set' ? 'set' : 'verify'}
@@ -4819,8 +4052,6 @@ export default function SettingsPage() {
           pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('confirmBackupTitle')
           : pinGate?.mode === 'import' ? t('confirmImportTitle')
           : pinGate?.mode === 'restore' ? t('confirmRestoreTitle')
-          : pinGate?.mode === 'delete-cloud' ? t('cloudConfirmDeletion')
-          : pinGate?.mode === 'cancel-cloud-deletion' ? t('cloudCancelDeletionTitle')
           : undefined
         }
         onCancel={() => setPinGate(null)}
@@ -4849,8 +4080,8 @@ export default function SettingsPage() {
           <div className={`bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 pointer-events-auto ${shakeSaveBar ? 'animate-shake' : ''}`}>
             <span className="text-sm font-medium">{t('unsavedChanges')}</span>
             <div className="flex items-center gap-2">
-              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('discard')}</button>
-              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering) ? t('saving') : t('saveChanges')}</button>
+              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('discard')}</button>
+              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingOrderNumbering) ? t('saving') : t('saveChanges')}</button>
             </div>
           </div>
         </div>
