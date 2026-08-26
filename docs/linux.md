@@ -2,6 +2,10 @@
 
 BuonApp runs on current Linux distributions through AppImage, deb, rpm, and Snap packages. Choose the format your distribution supports best.
 
+> **Linux packages are not published as releases.** Only the Windows installer is
+> built and uploaded by the release workflow. Everything below still works, but
+> you have to build the package yourself first — see [Building the packages](#building-the-packages).
+
 ## Packages
 
 | Format | For |
@@ -11,8 +15,7 @@ BuonApp runs on current Linux distributions through AppImage, deb, rpm, and Snap
 | **rpm** (`buonapp-*.rpm`) | Fedora, RHEL-family, and compatible distributions |
 | **Snap** (`buonapp-*.snap`) | Snap-enabled distributions |
 
-AppImage, deb, rpm, and Snap releases are built for x64 and arm64. Linux
-release jobs run on Ubuntu 24.04 runners for x64 and arm64 respectively.
+All four formats are configured for x64 and arm64.
 
 ```bash
 # deb
@@ -21,6 +24,22 @@ sudo dpkg -i buonapp-*.deb && sudo apt-get install -f
 # AppImage
 chmod +x buonapp-*.AppImage && ./buonapp-*.AppImage
 ```
+
+---
+
+## Building the packages
+
+On a Linux machine with Node.js 22 or later:
+
+```bash
+git clone https://github.com/MrD0me/BuonApp.git
+cd BuonApp
+npm install
+npm run build:linux
+```
+
+`electron-builder` writes the AppImage, deb, rpm, and snap files into `release/`.
+Building the snap additionally needs `snapcraft` and LXD available locally.
 
 ---
 
@@ -47,10 +66,19 @@ No FUSE? Run extracted:
 
 ## Updates
 
-AppImage installs can use BuonApp's in-app updater when launched as an
-AppImage (`APPIMAGE` is set). deb, rpm, and Snap installs are updated by their
-package manager or the Snap daemon. If an AppImage update is unavailable, use
-[GitHub Releases](https://github.com/MrD0me/BuonApp/releases).
+The in-app updater looks for Linux artifacts in this repository's GitHub
+Releases, and finds none, because only the Windows installer is published. On
+Linux, update by pulling the repository and rebuilding:
+
+```bash
+git pull
+npm install
+npm run build:linux
+```
+
+Your database and backups live in the user-data directory, outside the package,
+so rebuilding and reinstalling does not touch them. Take a manual backup first
+all the same.
 
 ---
 

@@ -13,17 +13,19 @@
   <description>
     <p>
       BuonApp is a free, open-source, offline-first Point of Sale system built
-      for cafes, restaurants, cloud kitchens, and food businesses. It runs
-      entirely on your own machine with no internet required.
+      for restaurants with table service. It runs entirely on your own machine,
+      with no account to create and no internet required.
     </p>
     <p>Features include:</p>
     <ul>
-      <li>Fast order entry with multiple order types (dine-in, takeaway, delivery)</li>
-      <li>Kitchen Display System (KDS) with real-time updates</li>
-      <li>Thermal receipt printing via ESC/POS (USB and network)</li>
-      <li>Table management and staff roles</li>
-      <li>GST-compliant invoicing and sales reports</li>
-      <li>Works offline — no subscriptions or cloud dependency</li>
+      <li>A graphical floor map with rooms, joined tables, and saved layouts</li>
+      <li>Service days with an explicit close and a printed end-of-day report</li>
+      <li>Reservations for the service in progress, assigned straight onto the map</li>
+      <li>Kitchen tickets printed by round and routed to per-category stations</li>
+      <li>Thermal ESC/POS printing over USB, local network, and OS print queues</li>
+      <li>Tableside ordering from handhelds on the same local network</li>
+      <li>An optional Kitchen Display System with real-time updates</li>
+      <li>Works offline — no subscription, no cloud account, no telemetry</li>
     </ul>
   </description>
 
@@ -73,5 +75,7 @@
     <keyword>invoice</keyword>
     <keyword>thermal printer</keyword>
     <keyword>kitchen display</keyword>
+    <keyword>table management</keyword>
+    <keyword>reservations</keyword>
   </keywords>
 </component>

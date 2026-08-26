@@ -4,6 +4,16 @@
 
 **Local:** `http://buonapp.local:3001` or `http://<local-ip>:3001`
 
+The desktop app runs three HTTP servers on the local network, advertised over mDNS as `buonapp.local`:
+
+| Port | Server | Serves |
+| --- | --- | --- |
+| `3001` | Express API and WebSocket | Every endpoint documented here, plus the POS interface |
+| `3002` | Standalone KDS | The kitchen display and its WebSocket. Enabled by default; with `kds_enabled` switched off, `/api/kds-info`, `/api/kitchen/*`, and `/api/kds/*` answer `403` |
+| `3003` | Server App | The tableside handheld interface. It forwards a deliberately narrow allowlist of API calls to `:3001`, including `POST /api/printers/print-kot`, and of the table routes forwards only `GET /tables` |
+
+None of the three should ever be reachable from the public internet.
+
 ---
 
 ## Authentication

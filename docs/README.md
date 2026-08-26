@@ -19,9 +19,10 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 
 | Document | Description | Scope |
 | --- | --- | --- |
-| [API.md](API.md) | Endpoint and WebSocket reference for the local Express and KDS servers (`:3001` and `:3002`). | CURRENT |
-| [linux.md](linux.md) | Linux package formats (AppImage, deb, rpm, Snap), FUSE setup, CUPS printing, and system tray behavior. | CURRENT |
-| [printers.md](printers.md) | ESC/POS printer configuration, network/USB/OS-queue/WebUSB connection types, kitchen stations, and troubleshooting. | CURRENT |
+| [API.md](API.md) | Endpoint and WebSocket reference for the local servers: Express API (`:3001`), KDS (`:3002`), and the tableside Server App (`:3003`). | CURRENT |
+| [table-management.md](table-management.md) | Table CRUD, the multi-room graphical map, service days with an explicit close ritual, reservations, joined tables, and saved floor plans. | CURRENT |
+| [linux.md](linux.md) | Linux package formats (AppImage, deb, rpm, Snap) built from source, FUSE setup, CUPS printing, and system tray behavior. | CURRENT |
+| [printers.md](printers.md) | ESC/POS printer configuration, network/USB/OS-queue/WebUSB connection types, kitchen stations, kitchen-ticket layout, code pages, and troubleshooting. | CURRENT |
 | [google-drive-setup.md](google-drive-setup.md) | Maintainer setup for the optional Google Drive backup OAuth client. | CURRENT |
 | [tax-packs.md](tax-packs.md) | Tax pack schema, authoring guide, cryptographic signing, and catalog distribution workflow. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
@@ -30,14 +31,13 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 
 | Document | Description | Status |
 | --- | --- | --- |
-| [tax-engine-v2-spec.md](tax-engine-v2-spec.md) | Architectural specification for Tax Engine v2, data-only country packs, and future capability plugin boundaries. *(Note: 2026-07-31 amendment establishes that country packs are catalog-only and not auto-bundled).* | ACTIVE DESIGN |
-| [table-management.md](table-management.md) | Table CRUD, multi-room graphical map, service days with an explicit close ritual, reservations, joined tables, and saved floor plans. | CURRENT |
+| [tax-engine-v2-spec.md](tax-engine-v2-spec.md) | Architectural specification for Tax Engine v2, data-only country packs, and future capability plugin boundaries. *(Note: 2026-07-31 amendment establishes that country packs are catalog-only and not auto-bundled. Tax calculation is off by default in this fork.)* | ACTIVE DESIGN |
 
 ### Historical records
 
 | Document | Description | Status |
 | --- | --- | --- |
-| [security-audit-2.7.0.md](security-audit-2.7.0.md) | Security audit report for BuonApp v2.7.0 dated 2026-08-04. | HISTORICAL |
+| [security-audit-2.7.0.md](security-audit-2.7.0.md) | Security audit report dated 2026-08-04, covering version 2.7.0 — the codebase as it stood upstream, before this fork's changes and the rename. | HISTORICAL |
 
 ---
 

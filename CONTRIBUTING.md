@@ -33,11 +33,13 @@ Do not open implementation PRs for the following areas until maintainers have di
 - Architectural changes and new public/extensibility contracts
 - Database schema changes and migration designs
 - Authentication, authorization, and security architecture
+- Table, service-day, and reservation semantics, which are shaped around one restaurant's way of working
 - Tax engine changes, fiscal compliance architecture, and country tax packs
 - Plugin execution or plugin security models
-- Cloud synchronization architecture
-- Major internationalization (i18n) architecture or adding new languages while the current i18n migration is active
+- Major internationalization (i18n) architecture, or adding new languages
 - Large cross-cutting refactors across multiple subsystems
+
+One direction is settled rather than open for discussion: **BuonApp does not talk to a vendor.** The cloud bridge and the anonymous telemetry were removed in 4.0.0 and will not be reintroduced, in any form. A feature that needs the network has to be one the owner configures and switches on, and it has to fail gracefully when offline.
 
 ### What counts as approval
 
@@ -75,7 +77,7 @@ npm run dev
 
 ```sh
 npm run dev              # Build frontend & backend, launch Electron
-node dev-server.js       # Backend only (Express API on :3001, KDS on :3002)
+node dev-server.js       # Backend only (API :3001, KDS :3002, Server App :3003)
 npm run dev:frontend     # Frontend development server in browser
 npm run lint             # Lint backend and frontend
 npm run build            # Compile TypeScript backend to dist/
@@ -136,7 +138,7 @@ Before opening a pull request, run checks appropriate to the affected subsystem:
 
 ### Additional review for high-risk areas
 
-Changes touching database migrations, customer data handling, authentication, tax calculations, plugin boundaries, or cloud sync receive deeper maintainer scrutiny and require thorough automated test verification.
+Changes touching database migrations, customer data handling, authentication, tax calculations, payment or bill totals, or plugin boundaries receive deeper maintainer scrutiny and require thorough automated test verification.
 
 ---
 
@@ -153,10 +155,12 @@ BuonApp runs on real business data that must survive software upgrades.
 
 ## Translations and i18n
 
-BuonApp currently provides translations for English (`en`), Spanish (`es`), Brazilian Portuguese (`pt`), and Persian (`fa`, including RTL support).
+BuonApp currently provides translations for English (`en`), Italian (`it`), Spanish (`es`), Brazilian Portuguese (`pt`), and Persian (`fa`, including RTL support).
+
+Printed output is a narrower set: receipts, bills, and kitchen tickets render their labels in English or Italian and fall back to English for the other languages, rather than printing a half-translated document. Adding a printed language means adding its entry to `RECEIPT_LABELS` in `main/printers/thermal.ts`, not just a message file.
 
 - **Existing languages:** Narrowly scoped fixes and improvements to existing translation strings are always welcome. Verify changes with `npm run i18n:check`.
-- **New languages:** Adding an entirely new language requires maintainer coordination through an issue first while the broader internationalization architecture (#372) is being modernized.
+- **New languages:** Adding an entirely new language needs coordination through an issue first, since every new locale has to hold full key parity with English.
 - **Local scaffolding:** Once a new language is approved, run `npm run i18n:add -- de` (using the lowercase two- or three-letter code) to copy the English schema without overwriting an existing file. Add the generated language entry to `frontend/src/lib/i18n/languages.ts`, translate the copied leaves while preserving ICU placeholders/tags, then run `npm run i18n:check`.
 
 The validation command is fully offline and checks registry/file consistency, exact English key parity, string and ICU validity, placeholder/tag parity, Persian fallback safeguards, and frontend translation-key safety.
@@ -188,6 +192,6 @@ For complete authoring instructions, see the [Tax packs developer guide](docs/ta
 
 ## Getting help
 
-- **Operator & general questions:** [GitHub Discussions](https://github.com/MrD0me/BuonApp/discussions) or [Reddit r/BuonApp](https://www.reddit.com/r/BuonApp/)
+- **Operator & general questions:** [GitHub Issues](https://github.com/MrD0me/BuonApp/issues), using the workflow-feedback template for anything about real service flows
 - **Bug reports & feature requests:** [GitHub Issues](https://github.com/MrD0me/BuonApp/issues)
 - **Security vulnerabilities:** Report privately per [SECURITY.md](SECURITY.md) (do not open public issues)

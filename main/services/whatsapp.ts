@@ -670,7 +670,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
     for (const msg of messages) {
       if (isWhatsAppTerminal()) return;
       if (msg.key?.fromMe) continue;
-      // No one asks Flo to deliver a paid bill into a group chat. When the
+      // No one asks BuonApp to deliver a paid bill into a group chat. When the
       // operator enables the group filter, drop inbound @g.us messages
       // before we persist them — the inbox stays clean and we never
       // process (translateJid / store) what we don't intend to handle.
@@ -953,7 +953,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   if (!state.enabled || isWhatsAppTerminal()) return { ok: false, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
   if (!req.phoneE164) return { ok: false, error: 'Phone number required.', reason: 'no_phone' };
   if (state.state !== 'connected' || !state.socket) {
-    return { ok: false, error: 'Flo is not connected to WhatsApp.', reason: 'not_connected' };
+    return { ok: false, error: 'BuonApp is not connected to WhatsApp.', reason: 'not_connected' };
   }
   const socket = state.socket;
   const jid = await resolveJid(req.phoneE164, socket, signal);

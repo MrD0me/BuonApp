@@ -77,14 +77,14 @@ async function run(): Promise<void> {
   const unmanagedResult = await restoreHandler({} as any, '1234', outside);
   assert.deepEqual(unmanagedResult, {
     success: false,
-    error: 'Restore source must be a Flo-managed backup file',
+    error: 'Restore source must be a BuonApp-managed backup file',
   }, 'IPC rejects unmanaged external database path');
 
   // Attempt to restore file with invalid name inside backup dir
   const invalidNameResult = await restoreHandler({} as any, '1234', wrongName);
   assert.deepEqual(invalidNameResult, {
     success: false,
-    error: 'Restore source must be a Flo-managed backup file',
+    error: 'Restore source must be a BuonApp-managed backup file',
   }, 'IPC rejects unmanaged filename inside backups directory');
 
   // Attempt to restore symlink escaping backup dir
@@ -92,7 +92,7 @@ async function run(): Promise<void> {
     const symlinkResult = await restoreHandler({} as any, '1234', path.join(backupDir, 'flo-backup-link.db'));
     assert.deepEqual(symlinkResult, {
       success: false,
-      error: 'Restore source must be a Flo-managed backup file',
+      error: 'Restore source must be a BuonApp-managed backup file',
     }, 'IPC rejects symlink escaping backups directory');
   }
 

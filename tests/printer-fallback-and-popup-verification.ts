@@ -107,7 +107,7 @@ async function run() {
           overrideBrowserWindowOptions: {
             width: isBlank ? 800 : 1280,
             height: isBlank ? 600 : 800,
-            title: isBlank ? 'Print Receipt' : 'Flo - Kitchen Display',
+            title: isBlank ? 'Print Receipt' : 'BuonApp - Kitchen Display',
             autoHideMenuBar: isBlank,
             webPreferences: {
               contextIsolation: true,
@@ -136,7 +136,7 @@ async function run() {
     const kdsRes = windowOpenHandler({ url: `http://localhost:${port}/kds` });
     assert('kds window returns action: "allow"', kdsRes.action === 'allow');
     assert('kds window width is 1280', kdsRes.overrideBrowserWindowOptions?.width === 1280);
-    assert('kds window title is "Flo - Kitchen Display"', kdsRes.overrideBrowserWindowOptions?.title === 'Flo - Kitchen Display');
+    assert('kds window title is "BuonApp - Kitchen Display"', kdsRes.overrideBrowserWindowOptions?.title === 'BuonApp - Kitchen Display');
 
     const attackRes = windowOpenHandler({ url: 'http://malicious.com' });
     assert('malicious URL returns action: "deny"', attackRes.action === 'deny');

@@ -1,16 +1,16 @@
 <div align="center">
   <h1>BuonApp</h1>
-  <p><strong>Free, open-source, offline-first point of sale for cafés, restaurants, and small kitchens.</strong></p>
+  <p><strong>Free, open-source, offline-first point of sale for restaurants with table service.</strong></p>
   <p>
-    <a href="https://github.com/MrD0me/BuonApp">Website</a> ·
     <a href="https://github.com/MrD0me/BuonApp/releases">Download</a> ·
-    <a href="https://github.com/MrD0me/BuonApp/issues">Report a bug</a>
+    <a href="https://github.com/MrD0me/BuonApp/issues">Report a bug</a> ·
+    <a href="docs/README.md">Documentation</a>
   </p>
   <p>
     <a href="https://github.com/MrD0me/BuonApp/releases"><img src="https://img.shields.io/github/v/release/MrD0me/BuonApp?label=latest%20release" alt="Latest release"></a>
     <a href="https://github.com/MrD0me/BuonApp/releases"><img src="https://img.shields.io/github/downloads/MrD0me/BuonApp/total?label=release%20downloads" alt="Total release downloads"></a>
     <a href="https://github.com/MrD0me/BuonApp/blob/main/LICENSE"><img src="https://img.shields.io/github/license/MrD0me/BuonApp" alt="MIT License"></a>
-    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Windows, macOS, and Linux">
+    <img src="https://img.shields.io/badge/release-Windows-blue" alt="Released for Windows">
     <a href="https://github.com/MrD0me/BuonApp/actions/workflows/ci.yml"><img src="https://github.com/MrD0me/BuonApp/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   </p>
 </div>
@@ -19,79 +19,83 @@
   <img src="docs/images/buonapp-pos.webp" alt="BuonApp POS screen showing product selection and an active dine-in order" width="100%">
 </p>
 
-BuonApp runs directly on the business's own computer. Orders, customers, receipts, and backups are stored in a local SQLite database, allowing counter service and kitchen displays to continue operating without an internet connection. No hosted or cloud account is required for core POS operation. Optional integrations—such as Google Drive backup and WhatsApp bill delivery—can be enabled when needed.
+BuonApp runs on the restaurant's own computer. Orders, tables, bills, and backups live in a local SQLite database, so the till, the floor map, and the kitchen printers keep working when the internet does not. There is no account to create, no vendor server to phone home to, and no usage telemetry. The only features that reach the network are the ones the owner switches on — Google Drive backup and WhatsApp bill delivery — plus the update check against this repository's own releases.
+
+> BuonApp began as a fork of [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe) and has diverged since: the cloud bridge and the telemetry are gone, the dining room is modelled as a map with service days and reservations, and kitchen tickets print by round. See the [changelog](CHANGELOG.md) for what changed and why.
 
 ## Get BuonApp
 
-Download the latest installer from [GitHub Releases](https://github.com/MrD0me/BuonApp/releases).
+Download the Windows installer from [GitHub Releases](https://github.com/MrD0me/BuonApp/releases). The installer is not code-signed, so Windows shows a SmartScreen prompt on first install — choose **More info → Run anyway**. In-app updates work from there on.
 
-Releases include Windows installers, macOS DMGs, and Linux AppImage, `.deb`, and `.rpm` packages. On Linux:
+macOS and Linux are not published as releases: signing and store credentials this fork does not have used to fail the release job and take the Windows installer down with them. Both still build from source:
 
 ```sh
-# AppImage
-chmod +x buonapp-*.AppImage
-./buonapp-*.AppImage
-
-# Debian or Ubuntu
-sudo apt install ./buonapp-*.deb
+npm run build:mac      # dmg and zip
+npm run build:linux    # AppImage, deb, rpm, snap
 ```
 
-For Linux package choices, updates, FUSE setup, printing permissions, and tray behavior, see [Linux installation and support](docs/linux.md).
+For Linux package choices, FUSE setup, CUPS printing, and tray behaviour, see [Linux installation and support](docs/linux.md).
 
 ### System requirements
 
 | Requirement | Minimum |
 | --- | --- |
-| Operating system | Windows 10+, macOS 12+, or a current supported Linux distribution |
+| Operating system | Windows 10 or later (macOS 12+ and current Linux distributions build from source) |
 | Memory | 4 GB RAM |
 | Storage | 500 MB free space, plus room for local backups |
+| Network | A private LAN, if handhelds, a kitchen display, or network printers are used |
 
 Node.js is only required to develop BuonApp, not to run a packaged release.
 
-## Highlights
+## What it does
 
-- **Order workflows:** Counter, dine-in, takeaway, and delivery orders with table management and held orders.
-- **Modifiers & pricing:** Item modifiers, add-on groups, discounts, and customer loyalty points.
-- **Receipt printing:** ESC/POS thermal printing over USB, local network (TCP), and OS-managed print queues, with WebUSB supported in compatible browsers (58 mm and 80 mm paper support).
-- **Kitchen operations:** Standalone Kitchen Display System (KDS) server and category-based kitchen station routing.
-- **Catalog management:** Product images, barcode scanning, and CSV menu import/export.
-- **Administration:** Role-based staff accounts (Owner, Manager, Cashier, Chef), sales analytics, and audit logs.
-- **Data protection:** Local SQLite database with automated pre-migration backups, manual restore tools, and optional Google Drive backup.
-
-## Project status
-
-BuonApp is actively developed and already used in real deployments. Core customer data and upgrade safety are treated carefully, including explicit database migrations and recovery mechanisms. Some internal and extension-facing architecture is still evolving, so implementation details and internal contracts may change as the project matures.
+- **The dining room as a map:** Rooms are real entities, and each is drawn as a floor plan rather than a grid of cards. Tables carry a shape, a size, and a horizontal or vertical orientation, and are dragged into place in edit mode. Two tables can be pushed together into one group led by a single table, and a floor plan can be saved by name and re-applied on a later evening.
+- **Service days:** Every order is filed under an explicit service day instead of a UTC date, so a service that runs past midnight stays one evening. The day opens by itself on the first order and closes as a ritual: the close refuses to start while orders are open or bills unpaid, freezes the totals before touching anything, then clears the floor and — if asked — deletes the tables. The closing report prints on the thermal printer.
+- **Reservations:** Bookings belong to the service day in front of you, not to future dates, and need only a name and a head count. A reservation can be taken before anyone decides where it sits; assigning it to a table that is already held swaps the two bookings in a single move.
+- **Order workflows:** Dine-in, counter, takeaway, and delivery orders, held orders shared across devices, per-item and per-order discounts, and optional split checks.
+- **Kitchen tickets by round:** Sending an order prints only the rows that have never been to the kitchen, numbered as a sequential round. Adding a course to an open table and sending again prints that course alone. Rows are routed to the kitchen station that owns their category, and a station that fails to print keeps its rows queued for the next send.
+- **Thermal printing:** ESC/POS over USB, local network (TCP 9100), and OS print queues, plus WebUSB in a compatible browser. 58 mm and 80 mm paper, per-printer column widths, and a WPC1252 code page so accented characters and the euro sign print as written. Receipt and ticket labels are rendered in English or Italian.
+- **Tableside handheld:** A Server App on port `3003` lets waiters take and extend orders from a phone or tablet on the same LAN. Sending from a handheld fires the kitchen ticket exactly as the till does; handhelds cannot change the floor.
+- **Kitchen display:** An optional standalone KDS server on port `3002`, for kitchens that work off a screen instead of paper. It can be switched off entirely, and its endpoints then answer `403`.
+- **Catalog:** Products with images and barcodes, categories, add-on groups, and CSV menu import/export.
+- **Customer display:** A second screen showing the running order and the payment status to the guest.
+- **Optional customer book:** The customer list, the loyalty wallet, and the customer field at the till are one switch in Settings. A restaurant that keeps only reservations turns them off, and the write endpoints close with them.
+- **Staff and accountability:** Owner, Manager, Cashier, Server, and Chef roles, manager PIN overrides for voids and cancellations, and a print log kept per bill.
+- **Data protection:** Local SQLite with a timestamped backup taken automatically before every schema migration, manual backup and restore, database health checks, and optional Google Drive backup.
 
 ## Offline-first by design
 
-Core POS operation and local data are offline-first. Order entry, billing, KDS coordination, and receipt printing do not depend on internet access or external cloud services.
+Order entry, billing, table management, kitchen tickets, and printing never depend on internet access.
 
-- **Data location:** The SQLite database and local backups reside in the operating system user-data directory, separate from installed application binaries. Standard in-place application updates do not remove them. As a best practice, create a manual backup before reinstalling, moving to a new machine, or changing distribution channels.
-- **Pre-migration backups:** BuonApp automatically creates a timestamped database backup before running schema migrations.
-- **Optional network features:** Services such as Google Drive backups and WhatsApp bill delivery communicate over the network only when explicitly configured and enabled by the store owner.
+- **No vendor channel:** The cloud bridge that used to register the installation with a vendor dashboard, and the anonymous telemetry that ran beside it, were removed in 4.0.0 — service, outbox tables, settings, and stored credentials alike. Migration v80 clears them from existing databases, and restoring an old backup does not bring them back.
+- **Data location:** The SQLite database and local backups live in the operating-system user-data directory, separate from the installed binaries, and survive in-place updates. Take a manual backup anyway before reinstalling or moving to another machine.
+- **Upgrading from Flo Cafe:** On first launch BuonApp copies an existing `flo-desktop` user-data directory into its own, so an install that predates the rename keeps its database, backups, Google Drive token, Master PIN, and WhatsApp session. The old directory is copied, not moved, so rolling back to an older build still finds its data.
+- **Optional network features:** Google Drive backup and WhatsApp bill delivery reach the network only once the owner configures and enables them, and fail gracefully when offline.
+- **On the LAN:** The POS advertises itself over mDNS as `buonapp.local` — the till on `:3001`, the kitchen display on `:3002`, and the handheld Server App on `:3003`.
 
-## Languages and regional support
+## Languages
 
-BuonApp includes UI translations for:
+BuonApp ships UI translations for:
 
 - English
+- Italian
 - Spanish
 - Brazilian Portuguese
-- Persian (Farsi), including RTL support
+- Persian (Farsi), including RTL layout support
 
-UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/i18n.md).
+UI language is independent of the store's country and regional settings, and tax rules are a separate concern again. Receipts and kitchen tickets follow the UI language in English or Italian and fall back to English for the other three, rather than printing a half-translated bill. To edit a translation or add a language, see the [Internationalization and translation guide](docs/i18n.md).
 
-## Tax support
+## Tax and bills
 
-BuonApp includes a generic calculation engine and supports signed, versioned country tax packs for regional rules, tax categories, and rounding policies. Country coverage is expanding through the catalog, and availability varies. Operators can also configure manual tax rules and rates locally.
+Tax calculation is **off by default**. Turned on, BuonApp offers a generic calculation engine, manual rules and rates, and signed country tax packs downloaded from the upstream FloCafe plugin catalog. A bill printed with tax disabled is an internal document for the guest and the till — not a fiscal receipt.
 
-> **Notice:** BuonApp is software, not legal or tax advice. Tax packs and configuration tools do not by themselves certify compliance with local regulations. Operators remain responsible for verifying the requirements that apply to their business.
+> **Notice:** BuonApp is software, not legal or tax advice. Neither the engine nor a tax pack certifies compliance with local regulations, and in several countries a fiscal receipt has to come from certified hardware. Verifying what applies to the business stays the operator's responsibility.
 
 For pack authoring, validation, and schema details, see the [Tax packs developer guide](docs/tax-packs.md).
 
 ## Development
 
-Setting up a local development environment requires Node.js 22 or later:
+A local development environment needs Node.js 22 or later:
 
 ```sh
 git clone https://github.com/MrD0me/BuonApp.git
@@ -106,35 +110,35 @@ npm run dev
 
 ```text
 Electron main process
-├── Express API and WebSocket server       :3001
-├── Standalone kitchen-display server      :3002
-└── SQLite database, migrations, and printing
+├── Express API and WebSocket server         :3001
+├── Standalone kitchen-display server        :3002
+├── Server App for tableside handhelds       :3003
+└── SQLite database, migrations, and ESC/POS printing
                  ↕ HTTP and WebSocket
 Next.js renderer
 └── React UI and Zustand client state
 ```
 
-For detailed developer workflows, coding standards, branch conventions, and testing procedures, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For developer workflows, coding standards, branch conventions, and testing procedures, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contributing
 
-Contributions are welcome. Please check [CONTRIBUTING.md](CONTRIBUTING.md) before starting work:
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before starting work:
 
 - **Small bug fixes, documentation improvements, and focused tests** can be started freely.
-- **New features, database schema changes, and architectural refactors** require maintainer discussion and approval before implementation.
-
-If BuonApp is useful to you, consider starring the repository.
+- **New features, database schema changes, and architectural refactors** are worth raising in an issue first, since this fork is shaped around one restaurant's way of working.
 
 ## Help and documentation
 
 - **Documentation index:** [docs/README.md](docs/README.md)
+- **Table management, service days & reservations:** [docs/table-management.md](docs/table-management.md)
 - **Printer guide & troubleshooting:** [docs/printers.md](docs/printers.md)
+- **Local API reference:** [docs/API.md](docs/API.md)
 - **Linux setup & support:** [docs/linux.md](docs/linux.md)
 - **Internationalization & translations:** [docs/i18n.md](docs/i18n.md)
 - **Google Drive backup setup:** [docs/google-drive-setup.md](docs/google-drive-setup.md)
 - **Bug reports & feature proposals:** [GitHub Issues](https://github.com/MrD0me/BuonApp/issues)
-- **General questions & ideas:** [GitHub Discussions](https://github.com/MrD0me/BuonApp/discussions)
 
 ## License
 
-BuonApp is open-source software licensed under the [MIT License](LICENSE).
+BuonApp is open-source software licensed under the [MIT License](LICENSE), and keeps the copyright of the FloCafe contributors it was forked from.

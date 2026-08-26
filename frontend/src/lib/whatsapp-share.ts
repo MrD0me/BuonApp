@@ -153,7 +153,7 @@ function formatItemsList(order: Bill['order'], currencyCode: string, locale: str
 }
 
 /**
- * Send a paid bill receipt through Flo's connected WhatsApp session.
+ * Send a paid bill receipt through BuonApp's connected WhatsApp session.
  * Single source of truth for the /whatsapp/send call + error-toast mapping,
  * shared by the orders list and the PaymentModal "send after payment" step.
  */

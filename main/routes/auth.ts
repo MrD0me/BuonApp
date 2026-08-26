@@ -621,7 +621,7 @@ router.post('/password/change', (req: Request, res: Response) => {
 // reinitialize, or wipe anything — that stays behind /api/db-tools/initialize
 // (owner session + Master PIN + explicit confirmation phrase).
 //
-// No remote backdoor: nothing here lets a Flo cloud server or anyone without
+// No remote backdoor: nothing here lets a remote server or anyone without
 // physical/local access to this machine set the password. See #128 for the
 // signup-time copy explaining this to the owner, and the scope note in this
 // PR for why the optional cloud/email identity-verification tier described in

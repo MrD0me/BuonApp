@@ -20,7 +20,7 @@ Maintainers may remove, edit, or reject contributions and communications that vi
 
 ## Report a concern
 
-Email [support@github.com/MrD0me/BuonApp](mailto:support@github.com/MrD0me/BuonApp) with `CONDUCT` in the subject line. Do not post reports publicly. Include enough context for maintainers to investigate; screenshots and links are useful when safe to share.
+Contact the maintainer privately through their [GitHub profile](https://github.com/MrD0me). Do not post reports publicly. Include enough context to investigate; screenshots and links are useful when safe to share.
 
 ## Attribution
 

@@ -1,6 +1,8 @@
 # BuonApp agent guide
 
-BuonApp is an open-source, offline-first Electron desktop POS. `main/` contains the Electron main process, Express API (`:3001`), standalone KDS server (`:3002`), SQLite database, printing, and background services. `frontend/` is a statically exported Next.js 16 and React 19 application. `tests/` contains backend, integration, and release test suites.
+BuonApp is an open-source, offline-first Electron desktop POS for restaurants with table service, forked from FloCafe. `main/` contains the Electron main process, Express API (`:3001`), standalone KDS server (`:3002`), Server App for tableside handhelds (`:3003`), SQLite database, printing, and background services. `frontend/` is a statically exported Next.js 16 and React 19 application. `tests/` contains backend, integration, and release test suites.
+
+The domains this fork added on top of upstream — service days, rooms and the floor map, reservations, joined tables, saved layouts, and kitchen-ticket rounds — keep their logic in `main/services/` and use `main/routes/` only for authorization and HTTP translation. Do not reintroduce an import cycle between the two.
 
 ## Progressive disclosure
 
@@ -27,7 +29,9 @@ If a task or design doc contradicts current code or references files that no lon
 ## Repository layout
 
 ```text
-main/           Electron main process, Express API, SQLite access, ESC/POS printing, and services
+main/           Electron main process, Express API, SQLite access, and ESC/POS printing
+main/routes/    HTTP surface: authorization, request parsing, error translation
+main/services/  Domain logic for tables, service days, reservations, and layouts
 frontend/src/   Next.js/React renderer, Zustand state, UI components, and translations
 tests/          Backend unit, integration, and release test suites
 docs/           Documentation, design specifications, and audits (see docs/README.md)
@@ -36,7 +40,7 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 
 ## Core invariants
 
-1. **Offline-first operation:** Core POS operation (orders, billing, KDS, printing) must function without internet connectivity. This fork carries no cloud bridge and no usage telemetry — they were removed, along with the settings that armed them (migration v80). The only things that may reach the network are features the owner explicitly configures (Google Drive backup, WhatsApp) and the update check against this fork's own GitHub releases; all of them must fail gracefully when offline. Do not reintroduce an outbound channel to a vendor.
+1. **Offline-first operation:** Core POS operation (orders, billing, tables and service days, kitchen tickets, printing) must function without internet connectivity. This fork carries no cloud bridge and no usage telemetry — they were removed, along with the settings that armed them (migration v80). The only things that may reach the network are features the owner explicitly configures (Google Drive backup, WhatsApp) and the update check against this fork's own GitHub releases; all of them must fail gracefully when offline. Do not reintroduce an outbound channel to a vendor.
 2. **Data safety:** Existing customer data must survive upgrades. Never reset, truncate, or drop user databases as a shortcut for migration design.
 3. **Architecture boundaries:** UI language, tenant regional settings, and tax/compliance behavior are separate, decoupled domains.
 4. **Business timestamps:** Persisted timestamps follow BuonApp's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.
@@ -60,7 +64,7 @@ BuonApp requires **Node.js 22 or later**.
 
 ```sh
 npm run dev              # Full Electron app (cleans ports, builds frontend & backend)
-node dev-server.js       # Backend only (Express API on :3001, KDS on :3002)
+node dev-server.js       # Backend only (API :3001, KDS :3002, Server App :3003)
 npm run dev:frontend     # Frontend browser development server
 npm run lint             # Lint backend (main/) and frontend (frontend/)
 npm run build            # Compile TypeScript backend to dist/
@@ -83,7 +87,9 @@ Select checks that cover the changed subsystem:
 | Translations / i18n | `npm run i18n:check` |
 | Backend / API | `npm run lint`, `npm run build`, and focused test suites |
 | Database migrations | Fresh database test and upgrade-path migration test |
+| Tables / service days / reservations | `npm run test:table-crud`, `test:rooms-map`, `test:reservations`, `test:reservation-sheet`, `test:table-merge-layouts`, `test:service-days` |
+| Printing / kitchen tickets | `npm run test:printer`, `test:kot-batch`, `test:receipt-printing` |
 | Tax / Auth / Security | Relevant focused test suite plus broader integration tests |
 | Packaging / Releases | Target platform build commands and release checks |
 
-Run `npm test` when a full validation pass is requested, before releases, or when changes touch multiple core subsystems.
+Run `npm test` when a full validation pass is requested, before releases, or when changes touch multiple core subsystems. Note that the six floor-management suites in the table above are **not** part of the `npm test` chain and have to be run explicitly.

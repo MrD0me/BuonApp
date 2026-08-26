@@ -1,7 +1,7 @@
 /**
  * receipt-encoder.ts
  *
- * Converts a Flo POS Bill (+ its nested Order) into raw ESC/POS bytes
+ * Converts a BuonApp Bill (+ its nested Order) into raw ESC/POS bytes
  * using `@point-of-sale/receipt-printer-encoder`.
  *
  * Two core receipt templates are available:

@@ -289,7 +289,7 @@ function createWindow(): void {
         overrideBrowserWindowOptions: {
           width: isBlank ? 800 : 1280,
           height: isBlank ? 600 : 800,
-          title: isBlank ? 'Print Receipt' : 'Flo - Kitchen Display',
+          title: isBlank ? 'Print Receipt' : 'BuonApp - Kitchen Display',
           autoHideMenuBar: isBlank,
           webPreferences: {
             contextIsolation: true,
@@ -299,9 +299,9 @@ function createWindow(): void {
       };
     }
     if (isSafeExternalUrl(url)) {
-      shell.openExternal(url).catch((err) => console.warn('[Flo] Failed to open external URL:', err?.message || err));
+      shell.openExternal(url).catch((err) => console.warn('[BuonApp] Failed to open external URL:', err?.message || err));
     } else {
-      console.warn('[Flo] Blocked unsafe external URL scheme:', url);
+      console.warn('[BuonApp] Blocked unsafe external URL scheme:', url);
     }
     return { action: 'deny' };
   });
@@ -439,12 +439,12 @@ function createTray(): void {
     tray = new Tray(icon.resize({ width: 16, height: 16 }));
 
     const contextMenu = Menu.buildFromTemplate([
-      { label: 'Open Flo', click: () => mainWindow?.show() },
+      { label: 'Open BuonApp', click: () => mainWindow?.show() },
       { type: 'separator' },
       { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
     ]);
 
-    tray.setToolTip('Flo');
+    tray.setToolTip('BuonApp');
     tray.setContextMenu(contextMenu);
     tray.on('double-click', () => mainWindow?.show());
   } catch {
@@ -456,7 +456,7 @@ function startMdns(): void {
   try {
     bonjour = new Bonjour();
     bonjour.publish({
-      name: 'Flo',
+      name: 'BuonApp',
       type: 'http',
       port: getServerPort(),
       host: 'buonapp',   // resolves as buonapp.local on the LAN
@@ -594,7 +594,7 @@ function createMenu(): void {
     {
       label: 'Help',
       submenu: [
-        ...(process.platform !== 'darwin' ? [{ label: 'About Flo', click: () => showAbout() }] : []),
+        ...(process.platform !== 'darwin' ? [{ label: 'About BuonApp', click: () => showAbout() }] : []),
         ...(isStoreBuild
           ? []
           : [{ label: 'Check for Updates', click: () => checkForUpdates() }]),
@@ -623,8 +623,8 @@ function showAbout(): void {
   const serverAppPort = getServerAppPort();
   dialog.showMessageBox({
     type: 'info',
-    title: 'About Flo',
-    message: 'Flo Desktop',
+    title: 'About BuonApp',
+    message: 'BuonApp',
     detail: [
       `Version: ${app.getVersion()}`,
       `Electron: ${process.versions.electron}`,
@@ -646,37 +646,37 @@ function showAbout(): void {
 async function initialize(): Promise<void> {
   try {
     if (isShutdownRequested()) return;
-    console.log('[Flo] Initializing...');
+    console.log('[BuonApp] Initializing...');
 
-    console.log('[Flo] Initializing database...');
+    console.log('[BuonApp] Initializing database...');
     initDatabase();
     if (isShutdownRequested()) return;
 
-    console.log('[Flo] Starting local server...');
+    console.log('[BuonApp] Starting local server...');
     await startServer();
     if (isShutdownRequested()) return;
 
     googleDrive.start();
 
-    console.log('[Flo] Starting KDS server on port 3002...');
+    console.log('[BuonApp] Starting KDS server on port 3002...');
     await startKdsServer();
     if (isShutdownRequested()) return;
 
-    console.log('[Flo] Starting Server App on port 3003...');
+    console.log('[BuonApp] Starting Server App on port 3003...');
     await startServerApp();
     if (isShutdownRequested()) return;
 
-    console.log('[Flo] Initializing WhatsApp service...');
+    console.log('[BuonApp] Initializing WhatsApp service...');
     initWhatsAppFromDb();
 
-    console.log('[Flo] Starting mDNS advertisement...');
+    console.log('[BuonApp] Starting mDNS advertisement...');
     startMdns();
 
-    console.log('[Flo] Initializing printer...');
+    console.log('[BuonApp] Initializing printer...');
     await initPrinter();
     if (isShutdownRequested()) return;
 
-    console.log('[Flo] Registering IPC handlers...');
+    console.log('[BuonApp] Registering IPC handlers...');
     registerIpcHandlers(shutdownSignal);
 
     ipcMain.handle('get-update-status', () => ({
@@ -715,7 +715,7 @@ async function initialize(): Promise<void> {
       };
     });
 
-    console.log('[Flo] Creating window...');
+    console.log('[BuonApp] Creating window...');
     createWindow();
     createTray();
     createMenu();
@@ -727,9 +727,9 @@ async function initialize(): Promise<void> {
       setTimeout(() => checkForUpdates(), 5000);
     }
 
-    console.log('[Flo] Ready!');
+    console.log('[BuonApp] Ready!');
   } catch (error) {
-    console.error('[Flo] Initialization error:', error);
+    console.error('[BuonApp] Initialization error:', error);
     const errorDetails = error as { code?: unknown; name?: unknown } | null;
     const expectedShutdownCancellation = errorDetails?.code === 'ERR_SHUTDOWN_ABORTED'
       || errorDetails?.code === 'ABORT_ERR'
@@ -739,17 +739,17 @@ async function initialize(): Promise<void> {
       try {
         await runCleanup();
       } catch (cleanupError) {
-        console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
+        console.error('[BuonApp] Cleanup after interrupted initialization failed:', cleanupError);
       }
       return;
     }
-    dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
+    dialog.showErrorBox('Initialization Error', `Failed to start BuonApp: ${error}`);
 
     // A fatal startup failure used to be reported home over telemetry. It is
     // written to the local log instead — the log is where the person standing
     // in front of the machine can actually read it.
     if (error instanceof SchemaVersionMismatchError) {
-      log.error('[Flo] Startup failed on a schema mismatch', {
+      log.error('[BuonApp] Startup failed on a schema mismatch', {
         db_schema_version: error.dbVersion,
         app_schema_version: error.appVersion,
       });
@@ -759,7 +759,7 @@ async function initialize(): Promise<void> {
     try {
       await runCleanup();
     } catch (cleanupError) {
-      console.error('[Flo] Cleanup after initialization failure failed:', cleanupError);
+      console.error('[BuonApp] Cleanup after initialization failure failed:', cleanupError);
     }
     // Cleanup has settled (or reported its bounded failure) before exiting.
     app.exit(1);
@@ -812,12 +812,12 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   app: app as unknown as ShutdownEntrypointApp,
   process: process as unknown as ShutdownEntrypointProcess,
   cleanup: async () => {
-    console.log('[Flo] Running cleanup...');
+    console.log('[BuonApp] Running cleanup...');
     try {
       await cleanupCoordinator();
-      console.log('[Flo] Goodbye!');
+      console.log('[BuonApp] Goodbye!');
     } catch (error) {
-      console.error('[Flo] Cleanup failed:', error);
+      console.error('[BuonApp] Cleanup failed:', error);
       throw error;
     }
   },
@@ -829,18 +829,18 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
   },
   reportFailure: (context, error) => {
-    console.error(`[Flo] Cleanup failed before ${context}:`, error);
+    console.error(`[BuonApp] Cleanup failed before ${context}:`, error);
   },
   getSignalExitCode: () => startupFailure ? 1 : 0,
   getQuitExitCode: () => startupFailure ? 1 : 0,
 });
 
 process.on('uncaughtException', (error) => {
-  log.error('[Flo] Uncaught exception:', error);
-  console.error('[Flo] Uncaught exception:', error);
+  log.error('[BuonApp] Uncaught exception:', error);
+  console.error('[BuonApp] Uncaught exception:', error);
 });
 
 process.on('unhandledRejection', (reason) => {
-  log.error('[Flo] Unhandled rejection:', reason);
-  console.error('[Flo] Unhandled rejection:', reason);
+  log.error('[BuonApp] Unhandled rejection:', reason);
+  console.error('[BuonApp] Unhandled rejection:', reason);
 });

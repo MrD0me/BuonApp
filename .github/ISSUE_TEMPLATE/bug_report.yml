@@ -62,13 +62,12 @@ body:
     attributes:
       label: Installation Method
       options:
-        - GitHub / direct installer
-        - Mac App Store
-        - Microsoft Store
-        - AppImage
-        - deb
-        - rpm
-        - Snap
+        - Windows installer from GitHub Releases
+        - AppImage built from source
+        - deb built from source
+        - rpm built from source
+        - Snap built from source
+        - macOS build from source
         - Source / development build
         - Other
     validations:
@@ -78,7 +77,7 @@ body:
     id: version
     attributes:
       label: BuonApp version
-      description: "Exact version from app menu: BuonApp > About"
+      description: "Exact version from the app menu: Help > About BuonApp"
     validations:
       required: true
 

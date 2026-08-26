@@ -4956,7 +4956,7 @@ function seedWhatsAppDefaults(): void {
   insertSettingIfMissing('whatsapp_disclosure_version_acknowledged', '');
   insertSettingIfMissing('whatsapp_connected_phone', '');
   insertSettingIfMissing('whatsapp_disclosure_version', '1');
-  // On by default — no one asks Flo to send a paid bill into a group chat.
+  // On by default — no one asks BuonApp to send a paid bill into a group chat.
   // Operators who do want group processing have to opt in explicitly.
   insertSettingIfMissing('whatsapp_filter_groups', 'true');
 }

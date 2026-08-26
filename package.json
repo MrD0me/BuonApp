@@ -1,7 +1,7 @@
 {
   "name": "buonapp",
-  "version": "3.3.0",
-  "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
+  "version": "4.0.0",
+  "description": "Free, open-source, offline-first POS for restaurant table service: floor map, service days, reservations, ESC/POS kitchen tickets, and a local SQLite database.",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -311,7 +311,7 @@
     },
     "linux": {
       "synopsis": "Self-hosted Point of Sale for cafes and restaurants",
-      "description": "BuonApp is a free, open-source point-of-sale system for cafes, restaurants, and small kitchens. Local-first, offline-capable, no cloud lock-in, no per-seat fees.",
+      "description": "BuonApp is a free, open-source point-of-sale system for restaurants with table service: a graphical floor map, service days, reservations, and ESC/POS kitchen tickets. Local-first, offline-capable, no cloud account, no telemetry, no per-seat fees.",
       "target": [
         {
           "target": "AppImage",

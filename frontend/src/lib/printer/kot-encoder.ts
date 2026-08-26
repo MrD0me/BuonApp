@@ -1,7 +1,7 @@
 /**
  * kot-encoder.ts
  *
- * Converts a Flo POS Order into a Kitchen Order Ticket (KOT) ESC/POS byte array.
+ * Converts a BuonApp Order into a Kitchen Order Ticket (KOT) ESC/POS byte array.
  * KOTs are printed in the kitchen to show what items need to be prepared.
  */
 

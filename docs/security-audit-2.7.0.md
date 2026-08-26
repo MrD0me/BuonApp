@@ -1,6 +1,8 @@
-# BuonApp 2.7.0 security audit
+# Security audit — version 2.7.0
 
 Date: 2026-08-04
+
+> **Historical record.** This audit covers version 2.7.0, which shipped upstream under the project's former name, Flo Cafe. It predates this fork's changes — the removal of the cloud bridge and telemetry in particular — so its findings describe code that has since moved. Read it for context, not as a statement about what BuonApp does today.
 
 ## Result
 

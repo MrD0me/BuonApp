@@ -110,7 +110,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
       } else if (!fs.existsSync(backupPath)) {
         return { success: false, error: 'Backup file no longer exists' };
       } else if (!isManagedBackupFile(backupPath)) {
-        return { success: false, error: 'Restore source must be a Flo-managed backup file' };
+        return { success: false, error: 'Restore source must be a BuonApp-managed backup file' };
       }
 
       const backupVersion = getSchemaVersionFromBackup(backupPath);
@@ -298,7 +298,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     activeKdsWindow = new BrowserWindow({
       width: 1200,
       height: 800,
-      title: 'Flo - Kitchen Display',
+      title: 'BuonApp - Kitchen Display',
       webPreferences: {
         // The KDS page is LAN-served HTTP and uses only the HTTP API +
         // WebSocket, so it must not receive the privileged POS renderer

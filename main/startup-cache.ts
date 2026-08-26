@@ -66,7 +66,7 @@ export function clearStaleRenderCachesOnVersionChange(
         fsOps.rmSync(path.join(userDataPath, dir), { recursive: true, force: true });
       } catch (err) {
         allCleared = false;
-        logger.warn(`[Flo] Failed to clear stale cache dir "${dir}":`, (err as Error).message);
+        logger.warn(`[BuonApp] Failed to clear stale cache dir "${dir}":`, (err as Error).message);
       }
     }
 
@@ -77,7 +77,7 @@ export function clearStaleRenderCachesOnVersionChange(
     }
 
     logger.debug(
-      `[Flo] Electron version marker ${previousVersion ?? '(none)'} -> ${currentElectronVersion}; cleared render caches to avoid a stale-cache crash loop.`,
+      `[BuonApp] Electron version marker ${previousVersion ?? '(none)'} -> ${currentElectronVersion}; cleared render caches to avoid a stale-cache crash loop.`,
     );
   }
 
@@ -85,6 +85,6 @@ export function clearStaleRenderCachesOnVersionChange(
     fsOps.mkdirSync(userDataPath, { recursive: true });
     fsOps.writeFileSync(versionFile, currentElectronVersion, 'utf8');
   } catch (err) {
-    logger.warn('[Flo] Failed to write Electron version marker:', (err as Error).message);
+    logger.warn('[BuonApp] Failed to write Electron version marker:', (err as Error).message);
   }
 }

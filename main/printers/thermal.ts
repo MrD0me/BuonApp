@@ -1963,7 +1963,7 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
   const edgeProbe = 'X'.repeat(width);
   const lines = [
     '{INIT}',
-    '{CENTER}{BOLD}Flo Printer Test{/BOLD}{/CENTER}',
+    '{CENTER}{BOLD}BuonApp Printer Test{/BOLD}{/CENTER}',
     '',
     bar,
     '{CENTER}Network / USB test print{/CENTER}',
