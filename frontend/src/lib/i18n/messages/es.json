@@ -1012,10 +1012,6 @@
     "unpaidBills": "Cuentas sin pagar"
   },
   "settings": {
-    "aboutDescription": "FloPOS es un POS para restaurantes de código abierto y gratuito para siempre, para cafeterías, restaurantes, panaderías, camiones de comida, cocinas fantasma y bares. Incluye pedidos, mesas, menús, pantalla de cocina, impresión de recibos, acceso de personal y almacenamiento de datos local. Descárgalo, ejecuta el servicio, mantén tus datos y sé dueño de tu POS.",
-    "aboutFloCafe": "Acerca de FloCafe",
-    "aboutGithub": "Repositorio de GitHub",
-    "aboutWebsite": "Sitio web de la aplicación",
     "account": "Cuenta",
     "accountAndApp": "Cuenta y Aplicación",
     "actionFailed": "Falló",
@@ -1521,7 +1517,6 @@
     "storeIdPlaceholder": "Se completa solo después del primer sync",
     "storeSaved": "Datos del local guardados",
     "subscription": "Suscripción",
-    "tabAbout": "Acerca de",
     "tabBackupData": "Copia de seguridad y datos",
     "tabBillTemplate": "Plantilla del comprobante",
     "tabCloud": "Sincronización en la nube",

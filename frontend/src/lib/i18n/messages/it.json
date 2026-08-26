@@ -1012,10 +1012,6 @@
     "unpaidBills": "Conti non saldati"
   },
   "settings": {
-    "aboutDescription": "FloPOS è un POS per ristoranti gratuito per sempre e open-source, pensato per bar, ristoranti, panetterie, food truck, cloud kitchen e locali. Include gestione ordini, tavoli, menu, display cucina, stampa scontrini, accesso del personale e archiviazione dati locale. Scaricalo, avvia il servizio, mantieni i tuoi dati e possiedi il tuo POS.",
-    "aboutFloCafe": "Informazioni su FloCafe",
-    "aboutGithub": "Repository GitHub",
-    "aboutWebsite": "Sito Web dell'App",
     "account": "Account",
     "accountAndApp": "Account e App",
     "actionFailed": "Non riuscito",
@@ -1521,7 +1517,6 @@
     "storeIdPlaceholder": "Compilato automaticamente dopo la prima sincronizzazione",
     "storeSaved": "Dettagli negozio salvati",
     "subscription": "Abbonamento",
-    "tabAbout": "Informazioni",
     "tabBackupData": "Backup e Dati",
     "tabBillTemplate": "Modello Conto",
     "tabCloud": "Sincronizzazione Cloud",

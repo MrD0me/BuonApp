@@ -1012,10 +1012,6 @@
     "unpaidBills": "Contas em aberto"
   },
   "settings": {
-    "aboutDescription": "O FloPOS é um PDV de restaurante gratuito para sempre e de código aberto para cafeterias, restaurantes, padarias, food trucks, dark kitchens e bares. Inclui pedidos, mesas, menus, display de cozinha, impressão de comprovantes, acesso da equipe e armazenamento local de dados. Baixe, execute o serviço, mantenha seus dados e seja dono do seu PDV.",
-    "aboutFloCafe": "Sobre o FloCafe",
-    "aboutGithub": "Repositório GitHub",
-    "aboutWebsite": "Site do aplicativo",
     "account": "Conta",
     "accountAndApp": "Conta e App",
     "actionFailed": "Falhou",
@@ -1521,7 +1517,6 @@
     "storeIdPlaceholder": "Preenchido automaticamente após a primeira sincronização",
     "storeSaved": "Detalhes da loja salvos",
     "subscription": "Assinatura",
-    "tabAbout": "Sobre",
     "tabBackupData": "Backup e Dados",
     "tabBillTemplate": "Modelo de Conta",
     "tabCloud": "Sincronização na Nuvem",
