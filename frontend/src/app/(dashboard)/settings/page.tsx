@@ -1752,15 +1752,18 @@ export default function SettingsPage() {
   };
 
   const saveOrderNumbering = async (silent = false) => {
+    // A rejected prefix throws rather than returning: saveAllSettings awaits
+    // this, and a quiet `return` would let it announce that everything was
+    // saved while this card was refused.
     const prefix = orderNumberForm.prefix.trim();
     if (prefix && !/^[A-Za-z0-9_-]{0,12}$/.test(prefix)) {
       toast.error(t('orderNumberPrefixInvalid'));
-      return;
+      throw new Error('invalid order number prefix');
     }
     const invoicePrefix = orderNumberForm.invoicePrefix.trim();
     if (invoicePrefix && !/^[A-Za-z0-9_-]{0,12}$/.test(invoicePrefix)) {
       toast.error(t('invoiceNumberPrefixInvalid'));
-      return;
+      throw new Error('invalid invoice number prefix');
     }
     setSavingOrderNumbering(true);
     try {
@@ -1808,8 +1811,15 @@ export default function SettingsPage() {
     { value: 'thermal80', label: t('paperSize80') },
   ];
 
+  // Every buffered form on this page has to be listed here. The save bar is
+  // the only way to commit them, and it only appears when something below says
+  // it is dirty — a form left out of this list can be typed into, looks
+  // accepted, and is silently discarded on the way out. That is what happened
+  // to the order/invoice number format: saveAllSettings has always saved it,
+  // but nothing ever told the bar to show up and offer.
   const isDirty = 
     JSON.stringify(form) !== JSON.stringify(savedBusiness) ||
+    JSON.stringify(orderNumberForm) !== JSON.stringify(savedOrderNumberForm) ||
     JSON.stringify(printingForm) !== JSON.stringify(savedPrinting) ||
     JSON.stringify(billForm) !== JSON.stringify(savedBillForm) ||
     loyaltyEnabled !== savedLoyaltyEnabled ||
