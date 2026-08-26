@@ -1,7 +1,7 @@
 /**
  * Translation integrity test (repository-native validation, Issue #382).
  *
- * FloCafe manages translations directly in Git — no Crowdin/Weblate/Tolgee.
+ * BuonApp manages translations directly in Git — no Crowdin/Weblate/Tolgee.
  * This suite is the safety gate for every component migration and community
  * translation contribution. It verifies, on every run:
  *

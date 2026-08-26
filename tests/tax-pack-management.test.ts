@@ -61,8 +61,8 @@ const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
 // TH/THB so getActiveCountryPack() and ensure-country resolve them the same
 // way; the digest is injected below instead of depending on real historical
 // tax-pack content, so this test never needs actual GST/VAT data.
-const testIndiaPack = { ...dualRatePackData, id: 'test-legacy-in-pack', country: 'IN', currency: 'INR', publisher: 'FreeOpenSourcePOS' };
-const testThailandPack = { ...flatRatePackData, id: 'test-legacy-th-pack', country: 'TH', currency: 'THB', publisher: 'FreeOpenSourcePOS' };
+const testIndiaPack = { ...dualRatePackData, id: 'test-legacy-in-pack', country: 'IN', currency: 'INR', publisher: 'MrD0me' };
+const testThailandPack = { ...flatRatePackData, id: 'test-legacy-th-pack', country: 'TH', currency: 'THB', publisher: 'MrD0me' };
 LEGACY_TRUSTED_PACK_DIGESTS[testIndiaPack.id] = taxPackSha256(JSON.stringify(testIndiaPack));
 LEGACY_TRUSTED_PACK_DIGESTS[testThailandPack.id] = taxPackSha256(JSON.stringify(testThailandPack));
 
@@ -577,7 +577,7 @@ async function main() {
         footer: {
           useConfiguredFooterNote: true,
           defaultMessage: 'Thank you for your business!',
-          includePoweredByFloPOS: true,
+          includePoweredByBuonApp: true,
         },
       },
     };
@@ -983,7 +983,7 @@ async function main() {
       id: 'test-in-no-format-pack',
       country: 'IN',
       currency: 'INR',
-      publisher: 'FreeOpenSourcePOS',
+      publisher: 'MrD0me',
     };
     installAndActivateTestTaxPack(db, noFormatPack);
     const staticFormat = getCountryByCode('IN')?.taxIdFormat;
@@ -1001,7 +1001,7 @@ async function main() {
       id: 'test-in-format-override-pack',
       country: 'IN',
       currency: 'INR',
-      publisher: 'FreeOpenSourcePOS',
+      publisher: 'MrD0me',
       registrationNumberFormat: overrideFormat,
     };
     LEGACY_TRUSTED_PACK_DIGESTS[formatOverridePack.id] = taxPackSha256(JSON.stringify(formatOverridePack));

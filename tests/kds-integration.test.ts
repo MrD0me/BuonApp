@@ -65,7 +65,7 @@ async function run() {
     // Seed kitchen staff (chef) and non-kitchen staff (server)
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
-      VALUES ('user-chef-1', 'Chef User', 'chef@flo.local', ?, 'chef', 1)
+      VALUES ('user-chef-1', 'Chef User', 'chef@buonapp.local', ?, 'chef', 1)
     `).run(hashedPass);
 
     db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)')
@@ -97,7 +97,7 @@ async function run() {
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
       VALUES ('kds-unrestricted-station', 'Unrestricted Station', NULL, 1, ?, ?)`).run(now(), now());
     db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, station_assignments_configured, created_at, updated_at)
-      VALUES ('user-unrestricted-manager', 'Unrestricted Manager', 'unrestricted@flo.local', ?, 'manager', 1, 1, ?, ?)`).run(hashedPass, now(), now());
+      VALUES ('user-unrestricted-manager', 'Unrestricted Manager', 'unrestricted@buonapp.local', ?, 'manager', 1, 1, ?, ?)`).run(hashedPass, now(), now());
     db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)')
       .run('user-unrestricted-manager', 'kds-unrestricted-station', now());
     db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)')
@@ -112,7 +112,7 @@ async function run() {
 
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
-      VALUES ('user-server-1', 'Server User', 'server@flo.local', ?, 'server', 1)
+      VALUES ('user-server-1', 'Server User', 'server@buonapp.local', ?, 'server', 1)
     `).run(hashedPass);
 
     // 1. Missing credentials returns 400
@@ -122,19 +122,19 @@ async function run() {
     // 2. Invalid credentials returns 401
     const res2 = await request(`http://127.0.0.1:${port}`)
       .post('/api/auth/login')
-      .send({ email: 'chef@flo.local', password: 'wrong' });
+      .send({ email: 'chef@buonapp.local', password: 'wrong' });
     assert(res2.status === 401, 'Should return 401 for invalid password');
 
     // 3. Non-kitchen staff role (server) returns 403 Forbidden
     const res3 = await request(`http://127.0.0.1:${port}`)
       .post('/api/auth/login')
-      .send({ email: 'server@flo.local', password: 'KitchenPass123!' });
+      .send({ email: 'server@buonapp.local', password: 'KitchenPass123!' });
     assert(res3.status === 403, 'Should deny access (403) to non-kitchen roles');
 
     // 4. Kitchen staff role (chef) succeeds
     const chefLogin = await request(`http://127.0.0.1:${port}`)
       .post('/api/auth/login')
-      .send({ email: 'chef@flo.local', password: 'KitchenPass123!' });
+      .send({ email: 'chef@buonapp.local', password: 'KitchenPass123!' });
     assert(chefLogin.status === 200, 'Chef login succeeds on KDS API');
     assert(!!chefLogin.body.access_token, 'Chef login returns access_token');
 
@@ -151,7 +151,7 @@ async function run() {
 
     const relogin = await request(`http://127.0.0.1:${port}`)
       .post('/api/auth/login')
-      .send({ email: 'chef@flo.local', password: 'KitchenPass123!' });
+      .send({ email: 'chef@buonapp.local', password: 'KitchenPass123!' });
     assert(relogin.status === 200, 'Chef can log in again after standalone logout');
     token = relogin.body.access_token;
 
@@ -177,7 +177,7 @@ async function run() {
 
     const unrestrictedLogin = await request(`http://127.0.0.1:${port}`)
       .post('/api/auth/login')
-      .send({ email: 'unrestricted@flo.local', password: 'KitchenPass123!' });
+      .send({ email: 'unrestricted@buonapp.local', password: 'KitchenPass123!' });
     assert(unrestrictedLogin.status === 200, 'Unrestricted manager can log in to standalone KDS');
     const unrestrictedOrders = await request(`http://127.0.0.1:${port}`)
       .get('/api/kds/orders')

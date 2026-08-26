@@ -1,7 +1,7 @@
 /**
  * kill-ports.js
- * Cross-platform port killer — ONLY kills Flo Desktop processes.
- * Uses an allowlist approach: identifies Flo by process name/cmdline,
+ * Cross-platform port killer — ONLY kills BuonApp processes.
+ * Uses an allowlist approach: identifies BuonApp by process name/cmdline,
  * then kills only those processes that hold the target ports.
  *
  * Usage: node kill-ports.js 3001 3002 3003
@@ -23,26 +23,30 @@ const isWindows = os.platform() === 'win32';
 const isMac = os.platform() === 'darwin';
 const isLinux = os.platform() === 'linux';
 
-// ── Identity: how to recognize a Flo Desktop process ────────────────────────
+// ── Identity: how to recognize a BuonApp process ────────────────────────
 // These patterns match the process command line on all platforms.
-// In dev: `electron .` with app.name = 'flo-desktop'
+// In dev: `electron .` with app.name = 'buonapp'
 // Packaged:
-//   - Linux: executableName "flocafe" (snap/AppImage/deb binary path)
-//   - Mac/Windows: productName "Flo Cafe"
-const FLO_PATTERNS = [
-  /(?:^|[\s\\/])flocafe(?:\.exe)?(?:$|\s)/i,
+//   - Linux: executableName "buonapp" (snap/AppImage/deb binary path)
+//   - Mac/Windows: productName "BuonApp"
+const BUONAPP_PATTERNS = [
+  /(?:^|[\s\\/])buonapp(?:\.exe)?(?:$|\s)/i,
+  /(?:^|[\s\\/])BuonApp\.app(?:[\\/]Contents[\\/]MacOS[\\/]BuonApp)?(?:$|\s)/i,
+  /(?:^|\s)it\.buonapp\.pos(?:\.\S*)?(?:$|\s)/i,
+  /(?:^|\s)electron(?:\s+\S+)*\s+--appName=buonapp(?:$|\s)/i,
+  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*[\\/]BuonApp[\\/](?:dev-server\.js|dist[\\/]index\.js)(?:$|\s)/i,
+  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*\s+dev-server\.js(?:$|\s)/i,
+  // Pre-rename Flo Cafe process names: a leftover old build can still be holding
+  // the port during the transition, so keep clearing those too.
   /(?:^|[\s\\/])Flo[\s_\-]*Cafe(?:\.exe)?(?:$|\s)/i,
-  /(?:^|[\s\\/])Flo Cafe\.app(?:[\\/]Contents[\\/]MacOS[\\/]Flo Cafe)?(?:$|\s)/i,
   /(?:^|\s)com\.flo\.desktop(?:\.\S*)?(?:$|\s)/i,
   /(?:^|\s)flo[_\-]?pos(?:-service)?(?:\.exe)?(?:$|\s)/i,
   /(?:^|\s)electron(?:\s+\S+)*\s+--appName=flo[_\-]?desktop(?:$|\s)/i,
-  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*[\\/]FloCafe[\\/](?:dev-server\.js|dist[\\/]index\.js)(?:$|\s)/i,
-  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*\s+dev-server\.js(?:$|\s)/i,
 ];
 
-function isFloProcess(cmdline) {
+function isBuonAppProcess(cmdline) {
   if (!cmdline) return false;
-  return FLO_PATTERNS.some((pat) => pat.test(cmdline));
+  return BUONAPP_PATTERNS.some((pat) => pat.test(cmdline));
 }
 
 function isValidPid(pid) {
@@ -233,28 +237,28 @@ async function killPort(port) {
     return;
   }
 
-  const floProcs = procs.filter((p) => isFloProcess(p.cmdline));
-  const otherProcs = procs.filter((p) => !isFloProcess(p.cmdline));
+  const buonAppProcs = procs.filter((p) => isBuonAppProcess(p.cmdline));
+  const otherProcs = procs.filter((p) => !isBuonAppProcess(p.cmdline));
 
   // Report what we found but won't touch
   for (const p of otherProcs) {
     const cmd = p.cmdline || 'unknown process';
     console.log(
-      `[kill-ports] Port ${port}: SKIP — PID ${p.pid} (${cmd}) is not a Flo process.`
+      `[kill-ports] Port ${port}: SKIP — PID ${p.pid} (${cmd}) is not a BuonApp process.`
     );
   }
 
-  if (floProcs.length === 0) {
+  if (buonAppProcs.length === 0) {
     console.log(
-      `[kill-ports] Port ${port}: no Flo processes found. ${procs.length} other process(es) using this port.`
+      `[kill-ports] Port ${port}: no BuonApp processes found. ${procs.length} other process(es) using this port.`
     );
     return;
   }
 
-  // Kill Flo processes
-  for (const p of floProcs) {
+  // Kill BuonApp processes
+  for (const p of buonAppProcs) {
     const cmd = p.cmdline || 'electron';
-    console.log(`[kill-ports] Port ${port}: killing Flo process PID ${p.pid} (${cmd})...`);
+    console.log(`[kill-ports] Port ${port}: killing BuonApp process PID ${p.pid} (${cmd})...`);
     const stopped = isWindows
       ? await gracefulKillWindows(p.pid)
       : await gracefulKill(p.pid);
@@ -275,8 +279,8 @@ if (require.main === module) {
   })();
 } else {
   module.exports = {
-    isFloProcess,
-    FLO_PATTERNS,
+    isBuonAppProcess,
+    BUONAPP_PATTERNS,
     getProcessesOnPort,
     killPort,
   };

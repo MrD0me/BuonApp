@@ -2,16 +2,16 @@
 
 Status: Finalized
 
-Related issues: [#142](https://github.com/FreeOpenSourcePOS/FloCafe/issues/142), [#143](https://github.com/FreeOpenSourcePOS/FloCafe/issues/143)
+Related issues: [#142](https://github.com/MrD0me/BuonApp/issues/142), [#143](https://github.com/MrD0me/BuonApp/issues/143)
 
 The key decision is: **country tax packs are versioned, immutable data; merchant changes are separate overrides; executable integrations remain plugins.**
 
 ## Distribution
 
-- One FloCafe installer per OS and CPU architecture.
+- One BuonApp installer per OS and CPU architecture.
 - All supported UI translations remain bundled.
 - No language-specific installers.
-- FloCafe must install and operate without internet access.
+- BuonApp must install and operate without internet access.
 - Installer includes:
   - Generic tax engine
   - English/Spanish/Portuguese translations
@@ -32,7 +32,7 @@ Country selection during first-run setup remains an offline locale and currency
 choice; timezone is pre-filled from the selected country but owners in
 multi-timezone countries can override it before completing setup. Setup does not
 contact the tax-pack catalog or display tax-pack availability. An owner who wants official rules explicitly chooses **Enable taxes**
-in Settings → Tax Configuration. FloCafe then checks the signed catalog for the
+in Settings → Tax Configuration. BuonApp then checks the signed catalog for the
 store country, downloads and verifies the matching pack, and activates it through
 the existing owner-only flow. Stores may instead remain on the generic profile or
 use manual configuration indefinitely.
@@ -44,7 +44,7 @@ delete or deactivate an existing country pack as part of this change.
 ### Upgrade safety guarantee
 
 Taxation changes must be safe for every supported installation that upgrades from an older
-FloCafe version:
+BuonApp version:
 
 - Create a verified database backup before any schema migration and retain the pre-migration
   copy for rollback.
@@ -104,7 +104,7 @@ It can define:
 - Receipt tax labels
 - Effective start/end dates
 - Pack version, source and publication date
-- Minimum compatible FloCafe version
+- Minimum compatible BuonApp version
 
 It must not:
 
@@ -132,7 +132,7 @@ Check catalog
 
 Downloading can happen automatically. Activation cannot.
 
-If FloCafe is offline, it continues using the installed profile without interruption.
+If BuonApp is offline, it continues using the installed profile without interruption.
 
 ## Merchant overrides
 
@@ -514,7 +514,7 @@ Reports must use stored transaction snapshots rather than recalculating historic
 
 **Exact rationale:** Real infra decision — I flagged this earlier as something I can't invent for you. Nothing built depends on it yet, but "signed pack" is meaningless without an answer.
 
-**Final decision:** Host curated tax-pack artifacts, and future capability-plugin artifacts, in the public [`FreeOpenSourcePOS/FloCafe-Plugins`](https://github.com/FreeOpenSourcePOS/FloCafe-Plugins) repository using GitHub Releases for immutable assets. Pack source JSON, signing code, and the publishing workflow stay in FloCafe, whose Releases tab remains for application installers. FloCafe pins offline root public keys. An offline root key authorizes a delegated release-signing key used through a protected GitHub Actions environment with required reviewer approval. Use Ed25519 signatures and SHA-256 artifact digests.
+**Final decision:** Host curated tax-pack artifacts, and future capability-plugin artifacts, in the public [`FreeOpenSourcePOS/FloCafe-Plugins`](https://github.com/FreeOpenSourcePOS/FloCafe-Plugins) repository using GitHub Releases for immutable assets. Pack source JSON, signing code, and the publishing workflow stay in BuonApp, whose Releases tab remains for application installers. BuonApp pins offline root public keys. An offline root key authorizes a delegated release-signing key used through a protected GitHub Actions environment with required reviewer approval. Use Ed25519 signatures and SHA-256 artifact digests.
 
 ### B — Revocation
 
@@ -522,7 +522,7 @@ Reports must use stored transaction snapshots rather than recalculating historic
 
 **Exact rationale:** Not mentioned at all so far.
 
-**Final decision:** Publish a signed, monotonically versioned revocation list covering signing keys, pack versions and artifact digests. Revoked packs cannot be installed, activated or rolled back to. An already-active revoked data pack is marked prominently and cannot be selected for new activation, but FloCafe does not silently replace its rules or interrupt an active sale. A replacement requires explicit approval. Historical snapshots remain valid. Release-key rotation is authorized by the offline root key; root-key compromise requires an application release containing a new trust root.
+**Final decision:** Publish a signed, monotonically versioned revocation list covering signing keys, pack versions and artifact digests. Revoked packs cannot be installed, activated or rolled back to. An already-active revoked data pack is marked prominently and cannot be selected for new activation, but BuonApp does not silently replace its rules or interrupt an active sale. A replacement requires explicit approval. Historical snapshots remain valid. Release-key rotation is authorized by the offline root key; root-key compromise requires an application release containing a new trust root.
 
 ### C — Fixed inclusive tax
 
@@ -562,7 +562,7 @@ Reports must use stored transaction snapshots rather than recalculating historic
 
 **Exact rationale:** Spec assumes one active jurisdiction ("restaurant computer," per #142). Franchise-with-many-locations scenario never ruled in or out.
 
-**Final decision:** Version 1 supports one active store, country and jurisdiction per FloCafe database. Multiple terminals may use that store. Franchises use separate databases/installations per location. Contracts retain `storeId` so multi-location can be added later, but simultaneous multi-country taxation is out of scope.
+**Final decision:** Version 1 supports one active store, country and jurisdiction per BuonApp database. Multiple terminals may use that store. Franchises use separate databases/installations per location. Contracts retain `storeId` so multi-location can be added later, but simultaneous multi-country taxation is out of scope.
 
 ### H — Pack/plugin boundary
 
@@ -604,13 +604,13 @@ Reports must use stored transaction snapshots rather than recalculating historic
 
 **Final decision:** Validation must cover the exact checklist below. A failure prevents staging from becoming activatable.
 
-### M — Newer required FloCafe version
+### M — Newer required BuonApp version
 
 **Original question:** Behavior when a downloaded pack's `minFloVersion` exceeds the installed app version?
 
 **Exact rationale:** Reject, warn, or block the whole update — not stated.
 
-**Final decision:** The catalog selects the newest compatible pack by default. A pack whose `minFloVersion` is newer may be downloaded to staging, but cannot be activated. Show “Update FloCafe to use this profile.” It never replaces or disables the current profile and never blocks normal POS operation.
+**Final decision:** The catalog selects the newest compatible pack by default. A pack whose `minFloVersion` is newer may be downloaded to staging, but cannot be activated. Show “Update BuonApp to use this profile.” It never replaces or disables the current profile and never blocks normal POS operation.
 
 ### N — Cross-line compounding
 

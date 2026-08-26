@@ -40,7 +40,7 @@ const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
 // Country/currency stay IN/INR (the default test business country) so
 // getActiveCountryPack() actually resolves this pack instead of falling
 // through to the generic no-tax default.
-const testTaxPack = { ...dualRatePackData, id: 'test-in-pack', country: 'IN', currency: 'INR', publisher: 'FreeOpenSourcePOS' };
+const testTaxPack = { ...dualRatePackData, id: 'test-in-pack', country: 'IN', currency: 'INR', publisher: 'MrD0me' };
 
 async function main() {
   console.log('Integration Test: Issue #24 — Cancel item then checkout');

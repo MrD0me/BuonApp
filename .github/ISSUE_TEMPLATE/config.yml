@@ -1,17 +1,17 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Download FloCafe
-    url: https://flopos.com/download
+  - name: Download BuonApp
+    url: https://github.com/MrD0me/BuonApp/download
     about: Get the latest packaged release before reporting an issue.
-  - name: FloCafe documentation
-    url: https://flopos.com/documentation
+  - name: BuonApp documentation
+    url: https://github.com/MrD0me/BuonApp/documentation
     about: Setup, installation, printers, backups, and operating guidance.
   - name: Architecture & general discussions
-    url: https://github.com/FreeOpenSourcePOS/FloCafe/discussions
+    url: https://github.com/MrD0me/BuonApp/discussions
     about: Propose architecture changes, ask questions, or discuss early ideas.
   - name: Community support (Reddit)
-    url: https://www.reddit.com/r/FloPOS/
+    url: https://www.reddit.com/r/BuonApp/
     about: Share restaurant operator experiences and tips with the community.
   - name: Report a security vulnerability
-    url: https://github.com/FreeOpenSourcePOS/FloCafe/security/advisories/new
+    url: https://github.com/MrD0me/BuonApp/security/advisories/new
     about: Report potential vulnerabilities privately per SECURITY.md.

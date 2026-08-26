@@ -37,8 +37,8 @@ async function run() {
     'KDS standalone host should be whitelisted',
   );
   assertEqual(
-    buildCspHeader(makeReq('flo.local:3003')),
-    expectedFor("'self' http://flo.local:3003 ws://flo.local:3003 wss://flo.local:3003"),
+    buildCspHeader(makeReq('buonapp.local:3003')),
+    expectedFor("'self' http://buonapp.local:3003 ws://buonapp.local:3003 wss://buonapp.local:3003"),
     'mDNS host should be whitelisted',
   );
 

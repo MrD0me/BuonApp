@@ -77,7 +77,7 @@ async function run() {
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
       VALUES ('restore-station-current', 'Current Station', '[]', 1, datetime('now'), datetime('now'))`).run();
     db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-      VALUES ('restore-station-chef', 'Station Chef', 'restore-station-chef@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
+      VALUES ('restore-station-chef', 'Station Chef', 'restore-station-chef@buonapp.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
     db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, datetime(\'now\'))')
       .run('restore-station-chef', 'restore-station-current');
     db.prepare(`
@@ -135,7 +135,7 @@ async function run() {
     assert.equal(getDatabase().prepare("SELECT value FROM settings WHERE key = 'cloud_api_key'").get(), undefined, 'restore discards cloud credentials carried by an older backup');
     assert.equal((getDatabase().prepare('SELECT COUNT(*) AS count FROM kds_pairing_tokens').get() as { count: number }).count, 0, 'restore invalidates backup KDS pairing tokens');
     getDatabase().prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-      VALUES ('restore-current-only-user', 'Current Only', 'restore-current-only@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
+      VALUES ('restore-current-only-user', 'Current Only', 'restore-current-only@buonapp.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
     const currentOnlyRestore = restoreBackup(enabledKdsBackup, true);
     assert.equal(currentOnlyRestore.success, true, 'restore succeeds with a current-only user');
     assert.equal((getDatabase().prepare('SELECT is_active FROM users WHERE id = ?').get('restore-current-only-user') as { is_active: number }).is_active, 1, 'current-only users survive restore');
@@ -177,7 +177,7 @@ async function run() {
     backupOnlyUserDb.pragma('foreign_keys = OFF');
     backupOnlyUserDb.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-      VALUES ('restore-backup-only-chef', 'Backup Only Chef', 'backup-only-chef@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))
+      VALUES ('restore-backup-only-chef', 'Backup Only Chef', 'backup-only-chef@buonapp.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))
     `).run();
     backupOnlyUserDb.close();
     const backupOnlyUserRestore = restoreBackup(backupOnlyUserBackup, true);

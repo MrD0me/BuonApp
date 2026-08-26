@@ -1,6 +1,6 @@
-# FloCafe agent guide
+# BuonApp agent guide
 
-FloCafe is an open-source, offline-first Electron desktop POS. `main/` contains the Electron main process, Express API (`:3001`), standalone KDS server (`:3002`), SQLite database, printing, and background services. `frontend/` is a statically exported Next.js 16 and React 19 application. `tests/` contains backend, integration, and release test suites.
+BuonApp is an open-source, offline-first Electron desktop POS. `main/` contains the Electron main process, Express API (`:3001`), standalone KDS server (`:3002`), SQLite database, printing, and background services. `frontend/` is a statically exported Next.js 16 and React 19 application. `tests/` contains backend, integration, and release test suites.
 
 ## Progressive disclosure
 
@@ -16,7 +16,7 @@ For minor typos or isolated one-line edits, formal planning is not required.
 
 ## Source of truth
 
-- **Current runtime behavior:** Current code and automated tests define what FloCafe does today.
+- **Current runtime behavior:** Current code and automated tests define what BuonApp does today.
 - **Intended change:** The approved task description, issue, or PR defines what the specific change must achieve.
 - **Project invariants:** This document (`AGENTS.md`) and documentation marked `CURRENT` define project-wide boundaries.
 - **Active design:** Documents marked `ACTIVE DESIGN` or `FORWARD-LOOKING` in `docs/` describe target architecture and may be ahead of current code.
@@ -39,7 +39,7 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 1. **Offline-first operation:** Core POS operation (orders, billing, KDS, printing) must function without internet connectivity. This fork carries no cloud bridge and no usage telemetry — they were removed, along with the settings that armed them (migration v80). The only things that may reach the network are features the owner explicitly configures (Google Drive backup, WhatsApp) and the update check against this fork's own GitHub releases; all of them must fail gracefully when offline. Do not reintroduce an outbound channel to a vendor.
 2. **Data safety:** Existing customer data must survive upgrades. Never reset, truncate, or drop user databases as a shortcut for migration design.
 3. **Architecture boundaries:** UI language, tenant regional settings, and tax/compliance behavior are separate, decoupled domains.
-4. **Business timestamps:** Persisted timestamps follow FloCafe's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.
+4. **Business timestamps:** Persisted timestamps follow BuonApp's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.
 5. **Backend authority:** Security-critical, payment, and tax calculations remain backend-authoritative.
 6. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
 7. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
@@ -56,7 +56,7 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 
 ## Commands
 
-FloCafe requires **Node.js 22 or later**.
+BuonApp requires **Node.js 22 or later**.
 
 ```sh
 npm run dev              # Full Electron app (cleans ports, builds frontend & backend)

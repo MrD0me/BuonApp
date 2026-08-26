@@ -389,7 +389,7 @@ async function runTests() {
   </style>
 </head>
 <body>
-  <div class="header-title">FloCafe - WhatsApp Share Receipt Localization</div>
+  <div class="header-title">BuonApp - WhatsApp Share Receipt Localization</div>
   <div class="subtitle">Demonstrates date and currency formatting decoupled from tenant country (Argentina Store with ARS) across UI Locales</div>
 
   <div class="chat-grid">
@@ -653,7 +653,7 @@ async function runTests() {
   <div class="header">
     <div style="display: flex; justify-content: space-between; align-items: center;">
       <div class="title">
-        <span>FloCafe Architecture Boundary Verification</span>
+        <span>BuonApp Architecture Boundary Verification</span>
         <span class="badge">i18n Decoupling</span>
       </div>
       <div class="status-badge">

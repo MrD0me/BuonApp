@@ -27,7 +27,7 @@ async function login(page: Page, email: string): Promise<void> {
 }
 
 test('Batch 5C Pages (Dashboard, Orders, Tables, Customers, OrderHistoryGrid) render correctly in English and Persian', async ({ page }) => {
-  await login(page, 'owner@flo.local');
+  await login(page, 'owner@buonapp.local');
 
   // ==========================================
   // 1. ENGLISH (EN) BASELINE

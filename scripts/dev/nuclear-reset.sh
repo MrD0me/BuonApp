@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 
 if [ ! -f "$ROOT_DIR/package.json" ]; then
-  echo "Error: nuclear-reset.sh must run from a FloCafe checkout." >&2
+  echo "Error: nuclear-reset.sh must run from a BuonApp checkout." >&2
   exit 1
 fi
 
@@ -16,7 +16,7 @@ is_safe_clear_path() {
     "$ROOT_DIR/frontend/.next"|"$ROOT_DIR/frontend/node_modules/.cache"|"$ROOT_DIR/dist"|"$ROOT_DIR/tsconfig.tsbuildinfo")
       return 0
       ;;
-    *flo-desktop*)
+    *buonapp*)
       return 0
       ;;
     *)
@@ -52,26 +52,26 @@ clear_electron_caches() {
   local platform="${FLO_RESET_PLATFORM:-$(uname -s)}"
   case "$platform" in
     Darwin)
-      clear_path "$HOME/Library/Application Support/flo-desktop/Cache" "Electron app cache"
-      clear_path "$HOME/Library/Application Support/flo-desktop/Code Cache" "Electron code cache"
-      clear_path "$HOME/Library/Caches/flo-desktop" "Electron system cache"
+      clear_path "$HOME/Library/Application Support/buonapp/Cache" "Electron app cache"
+      clear_path "$HOME/Library/Application Support/buonapp/Code Cache" "Electron code cache"
+      clear_path "$HOME/Library/Caches/buonapp" "Electron system cache"
       ;;
     Linux)
       local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
       local cache_home="${XDG_CACHE_HOME:-$HOME/.cache}"
-      clear_path "$config_home/flo-desktop/Cache" "Electron app cache"
-      clear_path "$config_home/flo-desktop/Code Cache" "Electron code cache"
-      clear_path "$cache_home/flo-desktop" "Electron system cache"
+      clear_path "$config_home/buonapp/Cache" "Electron app cache"
+      clear_path "$config_home/buonapp/Code Cache" "Electron code cache"
+      clear_path "$cache_home/buonapp" "Electron system cache"
       ;;
     MINGW*|MSYS*|CYGWIN*|Windows_NT)
       if [ -n "${APPDATA:-}" ]; then
-        clear_path "$APPDATA/flo-desktop/Cache" "Electron app cache"
-        clear_path "$APPDATA/flo-desktop/Code Cache" "Electron code cache"
+        clear_path "$APPDATA/buonapp/Cache" "Electron app cache"
+        clear_path "$APPDATA/buonapp/Code Cache" "Electron code cache"
       else
         echo -e "${YELLOW}Skipped: Electron app/code cache unavailable (APPDATA is not set)${NC}"
       fi
       if [ -n "${LOCALAPPDATA:-}" ]; then
-        clear_path "$LOCALAPPDATA/flo-desktop" "Electron system cache"
+        clear_path "$LOCALAPPDATA/buonapp" "Electron system cache"
       else
         echo -e "${YELLOW}Skipped: Electron system cache unavailable (LOCALAPPDATA is not set)${NC}"
       fi
@@ -133,7 +133,7 @@ if [ "$CONFIRMED" = "false" ]; then
 fi
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}    FloCafe - Development Reset         ${NC}"
+echo -e "${BLUE}    BuonApp - Development Reset         ${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 

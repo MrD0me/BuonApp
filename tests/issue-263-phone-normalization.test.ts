@@ -142,7 +142,7 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     const resValid = await api(baseUrl, '/api/settings/business', {
       method: 'PUT',
       body: {
-        business_name: 'FloCafe Main',
+        business_name: 'BuonApp Main',
         country: 'IN',
         currency: 'INR',
         timezone: 'Asia/Kolkata',
@@ -157,7 +157,7 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     const resInvalid = await api(baseUrl, '/api/settings/business', {
       method: 'PUT',
       body: {
-        business_name: 'FloCafe Main',
+        business_name: 'BuonApp Main',
         country: 'IN',
         currency: 'INR',
         timezone: 'Asia/Kolkata',

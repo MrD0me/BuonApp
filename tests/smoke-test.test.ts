@@ -49,12 +49,12 @@ async function run() {
     const hashed = bcrypt.hashSync('OwnerPass123!', 10);
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
-      VALUES ('user-owner-1', 'Owner User', 'owner@flo.local', ?, 'owner', 1)
+      VALUES ('user-owner-1', 'Owner User', 'owner@buonapp.local', ?, 'owner', 1)
     `).run(hashed);
 
     const loginRes = await request(`http://127.0.0.1:${mainPort}`)
       .post('/api/auth/login')
-      .send({ email: 'owner@flo.local', password: 'OwnerPass123!' });
+      .send({ email: 'owner@buonapp.local', password: 'OwnerPass123!' });
     assert(loginRes.status === 200, 'Main API owner login succeeds with token');
     assert(!!loginRes.body.access_token, 'Main API returns access_token for authed owner');
 

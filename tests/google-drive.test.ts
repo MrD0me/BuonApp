@@ -50,7 +50,7 @@ const { initDatabase, closeDatabase } = require('../main/db');
 const { runShutdownSteps } = require('../main/shutdown');
 
 async function main(): Promise<void> {
-  console.log('🧪 FloCafe Google Drive Tests');
+  console.log('🧪 BuonApp Google Drive Tests');
   console.log('='.repeat(60));
 
   // ── isGoogleDriveConfigured() ────────────────────────────────────────

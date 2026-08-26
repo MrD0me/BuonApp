@@ -185,10 +185,40 @@ let gotSingleInstanceLock = false;
 // multiple times without the OS preventing it.
 if (process.platform === 'linux') {
   // Explicitly set app name and userData path to prevent Electron from
-  // resolving them inside temporary mount paths (e.g. /tmp/.mount_FloXXXXXX)
-  app.name = 'flo-desktop';
-  app.setPath('userData', path.join(os.homedir(), '.config', 'flo-desktop'));
+  // resolving them inside temporary mount paths (e.g. /tmp/.mount_BuonAppXXXXXX)
+  app.name = 'buonapp';
+  app.setPath('userData', path.join(os.homedir(), '.config', 'buonapp'));
 }
+
+// ── Legacy user-data migration (Flo Cafe → BuonApp) ───────────────────────────
+// Electron derives userData from the package name, which this fork renamed from
+// "flo-desktop" to "buonapp". Without this, an install that predates the rename
+// starts against an empty directory and looks like it lost its database, Google
+// Drive token, master PIN, and WhatsApp session. Copy rather than move, so a
+// rollback to an older build still finds its data where it left it. Runs before
+// the single-instance lock, which writes into userData itself.
+function migrateLegacyUserData(): void {
+  const LEGACY_APP_NAME = 'flo-desktop';
+  const target = app.getPath('userData');
+  const legacy = process.platform === 'linux'
+    ? path.join(os.homedir(), '.config', LEGACY_APP_NAME)
+    : path.join(app.getPath('appData'), LEGACY_APP_NAME);
+
+  if (legacy === target) return;
+  if (!fs.existsSync(path.join(legacy, 'flo.db'))) return; // nothing to inherit
+  if (fs.existsSync(path.join(target, 'flo.db'))) return;  // already migrated
+
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    // force:false leaves anything Electron already wrote at the new path alone.
+    fs.cpSync(legacy, target, { recursive: true, force: false, errorOnExist: false });
+    console.log(`[Migration] Copied user data from ${legacy} to ${target}`);
+  } catch (error) {
+    console.error('[Migration] Failed to copy legacy user data:', error);
+  }
+}
+
+migrateLegacyUserData();
 
 gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -227,7 +257,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 1024,
     minHeight: 768,
-    title: 'Flo',
+    title: 'BuonApp',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -381,7 +411,7 @@ function createTray(): void {
         },
       ]);
 
-      tray.setToolTip('Flo Cafe');
+      tray.setToolTip('BuonApp');
       tray.setContextMenu(linuxMenu);
       // Single-click also shows the window on Linux (no double-click standard).
       tray.on('click', () => {
@@ -429,13 +459,13 @@ function startMdns(): void {
       name: 'Flo',
       type: 'http',
       port: getServerPort(),
-      host: 'flo',   // resolves as flo.local on the LAN
+      host: 'buonapp',   // resolves as buonapp.local on the LAN
       txt: { version: app.getVersion(), kds: `/kds`, kds_port: String(getKdsPort()), server_app: '/server-standalone', server_app_port: String(getServerAppPort()) },
     });
     const ip = getLocalIP();
-    console.log(`[mDNS] Advertising flo.local:${getServerPort()}  (IP fallback: http://${ip}:${getServerPort()})`);
-    console.log(`[mDNS] KDS available at http://flo.local:${getKdsPort()}  (IP fallback: http://${ip}:${getKdsPort()})`);
-    console.log(`[mDNS] Server App available at http://flo.local:${getServerAppPort()}  (IP fallback: http://${ip}:${getServerAppPort()})`);
+    console.log(`[mDNS] Advertising buonapp.local:${getServerPort()}  (IP fallback: http://${ip}:${getServerPort()})`);
+    console.log(`[mDNS] KDS available at http://buonapp.local:${getKdsPort()}  (IP fallback: http://${ip}:${getKdsPort()})`);
+    console.log(`[mDNS] Server App available at http://buonapp.local:${getServerAppPort()}  (IP fallback: http://${ip}:${getServerAppPort()})`);
   } catch (err) {
     console.warn('[mDNS] Could not start Bonjour:', err);
   }
@@ -551,7 +581,7 @@ function createMenu(): void {
     {
       label: 'Window',
       submenu: [
-        { label: 'Flo Cafe', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+        { label: 'BuonApp', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
         { type: 'separator' },
         { role: 'minimize' },
         ...(process.platform === 'darwin' ? [
@@ -603,9 +633,9 @@ function showAbout(): void {
       'A self-hosted, offline-first Point of Sale system.',
       'Your data stays yours.',
       '',
-      `POS URL: http://flo.local:${getServerPort()}`,
-      `KDS URL: http://flo.local:${kdsPort}`,
-      `Server App URL: http://flo.local:${serverAppPort}`,
+      `POS URL: http://buonapp.local:${getServerPort()}`,
+      `KDS URL: http://buonapp.local:${kdsPort}`,
+      `Server App URL: http://buonapp.local:${serverAppPort}`,
       '',
       `KDS IP fallback: http://${ip}:${kdsPort}`,
       `Server App IP fallback: http://${ip}:${serverAppPort}`,

@@ -1,7 +1,7 @@
 /**
  * Comprehensive Phase 3 Authorization Matrix & Data Exposure Test Suite
  * Evaluates role boundaries, unauthenticated access, deactivated user tokens,
- * ownership checks, and sensitive data protection across FloCafe API routes.
+ * ownership checks, and sensitive data protection across BuonApp API routes.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';

@@ -146,7 +146,7 @@ async function run() {
 
   for (const [lang, { tag, dir }] of Object.entries(expectedLocaleTags)) {
     const html = generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Audit Test',
+      business_name: 'BuonApp Audit Test',
       currency: 'USD',
       country: 'US',
       timezone: 'UTC',
@@ -180,7 +180,7 @@ async function run() {
   windowOpenedSync = false;
   await printWebBill(
     sampleBill,
-    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+    { business_name: 'BuonApp Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
     { language: 'fa' as any }
   );
   assert('printWebBill opens popup window synchronously to preserve user activation', windowOpenedSync === true);
@@ -193,7 +193,7 @@ async function run() {
   try {
     await printWebBill(
       sampleBill,
-      { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+      { business_name: 'BuonApp Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
       { language: 'en' as any }
     );
   } catch (err: any) {
@@ -212,7 +212,7 @@ async function run() {
   try {
     await printWebBill(
       sampleBill,
-      { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+      { business_name: 'BuonApp Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
       { language: 'en' as any }
     );
   } catch (err: any) {
@@ -248,7 +248,7 @@ async function run() {
 
   const printPromise = printWebBill(
     sampleBill,
-    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+    { business_name: 'BuonApp Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
     { language: 'en' as any }
   );
 
@@ -263,7 +263,7 @@ async function run() {
   mockOnloadCallback = null;
   const printClosedPromise = printWebBill(
     sampleBill,
-    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+    { business_name: 'BuonApp Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
     { language: 'en' as any }
   );
   // Window closed before onload
@@ -295,7 +295,7 @@ async function run() {
 
   const pollPrintPromise = printWebBill(
     sampleBill,
-    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+    { business_name: 'BuonApp Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
     { language: 'en' as any }
   );
 
@@ -584,7 +584,7 @@ async function run() {
     filename: 'web_print_bill_en',
     title: 'Web Print Bill (English - lang="en")',
     html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Manhattan',
+      business_name: 'BuonApp Manhattan',
       currency: 'USD',
       country: 'US',
       timezone: 'America/New_York',
@@ -595,7 +595,7 @@ async function run() {
     filename: 'web_print_bill_es',
     title: 'Web Print Bill (Spanish - lang="es")',
     html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Madrid',
+      business_name: 'BuonApp Madrid',
       currency: 'EUR',
       country: 'ES',
       timezone: 'Europe/Madrid',
@@ -606,7 +606,7 @@ async function run() {
     filename: 'web_print_bill_pt_br',
     title: 'Web Print Bill (Portuguese - lang="pt-BR")',
     html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe São Paulo',
+      business_name: 'BuonApp São Paulo',
       currency: 'BRL',
       country: 'BR',
       timezone: 'America/Sao_Paulo',

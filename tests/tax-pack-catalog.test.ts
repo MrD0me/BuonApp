@@ -58,7 +58,7 @@ function signedFixture() {
 function catalogEntry(overrides: Partial<TaxPackCatalogEntry>): TaxPackCatalogEntry {
   return {
     id: 'official-testland',
-    publisher: 'FreeOpenSourcePOS',
+    publisher: 'MrD0me',
     country: 'ZZ',
     jurisdiction: '*',
     version: '1.0.0',
@@ -82,8 +82,8 @@ test('computeTaxPackUpdates flags only installed packs with a newer catalog vers
   };
   const updates = computeTaxPackUpdates(
     [
-      { packId: 'official-testland', country: 'ZZ', publisher: 'FreeOpenSourcePOS', version: '1.0.0' },
-      { packId: 'official-otherland', country: 'YY', publisher: 'FreeOpenSourcePOS', version: '1.0.0' },
+      { packId: 'official-testland', country: 'ZZ', publisher: 'MrD0me', version: '1.0.0' },
+      { packId: 'official-otherland', country: 'YY', publisher: 'MrD0me', version: '1.0.0' },
     ],
     catalog,
   );
@@ -101,7 +101,7 @@ test('computeTaxPackUpdates resolves a pre-rename installed id (official-in) aga
     packs: [catalogEntry({ id: 'official-india', country: 'IN', version: '1.0.4' })],
   };
   const updates = computeTaxPackUpdates(
-    [{ packId: 'official-in', country: 'IN', publisher: 'FreeOpenSourcePOS', version: '1.0.0' }],
+    [{ packId: 'official-in', country: 'IN', publisher: 'MrD0me', version: '1.0.0' }],
     catalog,
   );
   assert.equal(updates.length, 1);
@@ -118,7 +118,7 @@ test('computeTaxPackUpdates treats a double-digit minor version as newer, not a 
     packs: [catalogEntry({ id: 'official-testland', version: '1.10.0' })],
   };
   const updates = computeTaxPackUpdates(
-    [{ packId: 'official-testland', country: 'ZZ', publisher: 'FreeOpenSourcePOS', version: '1.9.0' }],
+    [{ packId: 'official-testland', country: 'ZZ', publisher: 'MrD0me', version: '1.9.0' }],
     catalog,
   );
   assert.equal(updates.length, 1);
@@ -132,7 +132,7 @@ test('computeTaxPackUpdates returns nothing when the installed version is alread
     packs: [catalogEntry({ id: 'official-testland', version: '1.0.0' })],
   };
   const updates = computeTaxPackUpdates(
-    [{ packId: 'official-testland', country: 'ZZ', publisher: 'FreeOpenSourcePOS', version: '1.0.0' }],
+    [{ packId: 'official-testland', country: 'ZZ', publisher: 'MrD0me', version: '1.0.0' }],
     catalog,
   );
   assert.equal(updates.length, 0);
@@ -203,7 +203,7 @@ test('download rejects digest mismatches, signature tampering, and non-release U
       ...fixture.catalog,
       packs: [{
         ...fixture.entry,
-        downloadUrl: `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${releaseTag}/pack.json`,
+        downloadUrl: `https://github.com/MrD0me/BuonApp/releases/download/${releaseTag}/pack.json`,
       }],
     }),
     /invalid entry/,
@@ -247,7 +247,7 @@ test('release builder signs exact pack bytes and preserves other catalog entries
     generatedAt: '2026-07-29T00:00:00.000Z',
     packs: [{
       id: 'test-flat-rate-pack',
-      publisher: 'FreeOpenSourcePOS',
+      publisher: 'MrD0me',
       country: 'YY',
       jurisdiction: '*',
       version: '1.0.0',

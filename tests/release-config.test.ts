@@ -86,7 +86,7 @@ function run() {
   // ── Linux AppImage: AppImageHub catalog compatibility ────────────
   // The AppImageHub catalog auto-discovers AppImages whose filename
   // matches <AppName>-<Version>-<arch>.AppImage. The productName
-  // ("Flo Cafe") default would produce "Flo Cafe-2.0.4-x86_64.AppImage"
+  // ("BuonApp") default would produce "BuonApp-2.0.4-x86_64.AppImage"
   // (space + capital letter) which the catalog regex won't match.
   const linuxArtifact = build?.linux?.artifactName;
   assert.ok(
@@ -137,7 +137,7 @@ function run() {
   assert.ok(
     fs.existsSync(path.join(__dirname, '../scripts/update-metainfo.js')),
     'scripts/update-metainfo.js must exist — it is invoked by the release job to keep ' +
-    'assets/com.flo.desktop.metainfo.xml current.'
+    'assets/it.buonapp.pos.metainfo.xml current.'
   );
   const metainfoUpdater = fs.readFileSync(path.join(__dirname, '../scripts/update-metainfo.js'), 'utf8');
   assert.ok(
@@ -153,7 +153,7 @@ function run() {
   // VERSION from package.json rather than the pushed tag, so without an
   // explicit check a malformed or mismatched tag would silently create a
   // release titled after whatever package.json says under an unrelated ref.
-  const createReleaseJob = workflow.split(/^\s*create-release:/m)[1]?.split(/^\s*release-linux:/m)[0] || '';
+  const createReleaseJob = workflow.split(/^\s*create-release:/m)[1]?.split(/^\s*release-windows:/m)[0] || '';
   assert.ok(
     /\[\[\s*"\$TAG"\s*=~\s*\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$\s*\]\]/.test(createReleaseJob),
     'create-release job must validate the pushed tag against a strict X.Y.Z pattern before creating a release'
@@ -163,89 +163,33 @@ function run() {
     'create-release job must reject a tag that does not equal package.json\'s version'
   );
 
-  const linuxJob = workflow.split(/^\s*release-linux:/m)[1]?.split(/^\s*release-mac:/m)[0] || '';
-  assert.ok(
-    /update-metainfo\.js/.test(linuxJob),
-    'release-linux job must run scripts/update-metainfo.js before the electron-builder build.'
-  );
-  assert.ok(
-    /ubuntu-24\.04-arm\b/.test(linuxJob),
-    'release-linux job must include an ubuntu-24.04-arm matrix entry (the actual GitHub-hosted ' +
-    'arm64 Linux runner label — note: no "64" suffix) so arm64 AppImages are actually built. ' +
-    'declaring arm64 in build.linux.target is not enough without a runner, and the wrong label ' +
-    '(e.g. ubuntu-24.04-arm64) leaves the job stuck queued forever with no matching runner.'
-  );
-  const snapPublishStep = linuxJob.split(/^\s*- name: Publish snap to Snap Store/m)[1]?.split(/^\s*- name:/m)[0] || '';
-  assert.ok(
-    !/matrix\.arch\s*==/.test(snapPublishStep),
-    'Snap Store publication must not be x64-gated; the release matrix publishes x64 and arm64 snap revisions.'
-  );
-  assert.ok(
-    snapPublishStep.includes('SNAPCRAFT_STORE_CREDENTIALS not set') &&
-    !/SNAPCRAFT_STORE_CREDENTIALS not set[^\n]*skipping snap publish/.test(snapPublishStep) &&
-    /SNAPCRAFT_STORE_CREDENTIALS not set[\s\S]{0,240}exit 1/.test(snapPublishStep),
-    'Snap Store publication must fail closed when SNAPCRAFT_STORE_CREDENTIALS is missing.'
-  );
-
-  const macJob = workflow.split(/^\s*release-mac:/m)[1]?.split(/^\s*release-windows:/m)[0] || '';
-  assert.ok(macJob.includes('latest-mac.yml'), 'release-mac job must upload latest-mac.yml');
-  assert.ok(/release\/\*\.zip\b/.test(macJob), 'release-mac job must upload the .zip artifact');
-  assert.ok(macJob.includes('.zip.blockmap'), 'release-mac job must upload the .zip.blockmap');
-
   const winJob = workflow.split(/^\s*release-windows:/m)[1] || '';
   assert.ok(winJob.includes('latest.yml'), 'release-windows job must upload latest.yml');
   assert.ok(winJob.includes('.exe.blockmap'), 'release-windows job must upload the .exe.blockmap');
   assert.ok(
-    /electron-builder --win --publish never --config\.npmRebuild=false/.test(winJob),
-    'release-windows job must build Windows targets from package.json so AppX x64+arm64 config is honored'
+    /electron-builder --win nsis --publish never --config\.npmRebuild=false/.test(winJob),
+    'release-windows job must build the NSIS target — it is the only Windows artifact electron-updater can apply'
   );
+
+  // This fork has no Apple Developer, Snap Store, or Partner Center account.
+  // Every job that reached one of them failed closed by design when its
+  // credentials were missing, which took the whole release down with it and
+  // left nothing for electron-updater to pull from. Keep them out.
   assert.ok(
-    /release\\\*\.appx/.test(winJob),
-    'release-windows job must verify and upload the .appx Microsoft Store package'
+    !/release-mac:|release-linux:/.test(workflow),
+    'release.yml must not reintroduce the macOS or Linux jobs — neither can be signed or published from this fork'
   );
-  assert.ok(
-    // Quote-agnostic: electron-builder emits some AppX Identity attributes
-    // (e.g. Publisher) with single quotes and others with double quotes —
-    // both are valid XML — so this must not lock in one quote style. The
-    // doubled '' is PowerShell's single-quoted-string escape for a literal '.
-    winJob.includes(`ProcessorArchitecture=["'']([^"'']+)["'']`) &&
-    winJob.includes('@("x64", "arm64")'),
-    'release-windows job must inspect AppX manifests and require both x64 and arm64 packages'
-  );
-  assert.ok(
-    winJob.includes('microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0'),
-    'release-windows job must install the official Microsoft Store Developer CLI action pinned by commit SHA'
-  );
-  assert.ok(
-    (winJob.match(/if: github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/'\)/g) || []).length >= 2,
-    'the Store CLI setup and publish steps must be gated to tag pushes so workflow_dispatch can never reach Partner Center'
-  );
-  assert.ok(
-    /msstore reconfigure[\s\S]+?if \(\$LASTEXITCODE -ne 0\)/.test(winJob),
-    'release-windows job must check msstore reconfigure exit code — a failing native CLI call does not fail a pwsh step on its own'
-  );
-  for (const required of [
-    'AZURE_AD_TENANT_ID',
-    'AZURE_AD_APPLICATION_CLIENT_ID',
-    'AZURE_AD_APPLICATION_SECRET',
-    'SELLER_ID',
-    'MICROSOFT_STORE_PRODUCT_ID',
+  for (const forbidden of [
+    'microsoft-store-apppublisher',
+    'msstore',
+    'SNAPCRAFT_STORE_CREDENTIALS',
+    'APPLE_API_KEY',
   ]) {
     assert.ok(
-      winJob.includes(required),
-      `release-windows job must require ${required} for Microsoft Store publishing`
+      !workflow.includes(forbidden),
+      `release.yml must not reference ${forbidden} — store publishing and code signing were removed with the fork`
     );
   }
-  assert.ok(
-    /msstore reconfigure[\s\S]+--tenantId[\s\S]+--sellerId[\s\S]+--clientId[\s\S]+--clientSecret/.test(winJob),
-    'release-windows job must configure msstore with Partner Center credentials'
-  );
-  assert.ok(
-    /\$publishArgs = @\("\$\{\{ github\.workspace \}\}\\release", '--appId', "\$env:MICROSOFT_STORE_PRODUCT_ID"\)/.test(winJob) &&
-    /msstore publish @publishArgs/.test(winJob) &&
-    /if \(\$LASTEXITCODE -ne 0\) \{ throw "Microsoft Store publish failed/.test(winJob),
-    'release-windows job must publish the built AppX packages to the configured Microsoft Store product and check the exit code'
-  );
 
   const macArtifact = build?.mac?.artifactName;
   assert.ok(
@@ -263,12 +207,13 @@ function run() {
   const matrixWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/nightly-release.yml'), 'utf8');
 
   assert.ok(
-    /push:\s*\n\s*branches:\s*\[main\]/.test(matrixWorkflow) && matrixWorkflow.includes('workflow_dispatch:'),
-    'Full Cross-Platform Matrix workflow must trigger on merges to main and workflow_dispatch'
+    matrixWorkflow.includes('workflow_dispatch:'),
+    'Full Cross-Platform Matrix workflow must be startable from the Actions tab'
   );
   assert.ok(
-    !/^\s*pull_request\s*:/m.test(matrixWorkflow),
-    'Full Cross-Platform Matrix workflow must NOT run on pull_request to conserve CI runner minutes'
+    !/^\s*(pull_request|schedule|push)\s*:/m.test(matrixWorkflow),
+    'Full Cross-Platform Matrix workflow must stay manual-only — a four-platform build on every ' +
+    'push to main, plus a nightly cron, spends runner minutes on artifacts nobody collects'
   );
   assert.ok(
     matrixWorkflow.includes('cancel-in-progress: false'),
@@ -287,7 +232,7 @@ function run() {
   }
 
   assert.ok(
-    matrixWorkflow.includes('name: flocafe-build-${{ matrix.name }}'),
+    matrixWorkflow.includes('name: buonapp-build-${{ matrix.name }}'),
     'Full Cross-Platform Matrix workflow must upload build artifacts with descriptive platform-arch names'
   );
 
@@ -295,12 +240,12 @@ function run() {
   assert.ok(
     ciWorkflow.includes('run: npm run test:release-regressions') &&
     ciWorkflow.includes("REQUIRE_VISUAL_EVIDENCE: '1'") &&
-    ciWorkflow.includes('EVIDENCE_DIR: ${{ runner.temp }}/flocafe-release-regressions'),
+    ciWorkflow.includes('EVIDENCE_DIR: ${{ runner.temp }}/buonapp-release-regressions'),
     'CI must run release regression suites with required visual evidence in a portable runner temp directory',
   );
   assert.ok(
     ciWorkflow.includes('name: release-regression-evidence') &&
-    ciWorkflow.includes('path: ${{ runner.temp }}/flocafe-release-regressions/'),
+    ciWorkflow.includes('path: ${{ runner.temp }}/buonapp-release-regressions/'),
     'CI must upload release regression evidence artifacts when available',
   );
 

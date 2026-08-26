@@ -1,4 +1,4 @@
-# FloCafe documentation index
+# BuonApp documentation index
 
 This index classifies documentation in `docs/` so contributors and AI agents know which documents describe current runtime behavior, which describe planned designs, and which are historical records.
 
@@ -9,7 +9,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 - **FORWARD-LOOKING**: Architecture proposals and plans that do not yet represent runtime contracts.
 - **HISTORICAL**: Point-in-time audits, design records, or superseded specifications retained for context. Do not use these to drive new implementation unless an approved task or issue explicitly directs it.
 
-> **Source of truth principle**: Current code and automated tests define what FloCafe does now. Approved task descriptions and GitHub issues define what a specific change is intended to accomplish. Cross-project invariants in `AGENTS.md` and `CURRENT` documentation govern broader constraints.
+> **Source of truth principle**: Current code and automated tests define what BuonApp does now. Approved task descriptions and GitHub issues define what a specific change is intended to accomplish. Cross-project invariants in `AGENTS.md` and `CURRENT` documentation govern broader constraints.
 
 ---
 
@@ -23,7 +23,6 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [linux.md](linux.md) | Linux package formats (AppImage, deb, rpm, Snap), FUSE setup, CUPS printing, and system tray behavior. | CURRENT |
 | [printers.md](printers.md) | ESC/POS printer configuration, network/USB/OS-queue/WebUSB connection types, kitchen stations, and troubleshooting. | CURRENT |
 | [google-drive-setup.md](google-drive-setup.md) | Maintainer setup for the optional Google Drive backup OAuth client. | CURRENT |
-| [mac-app-store-publishing.md](mac-app-store-publishing.md) | Fastlane, Transporter, and GitHub Actions publishing workflow for the Mac App Store build. | CURRENT |
 | [tax-packs.md](tax-packs.md) | Tax pack schema, authoring guide, cryptographic signing, and catalog distribution workflow. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
 
@@ -38,11 +37,11 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 
 | Document | Description | Status |
 | --- | --- | --- |
-| [security-audit-2.7.0.md](security-audit-2.7.0.md) | Security audit report for FloCafe v2.7.0 dated 2026-08-04. | HISTORICAL |
+| [security-audit-2.7.0.md](security-audit-2.7.0.md) | Security audit report for BuonApp v2.7.0 dated 2026-08-04. | HISTORICAL |
 
 ---
 
 ## Other repository assets
 
 - [social-preview.html](social-preview.html): HTML template used to render Open Graph preview card graphics.
-- `images/flo-cafe-pos.webp`: Screenshot of the FloCafe point-of-sale interface used in `README.md`.
+- `images/buonapp-pos.webp`: Screenshot of the BuonApp point-of-sale interface used in `README.md`.

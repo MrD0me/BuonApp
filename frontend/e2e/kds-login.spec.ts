@@ -7,7 +7,7 @@ test('KDS standalone logs in and restores its session', async ({ page }) => {
 
   await page.goto(`${kdsBaseUrl}/kds-standalone`);
   await expect(page.getByTestId('kds-login-form')).toBeVisible();
-  await page.getByTestId('kds-login-email').fill('manager@flo.local');
+  await page.getByTestId('kds-login-email').fill('manager@buonapp.local');
   await page.getByTestId('kds-login-password').fill('E2ePass123!');
   await page.getByTestId('kds-login-submit').click();
   await expect(page.getByTestId('kds-workspace')).toBeVisible();

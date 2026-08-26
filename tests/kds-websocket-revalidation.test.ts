@@ -70,7 +70,7 @@ async function run() {
 
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
-      VALUES ('kds-ws-chef-1', 'WS Chef', 'wschef@flo.local', ?, 'chef', 1)
+      VALUES ('kds-ws-chef-1', 'WS Chef', 'wschef@buonapp.local', ?, 'chef', 1)
     `).run(bcrypt.hashSync('Pass123!', 10));
 
     db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)')

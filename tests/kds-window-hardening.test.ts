@@ -63,7 +63,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
         showOpenDialog: async () => ({ canceled: false, filePaths: ['/tmp/flo-backup.db'] }),
         showMessageBox: async () => ({ response: 0 }),
       },
-      app: { getPath: () => '/tmp/flo-kds-test', getVersion: () => '3.2.0', getName: () => 'FloCafe' },
+      app: { getPath: () => '/tmp/flo-kds-test', getVersion: () => '3.2.0', getName: () => 'BuonApp' },
       BrowserWindow: FakeBrowserWindow,
       shell: { openExternal: () => Promise.resolve() },
     };
@@ -71,7 +71,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === './db') {
     const fakeDb = {
       prepare: (sql: string) => ({
-        all: () => (sql.includes('settings') ? [{ key: 'business_name', value: 'Flo Cafe' }] : [{ id: 1, name: 'Thermal Kitchen' }]),
+        all: () => (sql.includes('settings') ? [{ key: 'business_name', value: 'BuonApp' }] : [{ id: 1, name: 'Thermal Kitchen' }]),
         get: () => ({ bill_count: 5, revenue: 120.50, covers: 12, count: 2 }),
         run: () => ({ changes: 1 }),
       }),

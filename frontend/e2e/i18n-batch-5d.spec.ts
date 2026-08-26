@@ -19,7 +19,7 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
 
 import * as jwt from 'jsonwebtoken';
 
-function getE2eToken(userId = 'e2e-manager', email = 'manager@flo.local', role = 'manager'): string {
+function getE2eToken(userId = 'e2e-manager', email = 'manager@buonapp.local', role = 'manager'): string {
   const secret = process.env.JWT_SECRET || 'e2e-test-secret';
   return jwt.sign({ userId, email, role }, secret, { expiresIn: '1h' });
 }
@@ -43,7 +43,7 @@ async function setLanguage(page: Page, token: string, value: string): Promise<vo
 test('Batch 5D: KDS and Server App render and function correctly in English and Persian (RTL)', async ({ page }) => {
   // 1. Setup session & seed data
   const token = getE2eToken();
-  const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
+  const serverToken = getE2eToken('e2e-server', 'server@buonapp.local', 'server');
 
   // Create table if not present
   await page.request.post(`${BASE_API}/api/tables`, {
@@ -84,7 +84,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await captureScreenshot(page, 'kds-login-en.png');
 
   // Log in to KDS
-  await page.getByTestId('kds-login-email').fill('manager@flo.local');
+  await page.getByTestId('kds-login-email').fill('manager@buonapp.local');
   await page.getByTestId('kds-login-password').fill('E2ePass123!');
   await page.getByTestId('kds-login-submit').click();
   await expect(page.getByTestId('kds-workspace')).toBeVisible();
@@ -117,13 +117,13 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   // 1e. Server App Login Form (EN)
   await page.goto(`${BASE_SERVER_APP}/server-standalone`);
   await page.evaluate(() => {
-    localStorage.removeItem('flocafe:server-app-token');
+    localStorage.removeItem('buonapp:server-app-token');
   });
   await page.goto(`${BASE_SERVER_APP}/server-standalone`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Server App');
   await expect(page.getByText('Tableside ordering for service staff')).toBeVisible();
-  await expect(page.getByPlaceholder('server@flo.local')).toBeVisible();
+  await expect(page.getByPlaceholder('server@buonapp.local')).toBeVisible();
   await expect(page.getByPlaceholder('Password')).toBeVisible();
   await expect(page.getByText('Keep me logged in')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
@@ -131,7 +131,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
 
   // Authenticate Server App
   await page.evaluate((tok) => {
-    localStorage.setItem('flocafe:server-app-token', tok);
+    localStorage.setItem('buonapp:server-app-token', tok);
   }, serverToken);
   await page.reload();
 
@@ -178,7 +178,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await captureScreenshot(page, 'kds-login-fa.png');
 
     // Log in to KDS in FA
-    await page.getByTestId('kds-login-email').fill('manager@flo.local');
+    await page.getByTestId('kds-login-email').fill('manager@buonapp.local');
     await page.getByTestId('kds-login-password').fill('E2ePass123!');
     await page.getByTestId('kds-login-submit').click();
     await expect(page.getByTestId('kds-workspace')).toBeVisible();
@@ -212,13 +212,13 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     // 2e. Server App Login Form (FA)
     await page.goto(`${BASE_SERVER_APP}/server-standalone`);
     await page.evaluate(() => {
-      localStorage.removeItem('flocafe:server-app-token');
+      localStorage.removeItem('buonapp:server-app-token');
     });
     await page.goto(`${BASE_SERVER_APP}/server-standalone`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('برنامه سرور');
     await expect(page.getByText('ثبت سفارش کنار میز برای کارکنان خدمات')).toBeVisible();
-    await expect(page.getByPlaceholder('server@flo.local')).toBeVisible();
+    await expect(page.getByPlaceholder('server@buonapp.local')).toBeVisible();
     await expect(page.getByPlaceholder('گذرواژه')).toBeVisible();
     await expect(page.getByText('ورود من را به یاد بسپار')).toBeVisible();
     await expect(page.getByRole('button', { name: 'ورود' })).toBeVisible();
@@ -226,7 +226,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
 
     // Authenticate Server App in FA
     await page.evaluate((tok) => {
-      localStorage.setItem('flocafe:server-app-token', tok);
+      localStorage.setItem('buonapp:server-app-token', tok);
     }, serverToken);
     await page.reload();
 

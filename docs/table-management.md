@@ -2,7 +2,7 @@
 
 **Status:** CURRENT. All four phases are implemented.
 
-FloCafe's table model was built for a fixed dining room: tables are created once and can only be
+BuonApp's table model was built for a fixed dining room: tables are created once and can only be
 soft-deactivated. This design reworks it for a restaurant whose room layout, table count, and seat
 counts change every single day, and adds an explicit business-day cycle so a day's orders can be
 reviewed after the fact.

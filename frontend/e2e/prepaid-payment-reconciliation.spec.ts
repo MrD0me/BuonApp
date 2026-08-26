@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('prepaid checkout uses the authoritative decimal bill total and settles in full', async ({ page }) => {
   await page.goto('http://localhost:3001/auth/login');
-  await page.locator('#email').fill('manager@flo.local');
+  await page.locator('#email').fill('manager@buonapp.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
 
@@ -47,7 +47,7 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
 
 test('prepaid checkout never reports success when the payment response is partial', async ({ page }) => {
   await page.goto('http://localhost:3001/auth/login');
-  await page.locator('#email').fill('manager@flo.local');
+  await page.locator('#email').fill('manager@buonapp.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
 

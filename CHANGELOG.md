@@ -1,6 +1,24 @@
 # Changelog
 
-All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
+All notable changes to BuonApp are documented here. Entries dated before the 2026-08-26 rename refer to the project under its former name, Flo Cafe. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
+
+## [Unreleased]
+
+### Changed
+- Renamed the application from Flo Cafe to **BuonApp**, completing the split from the upstream FloCafe project. The app id is now `it.buonapp.pos`, the package and Linux executable are `buonapp`, and release artifacts are named `buonapp-<version>-...`. Upstream store listings (Mac App Store, Microsoft Store, Snap Store) and Apple/Microsoft signing identities were removed rather than renamed, because this fork cannot publish under them.
+- User data is carried across on first launch: the app copies `%APPDATA%/flo-desktop` (or `~/.config/flo-desktop` on Linux) into the new `buonapp` directory, so an upgraded install keeps its database, backups, Google Drive token, Master PIN, and WhatsApp session. The old directory is left in place as a rollback fallback, and the uninstaller now sweeps it when data deletion is requested.
+- Google Drive backup folders are resolved by name, so an existing `FloCafe Backups` folder is adopted and renamed in place instead of being abandoned in favour of a new empty one.
+- A tableside Server App device paired before the rename carries its token over to the new storage key instead of being sent back to the login screen.
+- The mDNS hostname the POS advertises on the LAN is now `buonapp.local`, so the handheld browsers, the KDS, and the tableside Server App reach the local server at `http://buonapp.local:<port>`. Any device bookmarked against `flo.local` has to be repointed.
+- The tax-pack catalog still reads from the upstream `FreeOpenSourcePOS/FloCafe-Plugins` releases, and the database file is still `flo.db`: both name resources that exist outside this rename, so changing them would break tax-pack downloads and the migration/upgrade paths respectively.
+
+- The release workflow is Windows-only and publishes nowhere but this repository's GitHub Releases. It still verifies that `latest.yml` and the installer's `.blockmap` are present before uploading, which is what electron-updater needs to offer an update; the installer is unsigned, so Windows shows a SmartScreen prompt on first install, but update checks are unaffected because no `publisherName` is configured for electron-updater to verify against.
+- The cross-platform matrix workflow is manual-only. A four-platform build on every push to main plus a nightly cron was spending runner minutes on artifacts nobody collected.
+
+### Removed
+- Deleted 26 dead message keys covering the removed FloAdmin cloud sync, RevFlo pairing, and anonymous-telemetry settings. No component referenced any of them after the cloud bridge was removed; they only survived as untranslated leftovers in all five locales.
+- Removed the macOS and Linux release jobs, the Snap Store and Microsoft Store publishing steps, and the Mac App Store workflow. Each one failed closed when its credentials were missing — by design — which took the whole release down with it and left nothing for the updater to pull.
+- Removed the Mac App Store build scaffolding it left behind: `fastlane/`, `Gemfile`, the three MAS entitlement files, the `mas`/`masDev` electron-builder blocks, the `build:mas` scripts, and the publishing guide. Signing any of it needs a paid Apple Developer account this fork does not have. The runtime `isMasBuild` guards in the printer and updater paths stay: they read `process.mas`, which is simply false outside a sandboxed build.
 
 ## [3.3.0] - 2026-08-21
 

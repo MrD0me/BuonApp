@@ -28,7 +28,7 @@ const { startStandaloneServers } = require('../dist/standalone-startup');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
 // Country/currency stay TH/THB (this fixture's configured business country)
 // so getActiveCountryPack('TH') actually resolves this pack.
-const testTaxPack = { ...flatRatePackData, id: 'test-th-pack', country: 'TH', currency: 'THB', publisher: 'FreeOpenSourcePOS' };
+const testTaxPack = { ...flatRatePackData, id: 'test-th-pack', country: 'TH', currency: 'THB', publisher: 'MrD0me' };
 
 // BUNDLED_COUNTRY_PACKS (main/tax-packs/bundled.ts) only ships the generic
 // pack — real country packs (e.g. Thailand, India) are separately-published
@@ -213,9 +213,9 @@ async function stop(exitCode = 0) {
   await startStandaloneServers({
     initializeDatabase: initDatabase,
     prepare: () => {
-      seedUser('e2e-owner', 'owner@flo.local', 'owner');
-      seedUser('e2e-manager', 'manager@flo.local', 'manager');
-      seedUser('e2e-server', 'server@flo.local', 'server');
+      seedUser('e2e-owner', 'owner@buonapp.local', 'owner');
+      seedUser('e2e-manager', 'manager@buonapp.local', 'manager');
+      seedUser('e2e-server', 'server@buonapp.local', 'server');
       seedPosFixture();
     },
     startServer,

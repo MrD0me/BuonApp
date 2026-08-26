@@ -1,11 +1,11 @@
 name: Restaurant Workflow Feedback
-description: Share how FloCafe fits or misses a real cafe, restaurant, kitchen, or food truck workflow
+description: Share how BuonApp fits or misses a real cafe, restaurant, kitchen, or food truck workflow
 labels: ["workflow-feedback"]
 body:
   - type: markdown
     attributes:
       value: |
-        Real operator feedback helps FloCafe improve faster than generic feature requests. Describe the actual service flow you tried or need.
+        Real operator feedback helps BuonApp improve faster than generic feature requests. Describe the actual service flow you tried or need.
 
   - type: dropdown
     id: business_type
@@ -35,7 +35,7 @@ body:
   - type: textarea
     id: current_result
     attributes:
-      label: What happened in FloCafe?
+      label: What happened in BuonApp?
       description: What worked, what was confusing, and what blocked the workflow?
     validations:
       required: true
@@ -52,5 +52,5 @@ body:
     id: environment
     attributes:
       label: Setup details
-      description: Include operating system, FloCafe version, printer type, payment flow, tax region, and number of terminals if relevant.
+      description: Include operating system, BuonApp version, printer type, payment flow, tax region, and number of terminals if relevant.
 

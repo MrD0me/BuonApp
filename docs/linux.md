@@ -1,25 +1,25 @@
 # Linux installation and support
 
-FloCafe runs on current Linux distributions through AppImage, deb, rpm, and Snap packages. Choose the format your distribution supports best.
+BuonApp runs on current Linux distributions through AppImage, deb, rpm, and Snap packages. Choose the format your distribution supports best.
 
 ## Packages
 
 | Format | For |
 |--------|-----|
-| **AppImage** (`flocafe-*.AppImage`) | Any distro — no install needed |
-| **deb** (`flocafe-*.deb`) | Debian / Ubuntu and derivatives |
-| **rpm** (`flocafe-*.rpm`) | Fedora, RHEL-family, and compatible distributions |
-| **Snap** (`flocafe-*.snap`) | Snap-enabled distributions |
+| **AppImage** (`buonapp-*.AppImage`) | Any distro — no install needed |
+| **deb** (`buonapp-*.deb`) | Debian / Ubuntu and derivatives |
+| **rpm** (`buonapp-*.rpm`) | Fedora, RHEL-family, and compatible distributions |
+| **Snap** (`buonapp-*.snap`) | Snap-enabled distributions |
 
 AppImage, deb, rpm, and Snap releases are built for x64 and arm64. Linux
 release jobs run on Ubuntu 24.04 runners for x64 and arm64 respectively.
 
 ```bash
 # deb
-sudo dpkg -i flocafe-*.deb && sudo apt-get install -f
+sudo dpkg -i buonapp-*.deb && sudo apt-get install -f
 
 # AppImage
-chmod +x flocafe-*.AppImage && ./flocafe-*.AppImage
+chmod +x buonapp-*.AppImage && ./buonapp-*.AppImage
 ```
 
 ---
@@ -39,7 +39,7 @@ sudo apt install libfuse2t64
 No FUSE? Run extracted:
 
 ```bash
-./flocafe-*.AppImage --appimage-extract
+./buonapp-*.AppImage --appimage-extract
 ./squashfs-root/AppRun
 ```
 
@@ -47,10 +47,10 @@ No FUSE? Run extracted:
 
 ## Updates
 
-AppImage installs can use FloCafe's in-app updater when launched as an
+AppImage installs can use BuonApp's in-app updater when launched as an
 AppImage (`APPIMAGE` is set). deb, rpm, and Snap installs are updated by their
 package manager or the Snap daemon. If an AppImage update is unavailable, use
-[GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases).
+[GitHub Releases](https://github.com/MrD0me/BuonApp/releases).
 
 ---
 
@@ -91,4 +91,4 @@ Window close hides the app — use the tray to get it back or quit.
 
 ## Get help
 
-Include your FloCafe version, Linux distribution/version, package format, and relevant app logs when reporting a problem. Do not delete your local database to diagnose a startup issue; create or restore a backup first.
+Include your BuonApp version, Linux distribution/version, package format, and relevant app logs when reporting a problem. Do not delete your local database to diagnose a startup issue; create or restore a backup first.

@@ -47,7 +47,7 @@ async function run() {
   // Seed a user with normalized email
   db.prepare(`
     INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-    VALUES ('norm-user-1', 'Norm Owner', 'owner@flocafe.local', ?, 'owner', 1, ?, ?)
+    VALUES ('norm-user-1', 'Norm Owner', 'owner@buonapp.local', ?, 'owner', 1, ?, ?)
   `).run(bcrypt.hashSync('Pass1234!', 10), now(), now());
 
   const app = createApp({ '/api/auth': authRoutes });
@@ -55,26 +55,26 @@ async function run() {
   // Test 1: Exact lowercase email
   const res1 = await request(app)
     .post('/api/auth/login')
-    .send({ email: 'owner@flocafe.local', password: 'Pass1234!' });
+    .send({ email: 'owner@buonapp.local', password: 'Pass1234!' });
   assertEqual(res1.status, 200, 'Exact lowercase email login succeeds');
   assert(!!res1.body.access_token, 'Login returns access token');
 
   // Test 2: Uppercase / Mixed-case email
   const res2 = await request(app)
     .post('/api/auth/login')
-    .send({ email: 'Owner@FloCafe.Local', password: 'Pass1234!' });
+    .send({ email: 'Owner@BuonApp.Local', password: 'Pass1234!' });
   assertEqual(res2.status, 200, 'Mixed-case email login succeeds');
 
   // Test 3: Whitespace-padded email
   const res3 = await request(app)
     .post('/api/auth/login')
-    .send({ email: '  owner@flocafe.local \t', password: 'Pass1234!' });
+    .send({ email: '  owner@buonapp.local \t', password: 'Pass1234!' });
   assertEqual(res3.status, 200, 'Whitespace-padded email login succeeds');
 
   // Test 4: Mixed-case AND whitespace-padded email
   const res4 = await request(app)
     .post('/api/auth/login')
-    .send({ email: '  OWNER@FLOCAFE.LOCAL \n', password: 'Pass1234!' });
+    .send({ email: '  OWNER@BUONAPP.LOCAL \n', password: 'Pass1234!' });
   assertEqual(res4.status, 200, 'Mixed-case and whitespace-padded email login succeeds');
 
   const results = getResults();

@@ -1,4 +1,4 @@
-# FloCafe 2.7.0 security audit
+# BuonApp 2.7.0 security audit
 
 Date: 2026-08-04
 
@@ -12,7 +12,7 @@ No critical or high-impact exploitable application vulnerability was confirmed i
 
 The POS and KDS servers listen on all interfaces and use HTTP/WebSocket rather than TLS. API authentication and restrictive CORS prevent unauthenticated browser access, but CORS is not transport security: an attacker on an untrusted local network may be able to observe bearer tokens and business traffic.
 
-Recommended follow-up: treat FloCafe's LAN as trusted in current deployments, then add authenticated device pairing and TLS (or a documented Tailscale/VPN-only mode) before use on guest or shared Wi-Fi.
+Recommended follow-up: treat BuonApp's LAN as trusted in current deployments, then add authenticated device pairing and TLS (or a documented Tailscale/VPN-only mode) before use on guest or shared Wi-Fi.
 
 ### SEC-02 — Electron renderer sandbox is disabled (Medium)
 

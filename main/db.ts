@@ -4311,7 +4311,7 @@ export class SchemaVersionMismatchError extends Error {
     super(
       `Database schema (v${dbVersion}) is newer than this app version supports (v${appVersion}). ` +
       `This usually means another device or a previous update already upgraded this database. ` +
-      `Please update Flo Cafe to the latest version before continuing.`
+      `Please update BuonApp to the latest version before continuing.`
     );
     this.name = 'SchemaVersionMismatchError';
   }

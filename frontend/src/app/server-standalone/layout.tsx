@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Flo Server App',
-  description: 'Tableside ordering for FloCafe',
+  description: 'Tableside ordering for BuonApp',
 };
 
 export default function ServerStandaloneLayout({

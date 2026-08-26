@@ -120,7 +120,7 @@ const downloadServer = http.createServer(app);
 installHttpShutdownTracking(downloadServer);
 
 function tokenFor(userId: string, role: string): string {
-  return jwt.sign({ userId, email: `${userId}@flo.local`, role }, getJWTSecret(), { expiresIn: '1h' });
+  return jwt.sign({ userId, email: `${userId}@buonapp.local`, role }, getJWTSecret(), { expiresIn: '1h' });
 }
 
 async function runTests() {

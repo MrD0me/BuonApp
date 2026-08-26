@@ -57,7 +57,7 @@ export interface CountryPack {
   inclusivePricingDefault: boolean;
   registrationNumberLabel: string;
   // Optional: lets a signed pack update/correct the merchant-facing
-  // registration-number validation pattern without a FloCafe app release.
+  // registration-number validation pattern without a BuonApp app release.
   // Additive on schemaVersion 1 — absent on older/local packs, which fall
   // back to the static main/countries.ts format (see resolveTaxIdFormat).
   registrationNumberFormat?: TaxIdFormat;

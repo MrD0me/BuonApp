@@ -30,8 +30,8 @@ import * as os from 'os';
  * minutes per IP) and the rest of the suite already performs ~8 logins, so a
  * per-screen login would trip the limiter and break unrelated specs.
  *
- * The e2e fixture (tests/e2e-server.cjs) seeds manager@flo.local /
- * E2ePass123! and owner@flo.local / E2ePass123! with a restaurant tenant
+ * The e2e fixture (tests/e2e-server.cjs) seeds manager@buonapp.local /
+ * E2ePass123! and owner@buonapp.local / E2ePass123! with a restaurant tenant
  * (tables_required=false) and one product ("E2E Coffee").
  */
 
@@ -93,7 +93,7 @@ async function assertSidebarSide(page: Page, expected: 'left' | 'right'): Promis
 test('Dashboard, POS, and orders screens render LTR in English and RTL in Persian with LTR phone input, mirrored arrows, and no overflow', async ({ page }) => {
   // Owner account: the dashboard page redirects non-owner roles to /pos, and
   // one login keeps the suite within the shared server's login rate limit.
-  await login(page, 'owner@flo.local');
+  await login(page, 'owner@buonapp.local');
 
   // ── English (LTR) baseline on the POS screen ─────────────────────────────
   await setLanguage(page, 'en');
