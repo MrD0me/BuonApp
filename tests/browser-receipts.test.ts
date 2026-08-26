@@ -295,7 +295,7 @@ async function run() {
       payment_details: [{ method: 'cash', amount: 50.00 }],
     };
     const usTenant = {
-      business_name: 'FloCafe New York',
+      business_name: 'BuonApp New York',
       currency: 'USD',
       country: 'US',
       timezone: 'America/New_York',
@@ -444,7 +444,7 @@ async function run() {
           }],
         },
       }, {
-        business_name: 'FloCafe New York',
+        business_name: 'BuonApp New York',
         currency: 'USD',
         country: 'US',
         timezone: 'America/New_York',
@@ -513,7 +513,7 @@ async function run() {
           }],
         },
       }, {
-        business_name: 'FloCafe São Paulo',
+        business_name: 'BuonApp São Paulo',
         currency: 'BRL',
         country: 'BR',
         timezone: 'America/Sao_Paulo',

@@ -6,7 +6,7 @@ import path from 'node:path';
 
 // Import kill-ports functions
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { isFloProcess, FLO_PATTERNS } = require('../kill-ports.js');
+const { isBuonAppProcess, BUONAPP_PATTERNS } = require('../kill-ports.js');
 
 const rootDir = path.resolve(__dirname, '..');
 const resetScript = path.join(rootDir, 'scripts/dev/nuclear-reset.sh');
@@ -52,34 +52,34 @@ function runTest() {
 
   console.log('Testing kill-ports.js process identity matching...');
 
-  // Positive cases (should match as Flo processes)
+  // Positive cases (should match as BuonApp processes)
   const positiveCases = [
-    'node /Users/dev/FloCafe/dist/index.js',
-    '/Applications/Flo Cafe.app/Contents/MacOS/Flo Cafe',
-    '/usr/bin/flocafe --no-sandbox',
-    'electron . --appName=flo-desktop',
-    'node /path/to/FloCafe/dev-server.js',
-    'node /path/to/FloCafe/dist/index.js',
-    'com.flo.desktop.helper',
+    'node /Users/dev/BuonApp/dist/index.js',
+    '/Applications/BuonApp.app/Contents/MacOS/BuonApp',
+    '/usr/bin/buonapp --no-sandbox',
+    'electron . --appName=buonapp',
+    'node /path/to/BuonApp/dev-server.js',
+    'node /path/to/BuonApp/dist/index.js',
+    'it.buonapp.pos.helper',
     'flo-pos-service',
   ];
 
   for (const cmd of positiveCases) {
     assert.strictEqual(
-      isFloProcess(cmd),
+      isBuonAppProcess(cmd),
       true,
-      `Expected "${cmd}" to match Flo process patterns`,
+      `Expected "${cmd}" to match BuonApp process patterns`,
     );
   }
 
-  // Negative cases (should NOT match as Flo processes)
+  // Negative cases (should NOT match as BuonApp processes)
   const negativeCases = [
     'node /Users/dev/other-project/index.js',
     'node /Users/other-project/dist/index.js',
     'node /Users/other-project/dev-server.js',
     'node /home/user/app/dev-server.js',
-    'node /Users/dev/FloCafe/other-server.js',
-    'node /Users/dev/FloCafe-tools/dev-server.js',
+    'node /Users/dev/BuonApp/other-server.js',
+    'node /Users/dev/BuonApp-tools/dev-server.js',
     'python3 -m http.server 3000',
     'nginx: master process',
     'postgres -D /data',
@@ -88,9 +88,9 @@ function runTest() {
 
   for (const cmd of negativeCases) {
     assert.strictEqual(
-      isFloProcess(cmd),
+      isBuonAppProcess(cmd),
       false,
-      `Expected "${cmd}" to NOT match Flo process patterns`,
+      `Expected "${cmd}" to NOT match BuonApp process patterns`,
     );
   }
 
@@ -123,9 +123,9 @@ function runTest() {
   try {
     const darwinHome = path.join(tmpDir, 'darwin-home');
     const darwinPaths = [
-      path.join(darwinHome, 'Library/Application Support/flo-desktop/Cache'),
-      path.join(darwinHome, 'Library/Application Support/flo-desktop/Code Cache'),
-      path.join(darwinHome, 'Library/Caches/flo-desktop'),
+      path.join(darwinHome, 'Library/Application Support/buonapp/Cache'),
+      path.join(darwinHome, 'Library/Application Support/buonapp/Code Cache'),
+      path.join(darwinHome, 'Library/Caches/buonapp'),
     ];
     darwinPaths.forEach(mkdirp);
     const darwinResult = runReset('Darwin', { HOME: darwinHome });
@@ -141,9 +141,9 @@ function runTest() {
     const linuxConfigHome = path.join(tmpDir, 'linux-config');
     const linuxCacheHome = path.join(tmpDir, 'linux-cache');
     const linuxPaths = [
-      path.join(linuxConfigHome, 'flo-desktop/Cache'),
-      path.join(linuxConfigHome, 'flo-desktop/Code Cache'),
-      path.join(linuxCacheHome, 'flo-desktop'),
+      path.join(linuxConfigHome, 'buonapp/Cache'),
+      path.join(linuxConfigHome, 'buonapp/Code Cache'),
+      path.join(linuxCacheHome, 'buonapp'),
     ];
     linuxPaths.forEach(mkdirp);
     const linuxResult = runReset('Linux', {
@@ -159,9 +159,9 @@ function runTest() {
     const windowsAppData = path.join(tmpDir, 'windows-appdata');
     const windowsLocalAppData = path.join(tmpDir, 'windows-localappdata');
     const windowsPaths = [
-      path.join(windowsAppData, 'flo-desktop/Cache'),
-      path.join(windowsAppData, 'flo-desktop/Code Cache'),
-      path.join(windowsLocalAppData, 'flo-desktop'),
+      path.join(windowsAppData, 'buonapp/Cache'),
+      path.join(windowsAppData, 'buonapp/Code Cache'),
+      path.join(windowsLocalAppData, 'buonapp'),
     ];
     windowsPaths.forEach(mkdirp);
     const windowsResult = runReset('Windows_NT', {

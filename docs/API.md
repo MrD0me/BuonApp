@@ -1,8 +1,8 @@
-# Flo API Documentation
+# BuonApp API Documentation
 
 ## Base URL
 
-**Local:** `http://flo.local:3001` or `http://<local-ip>:3001`
+**Local:** `http://buonapp.local:3001` or `http://<local-ip>:3001`
 
 ---
 
@@ -14,7 +14,7 @@ Authenticate user and receive JWT token.
 **Request:**
 ```json
 {
-  "email": "chef1@flo.local",
+  "email": "chef1@buonapp.local",
   "password": "chef123"
 }
 ```
@@ -28,7 +28,7 @@ Authenticate user and receive JWT token.
   "user": {
     "id": "chef-1",
     "name": "Chef One",
-    "email": "chef1@flo.local",
+    "email": "chef1@buonapp.local",
     "role": "chef",
     "category_ids": ["cat-1", "cat-2"]
   }
@@ -57,7 +57,7 @@ List all users (owner/manager only).
     {
       "id": "user-1",
       "name": "Owner",
-      "email": "admin@flo.local",
+      "email": "admin@buonapp.local",
       "role": "owner",
       "is_active": 1
     }
@@ -76,7 +76,7 @@ Create new user.
 ```json
 {
   "name": "Chef One",
-  "email": "chef1@flo.local",
+  "email": "chef1@buonapp.local",
   "password": "chef123",
   "role": "chef",
   "category_ids": ["cat-1", "cat-2"]
@@ -889,7 +889,7 @@ Real-time KDS connection.
 
 **Step 1:** Connect to WebSocket
 ```
-ws://flo.local:3001/kds
+ws://buonapp.local:3001/kds
 ```
 
 **Step 2:** Authenticate
@@ -1232,7 +1232,7 @@ Detect available USB and network printers.
 
 ### GET `/api/printers/supported`
 
-List FloCafe's known printer profiles.
+List BuonApp's known printer profiles.
 
 ### GET `/api/printers/:id`
 
@@ -1343,7 +1343,7 @@ Get KDS access URLs and QR code.
 **Response:**
 ```json
 {
-  "mdns_url": "http://flo.local:3001/kds",
+  "mdns_url": "http://buonapp.local:3001/kds",
   "ip_url": "http://192.168.1.50:3001/kds",
   "qr_url": "http://192.168.1.50:3001/kds",
   "qr_data_url": "data:image/png;base64,..."

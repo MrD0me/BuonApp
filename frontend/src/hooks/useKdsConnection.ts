@@ -182,7 +182,7 @@ const LOGIN_ENDPOINT = '/auth/login';
 const ME_ENDPOINT = '/auth/me';
 const ORDERS_ENDPOINT = '/kitchen/orders';
 const ITEM_STATUS_ENDPOINT = '/order-items/:itemId/status';
-const KDS_AUTH_BLOCKED_KEY = 'flocafe:kds-auth-blocked';
+const KDS_AUTH_BLOCKED_KEY = 'buonapp:kds-auth-blocked';
 
 function isKdsAuthBlocked(): boolean {
   try { return window.sessionStorage.getItem(KDS_AUTH_BLOCKED_KEY) === '1'; } catch { return false; }

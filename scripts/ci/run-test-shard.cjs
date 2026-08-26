@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * CI test sharding for the FloCafe "Core test suite" (`npm test`).
+ * CI test sharding for the BuonApp "Core test suite" (`npm test`).
  *
  * The canonical, ordered suite list lives in package.json's "test" script as a
  * chain of `bash tests/run-test.sh npm run test:<name>` invocations. This helper

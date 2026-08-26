@@ -107,7 +107,7 @@ app.use('/api/bills', billRoutes);
 
 // Generate a valid JWT for test requests
 const token = jwt.sign(
-  { userId: 'user-1', email: 'test@flo.local', role: 'cashier' },
+  { userId: 'user-1', email: 'test@buonapp.local', role: 'cashier' },
   getJWTSecret(),
   { expiresIn: '1h' }
 );

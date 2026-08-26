@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('POS product grid has no horizontal clipping and touchable product cards', async ({ page }) => {
   await page.goto('http://localhost:3001/auth/login');
-  await page.locator('#email').fill('manager@flo.local');
+  await page.locator('#email').fill('manager@buonapp.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
 

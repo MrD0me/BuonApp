@@ -26,8 +26,8 @@ import * as os from 'os';
  * (login syncs the tenant language), so it restores `en` afterwards to avoid
  * leaking Persian into the other e2e specs that use English text locators.
  *
- * The e2e fixture (tests/e2e-server.cjs) seeds manager@flo.local /
- * E2ePass123! and owner@flo.local / E2ePass123!.
+ * The e2e fixture (tests/e2e-server.cjs) seeds manager@buonapp.local /
+ * E2ePass123! and owner@buonapp.local / E2ePass123!.
  */
 
 const BASE = 'http://localhost:3001';
@@ -50,7 +50,7 @@ import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 
 async function loginAsManager(page: Page): Promise<void> {
   await page.goto(`${BASE}/auth/login`);
-  await page.locator('#email').fill('manager@flo.local');
+  await page.locator('#email').fill('manager@buonapp.local');
   await page.locator('#password').fill(E2E_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/pos/**', { timeout: 20000 });
@@ -268,8 +268,8 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     await page.goto(`${BASE}/settings?tab=account`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
 
-    // Account email (manager@flo.local) is in an LTR island
-    const email = page.locator('text=manager@flo.local').first();
+    // Account email (manager@buonapp.local) is in an LTR island
+    const email = page.locator('text=manager@buonapp.local').first();
     await expect(email).toBeVisible();
     const hasLtrAncestor = await email.evaluate((el) => {
       let node: HTMLElement | null = el as HTMLElement;

@@ -1,55 +1,39 @@
 <div align="center">
-  <h1>FloCafe</h1>
+  <h1>BuonApp</h1>
   <p><strong>Free, open-source, offline-first point of sale for cafés, restaurants, and small kitchens.</strong></p>
   <p>
-    <a href="https://flopos.com">Website</a> ·
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases">Download</a> ·
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/issues">Report a bug</a> ·
-    <a href="https://www.reddit.com/r/FloPOS/">Community</a>
+    <a href="https://github.com/MrD0me/BuonApp">Website</a> ·
+    <a href="https://github.com/MrD0me/BuonApp/releases">Download</a> ·
+    <a href="https://github.com/MrD0me/BuonApp/issues">Report a bug</a>
   </p>
   <p>
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases"><img src="https://img.shields.io/github/v/release/FreeOpenSourcePOS/FloCafe?label=latest%20release" alt="Latest release"></a>
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases"><img src="https://img.shields.io/github/downloads/FreeOpenSourcePOS/FloCafe/total?label=release%20downloads" alt="Total release downloads"></a>
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/blob/main/LICENSE"><img src="https://img.shields.io/github/license/FreeOpenSourcePOS/FloCafe" alt="MIT License"></a>
+    <a href="https://github.com/MrD0me/BuonApp/releases"><img src="https://img.shields.io/github/v/release/MrD0me/BuonApp?label=latest%20release" alt="Latest release"></a>
+    <a href="https://github.com/MrD0me/BuonApp/releases"><img src="https://img.shields.io/github/downloads/MrD0me/BuonApp/total?label=release%20downloads" alt="Total release downloads"></a>
+    <a href="https://github.com/MrD0me/BuonApp/blob/main/LICENSE"><img src="https://img.shields.io/github/license/MrD0me/BuonApp" alt="MIT License"></a>
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Windows, macOS, and Linux">
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/actions/workflows/ci.yml"><img src="https://github.com/FreeOpenSourcePOS/FloCafe/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+    <a href="https://github.com/MrD0me/BuonApp/actions/workflows/ci.yml"><img src="https://github.com/MrD0me/BuonApp/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   </p>
 </div>
 
 <p align="center">
-  <img src="docs/images/flo-cafe-pos.webp" alt="FloCafe POS screen showing product selection and an active dine-in order" width="100%">
+  <img src="docs/images/buonapp-pos.webp" alt="BuonApp POS screen showing product selection and an active dine-in order" width="100%">
 </p>
 
-FloCafe runs directly on the business's own computer. Orders, customers, receipts, and backups are stored in a local SQLite database, allowing counter service and kitchen displays to continue operating without an internet connection. No hosted or cloud account is required for core POS operation. Optional integrations—such as Google Drive backup and WhatsApp bill delivery—can be enabled when needed.
+BuonApp runs directly on the business's own computer. Orders, customers, receipts, and backups are stored in a local SQLite database, allowing counter service and kitchen displays to continue operating without an internet connection. No hosted or cloud account is required for core POS operation. Optional integrations—such as Google Drive backup and WhatsApp bill delivery—can be enabled when needed.
 
-## Get FloCafe
+## Get BuonApp
 
-Download the latest installer from [GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases), or install through your platform's app store:
+Download the latest installer from [GitHub Releases](https://github.com/MrD0me/BuonApp/releases).
 
-<p>
-  <a href="https://apps.apple.com/in/app/flo-cafe/id6763136018">
-    <img src="https://img.shields.io/badge/Mac_App_Store-Download-black?logo=apple&style=for-the-badge" alt="Download on the Mac App Store">
-  </a>
-  <a href="https://apps.microsoft.com/detail/9n1md6585p4q">
-    <img src="https://img.shields.io/badge/Microsoft_Store-Download-0078D4?logo=microsoft&style=for-the-badge" alt="Download from Microsoft Store">
-  </a>
-  <a href="https://snapcraft.io/flocafe">
-    <img src="https://img.shields.io/badge/Snap-Install-82BEA0?logo=snapcraft&logoColor=white&style=for-the-badge" alt="Install from the Snap Store">
-  </a>
-</p>
-
-Releases include Windows installers, macOS DMGs, and Linux AppImage, `.deb`, `.rpm`, and Snap packages. On Linux:
+Releases include Windows installers, macOS DMGs, and Linux AppImage, `.deb`, and `.rpm` packages. On Linux:
 
 ```sh
 # AppImage
-chmod +x flocafe-*.AppImage
-./flocafe-*.AppImage
+chmod +x buonapp-*.AppImage
+./buonapp-*.AppImage
 
 # Debian or Ubuntu
-sudo apt install ./flocafe-*.deb
-
-# Snap
-sudo snap install flocafe
+sudo apt install ./buonapp-*.deb
 ```
 
 For Linux package choices, updates, FUSE setup, printing permissions, and tray behavior, see [Linux installation and support](docs/linux.md).
@@ -62,7 +46,7 @@ For Linux package choices, updates, FUSE setup, printing permissions, and tray b
 | Memory | 4 GB RAM |
 | Storage | 500 MB free space, plus room for local backups |
 
-Node.js is only required to develop FloCafe, not to run a packaged release.
+Node.js is only required to develop BuonApp, not to run a packaged release.
 
 ## Highlights
 
@@ -76,19 +60,19 @@ Node.js is only required to develop FloCafe, not to run a packaged release.
 
 ## Project status
 
-FloCafe is actively developed and already used in real deployments. Core customer data and upgrade safety are treated carefully, including explicit database migrations and recovery mechanisms. Some internal and extension-facing architecture is still evolving, so implementation details and internal contracts may change as the project matures.
+BuonApp is actively developed and already used in real deployments. Core customer data and upgrade safety are treated carefully, including explicit database migrations and recovery mechanisms. Some internal and extension-facing architecture is still evolving, so implementation details and internal contracts may change as the project matures.
 
 ## Offline-first by design
 
 Core POS operation and local data are offline-first. Order entry, billing, KDS coordination, and receipt printing do not depend on internet access or external cloud services.
 
 - **Data location:** The SQLite database and local backups reside in the operating system user-data directory, separate from installed application binaries. Standard in-place application updates do not remove them. As a best practice, create a manual backup before reinstalling, moving to a new machine, or changing distribution channels.
-- **Pre-migration backups:** FloCafe automatically creates a timestamped database backup before running schema migrations.
+- **Pre-migration backups:** BuonApp automatically creates a timestamped database backup before running schema migrations.
 - **Optional network features:** Services such as Google Drive backups and WhatsApp bill delivery communicate over the network only when explicitly configured and enabled by the store owner.
 
 ## Languages and regional support
 
-FloCafe includes UI translations for:
+BuonApp includes UI translations for:
 
 - English
 - Spanish
@@ -99,9 +83,9 @@ UI language is independent of store country and regional settings, and tax calcu
 
 ## Tax support
 
-FloCafe includes a generic calculation engine and supports signed, versioned country tax packs for regional rules, tax categories, and rounding policies. Country coverage is expanding through the catalog, and availability varies. Operators can also configure manual tax rules and rates locally.
+BuonApp includes a generic calculation engine and supports signed, versioned country tax packs for regional rules, tax categories, and rounding policies. Country coverage is expanding through the catalog, and availability varies. Operators can also configure manual tax rules and rates locally.
 
-> **Notice:** FloCafe is software, not legal or tax advice. Tax packs and configuration tools do not by themselves certify compliance with local regulations. Operators remain responsible for verifying the requirements that apply to their business.
+> **Notice:** BuonApp is software, not legal or tax advice. Tax packs and configuration tools do not by themselves certify compliance with local regulations. Operators remain responsible for verifying the requirements that apply to their business.
 
 For pack authoring, validation, and schema details, see the [Tax packs developer guide](docs/tax-packs.md).
 
@@ -110,8 +94,8 @@ For pack authoring, validation, and schema details, see the [Tax packs developer
 Setting up a local development environment requires Node.js 22 or later:
 
 ```sh
-git clone https://github.com/FreeOpenSourcePOS/FloCafe.git
-cd FloCafe
+git clone https://github.com/MrD0me/BuonApp.git
+cd BuonApp
 npm install
 npm run dev
 ```
@@ -139,7 +123,7 @@ Contributions are welcome. Please check [CONTRIBUTING.md](CONTRIBUTING.md) befor
 - **Small bug fixes, documentation improvements, and focused tests** can be started freely.
 - **New features, database schema changes, and architectural refactors** require maintainer discussion and approval before implementation.
 
-If FloCafe is useful to you, consider starring the repository.
+If BuonApp is useful to you, consider starring the repository.
 
 ## Help and documentation
 
@@ -148,10 +132,9 @@ If FloCafe is useful to you, consider starring the repository.
 - **Linux setup & support:** [docs/linux.md](docs/linux.md)
 - **Internationalization & translations:** [docs/i18n.md](docs/i18n.md)
 - **Google Drive backup setup:** [docs/google-drive-setup.md](docs/google-drive-setup.md)
-- **Community discussion:** [Reddit r/FloPOS](https://www.reddit.com/r/FloPOS/)
-- **Bug reports & feature proposals:** [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
-- **General questions & ideas:** [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)
+- **Bug reports & feature proposals:** [GitHub Issues](https://github.com/MrD0me/BuonApp/issues)
+- **General questions & ideas:** [GitHub Discussions](https://github.com/MrD0me/BuonApp/discussions)
 
 ## License
 
-FloCafe is open-source software licensed under the [MIT License](LICENSE).
+BuonApp is open-source software licensed under the [MIT License](LICENSE).

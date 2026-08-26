@@ -58,7 +58,7 @@ async function main() {
   const unrestrictedChefId = 'kds-contract-unrestricted-chef';
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, station_assignments_configured, created_at, updated_at)
     VALUES (?, 'Unrestricted Chef', ?, ?, 'chef', 1, 1, ?, ?)`).run(
-    unrestrictedChefId, 'kds-contract-unrestricted@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+    unrestrictedChefId, 'kds-contract-unrestricted@buonapp.local', bcrypt.hashSync('testpass123', 10), now(), now(),
   );
   db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(unrestrictedChefId, 'kds-contract-unrestricted-station', now());
   const unrestrictedChefAuth = { Authorization: `Bearer ${jwt.sign({ userId: unrestrictedChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
@@ -66,7 +66,7 @@ async function main() {
   const chefId = 'kds-contract-chef';
   db.prepare(`INSERT INTO users (id, name, email, password, role, category_ids, is_active, created_at, updated_at)
     VALUES (?, 'Restricted Chef', ?, ?, 'chef', ?, 1, ?, ?)`).run(
-    chefId, 'kds-contract-chef@flo.local', bcrypt.hashSync('testpass123', 10), JSON.stringify(['kds-contract-category']), now(), now(),
+    chefId, 'kds-contract-chef@buonapp.local', bcrypt.hashSync('testpass123', 10), JSON.stringify(['kds-contract-category']), now(), now(),
   );
   const chefAuth = { Authorization: `Bearer ${jwt.sign({ userId: chefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
   db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(chefId, 'kds-contract-station', now());
@@ -75,7 +75,7 @@ async function main() {
   const inactiveChefId = 'kds-contract-inactive-chef';
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
     VALUES (?, 'Inactive Station Chef', ?, ?, 'chef', 1, ?, ?)`).run(
-    inactiveChefId, 'kds-contract-inactive@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+    inactiveChefId, 'kds-contract-inactive@buonapp.local', bcrypt.hashSync('testpass123', 10), now(), now(),
   );
   db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(inactiveChefId, 'kds-contract-inactive-station', now());
   const inactiveChefAuth = { Authorization: `Bearer ${jwt.sign({ userId: inactiveChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };

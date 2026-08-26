@@ -112,7 +112,7 @@ function fetchPinnedHttps(
       port: parsedUrl.port || 443,
       path: `${parsedUrl.pathname}${parsedUrl.search}`,
       method: 'GET',
-      headers: { 'User-Agent': 'FloCafe-ImageProxy/1.0' },
+      headers: { 'User-Agent': 'BuonApp-ImageProxy/1.0' },
       servername: parsedUrl.hostname,
       signal,
       lookup: ((_hostname, options, callback) => {

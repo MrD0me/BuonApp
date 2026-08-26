@@ -14,7 +14,7 @@ function base64Url(data: string | Buffer): string {
  */
 export function getE2eToken(
   userId = 'e2e-owner',
-  email = 'owner@flo.local',
+  email = 'owner@buonapp.local',
   role = 'owner',
 ): string {
   const header = base64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));

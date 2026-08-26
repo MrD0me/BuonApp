@@ -574,15 +574,15 @@ export default function SetupPage() {
                     />
                     <span>
                       {t('termsIntro')}{' '}
-                      <a href="https://flopos.com/terms" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                      <a href="https://github.com/MrD0me/BuonApp/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" className="text-primary underline">
                         {t('terms')}
                       </a>
                       ,{' '}
-                      <a href="https://flopos.com/privacy" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                      <a href="https://github.com/MrD0me/BuonApp/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" className="text-primary underline">
                         {t('privacy')}
                       </a>
                       , {t('termsAnd')}{' '}
-                      <a href="https://flopos.com/disclaimer" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                      <a href="https://github.com/MrD0me/BuonApp/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" className="text-primary underline">
                         {t('disclaimer')}
                       </a>
                       .

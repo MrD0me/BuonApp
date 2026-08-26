@@ -21,7 +21,7 @@ body:
     id: current_behavior
     attributes:
       label: Current behavior
-      description: How does FloCafe currently handle this workflow (if at all)?
+      description: How does BuonApp currently handle this workflow (if at all)?
 
   - type: textarea
     id: desired_outcome
@@ -47,7 +47,7 @@ body:
     id: area
     attributes:
       label: Area
-      description: Which part of FloCafe does this affect?
+      description: Which part of BuonApp does this affect?
       options:
         - POS / Checkout
         - Table Management

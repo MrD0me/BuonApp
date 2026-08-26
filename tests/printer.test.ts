@@ -351,7 +351,7 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   assert('renders Cash payment', text.includes('Cash') && text.includes('₹500.00'));
   assert('renders UPI payment', text.includes('UPI') && text.includes('₹450.00'));
   assert('renders tax registration number', text.includes('TAXID-0001'));
-  assert('no vendor branding on the receipt', !text.includes('Powered by FloPOS') && !text.includes('flopos.com'));
+  assert('no vendor branding on the receipt', !text.includes('Powered by BuonApp') && !text.includes('github.com/MrD0me/BuonApp'));
   assert('long product name is truncated to fit', !text.includes('Truncated By Formatter'));
   assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x00]));
 
@@ -435,7 +435,7 @@ console.log('\n✅ Test 4: Classic receipt template');
 
   assert('renders business name', text.includes('Flo Test Cafe'));
   assert('renders item and total', text.includes('Cheeseburger') && text.includes('₹950.00'));
-  assert('no vendor branding on the receipt', !text.includes('Powered by FloPOS') && !text.includes('flopos.com'));
+  assert('no vendor branding on the receipt', !text.includes('Powered by BuonApp') && !text.includes('github.com/MrD0me/BuonApp'));
   assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x00]));
 
   console.log('\n   — Rendered classic —');
@@ -449,7 +449,7 @@ console.log('\n✅ Test 5: Tax-specific labels fall back to the default template
 
   assert('legacy detailed label renders the default classic receipt', text.includes('Invoice #:'));
   assert('legacy detailed label does not render the GST-style tax invoice', !text.includes('TAX INVOICE'));
-  assert('no vendor branding on the receipt', !text.includes('Powered by FloPOS') && !text.includes('flopos.com'));
+  assert('no vendor branding on the receipt', !text.includes('Powered by BuonApp') && !text.includes('github.com/MrD0me/BuonApp'));
 
   console.log('\n   — Rendered detailed fallback —');
   console.log(visiblePreview(buf, 48));
@@ -692,7 +692,7 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   assert('real production IR setup produces ریال currency symbol', realIrCurrencySymbol === 'ریال');
 
   const irBusiness = {
-    name: 'Flo Cafe Tehran',
+    name: 'BuonApp Tehran',
     country: 'IR',
     currency: 'IRR',
     currency_symbol: realIrCurrencySymbol,
@@ -813,7 +813,7 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   const { generateBillHtml } = frontendModules.webPrint;
 
   const frontendTenant = {
-    business_name: 'Flo Cafe Tehran',
+    business_name: 'BuonApp Tehran',
     country: 'IR',
     currency: 'IRR',
   };

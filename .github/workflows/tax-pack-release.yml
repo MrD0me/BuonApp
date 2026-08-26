@@ -60,4 +60,4 @@ jobs:
             "$RUNNER_TEMP"/tax-pack-release/* \
             --repo FreeOpenSourcePOS/FloCafe-Plugins \
             --title "$GITHUB_REF_NAME" \
-            --notes "Signed FloCafe country-pack release. Activation remains an explicit owner action in the app."
+            --notes "Signed BuonApp country-pack release. Activation remains an explicit owner action in the app."

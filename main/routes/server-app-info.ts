@@ -22,7 +22,7 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
     const ip = getLocalIP();
     const allIps = getAllLocalIPs();
 
-    const mdnsUrl = `http://flo.local:${port}`;
+    const mdnsUrl = `http://buonapp.local:${port}`;
     const ipUrl = `http://${ip}:${port}`;
     const ipsData = await Promise.all(allIps.map(async (localIp) => {
       const url = `http://${localIp}:${port}`;

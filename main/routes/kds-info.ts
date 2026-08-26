@@ -20,7 +20,7 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
     const ip = getLocalIP();
     const allIps = getAllLocalIPs();
 
-    const mdnsUrl = `http://flo.local:${kdsPort}`;
+    const mdnsUrl = `http://buonapp.local:${kdsPort}`;
     const ipUrl   = `http://${ip}:${kdsPort}`;
     const qrUrl   = ipUrl;
 

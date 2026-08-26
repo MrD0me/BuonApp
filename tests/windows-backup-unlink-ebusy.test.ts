@@ -225,7 +225,7 @@ async function runTests() {
 
       const app = express();
       app.use(express.json());
-      const ownerToken = jwt.sign({ userId: 'owner-1', email: 'owner@flo.local', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
+      const ownerToken = jwt.sign({ userId: 'owner-1', email: 'owner@buonapp.local', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
       app.use((req: any, res: any, next: any) => {
         const auth = req.headers.authorization;
         if (auth?.startsWith('Bearer ')) {

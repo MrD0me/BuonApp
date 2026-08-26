@@ -37,7 +37,7 @@ const mockApp = {
     return os.tmpdir();
   },
   getVersion: () => require('./package.json').version,
-  getName: () => 'Flo (dev)',
+  getName: () => 'BuonApp (dev)',
 };
 
 require('module').Module._resolveFilename = (function (original) {

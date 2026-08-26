@@ -21,7 +21,7 @@ async function login(page: Page, email: string): Promise<void> {
 
 test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
   test('Batch 5E Pages render correctly in English, Spanish, and Persian with useTranslations and valid leaf keys', async ({ page }) => {
-    await login(page, 'owner@flo.local');
+    await login(page, 'owner@buonapp.local');
 
     // ==========================================
     // 1. ENGLISH (EN) BASELINE

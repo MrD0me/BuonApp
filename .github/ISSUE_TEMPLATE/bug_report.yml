@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for reporting an issue! Please provide the details below.
 
-        > **Security & Privacy Reminder:** Do NOT upload real customer databases, credentials, API keys, `.env` files, or private business records. If reporting a security vulnerability, please report it privately per [SECURITY.md](https://github.com/FreeOpenSourcePOS/FloCafe/blob/main/SECURITY.md).
+        > **Security & Privacy Reminder:** Do NOT upload real customer databases, credentials, API keys, `.env` files, or private business records. If reporting a security vulnerability, please report it privately per [SECURITY.md](https://github.com/MrD0me/BuonApp/blob/main/SECURITY.md).
 
   - type: textarea
     id: description
@@ -77,8 +77,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: FloCafe version
-      description: "Exact version from app menu: FloCafe > About"
+      label: BuonApp version
+      description: "Exact version from app menu: BuonApp > About"
     validations:
       required: true
 

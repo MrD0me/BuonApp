@@ -183,7 +183,7 @@ async function fetchText(
 ): Promise<string> {
   const response = await fetchImpl(url, {
     headers: {
-      'User-Agent': 'FloCafe-Tax-Pack-Manager',
+      'User-Agent': 'BuonApp-Tax-Pack-Manager',
       Accept: 'application/json',
       ...headers,
     },

@@ -39,7 +39,11 @@ import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
 type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
 
 export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-export const DRIVE_BACKUP_FOLDER_NAME = 'FloCafe Backups';
+export const DRIVE_BACKUP_FOLDER_NAME = 'BuonApp Backups';
+// Folder name used before the BuonApp rename. Resolution is by name, so without
+// this an upgraded install would silently start a fresh folder and leave every
+// existing backup stranded in the old one.
+export const LEGACY_DRIVE_BACKUP_FOLDER_NAME = 'FloCafe Backups';
 
 const DEFAULT_RETENTION = 10;
 const MIN_RETENTION = 1;
@@ -398,7 +402,7 @@ class GoogleDriveService {
     if (!tokens.refresh_token) {
       // Google only issues a refresh_token on first consent (or with prompt=consent,
       // which we always pass) — without it we can't run unattended scheduled backups.
-      throw new Error('Google did not return a refresh token. Revoke FloCafe access at myaccount.google.com/permissions and try connecting again.');
+      throw new Error('Google did not return a refresh token. Revoke BuonApp access at myaccount.google.com/permissions and try connecting again.');
     }
     this.writeTokens(tokens);
 
@@ -591,6 +595,28 @@ class GoogleDriveService {
     const existing = found.data.files?.[0]?.id;
     if (existing) return existing;
 
+    // Adopt the pre-rename folder in place instead of starting an empty one.
+    const legacyFound = await drive.files.list({
+      q: `mimeType='application/vnd.google-apps.folder' and name='${LEGACY_DRIVE_BACKUP_FOLDER_NAME}' and trashed=false`,
+      fields: 'files(id, name)',
+      spaces: 'drive',
+      pageSize: 1,
+    }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+    this.throwIfStopping(signal);
+    const legacyId = legacyFound.data.files?.[0]?.id;
+    if (legacyId) {
+      try {
+        await drive.files.update({
+          fileId: legacyId,
+          requestBody: { name: DRIVE_BACKUP_FOLDER_NAME },
+        }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+      } catch {
+        // Renaming is cosmetic — the folder id is what gets stored and reused.
+      }
+      this.throwIfStopping(signal);
+      return legacyId;
+    }
+
     const created = await drive.files.create({
       requestBody: { name: DRIVE_BACKUP_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
       fields: 'id',
@@ -688,8 +714,8 @@ class GoogleDriveService {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(
           error || !code || returnedState !== state
-            ? '<html><body>Google Drive connection failed. You can close this window and try again in Flo Cafe.</body></html>'
-            : '<html><body>Google Drive connected. You can close this window and return to Flo Cafe.</body></html>'
+            ? '<html><body>Google Drive connection failed. You can close this window and try again in BuonApp.</body></html>'
+            : '<html><body>Google Drive connected. You can close this window and return to BuonApp.</body></html>'
         );
 
         if (error) return finish(() => reject(new Error(`Google authorization failed: ${error}`)));

@@ -34,7 +34,7 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
 
 async function loginAsOwner(page: Page): Promise<void> {
   await page.goto(`${BASE}/auth/login`);
-  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#email').fill('owner@buonapp.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/pos/**', { timeout: 20000 });
@@ -74,7 +74,7 @@ test.describe('Localized Error Fallbacks', () => {
 
     // 1. English (en)
     await page.goto(`${BASE}/auth/login`);
-    await page.locator('#email').fill('manager@flo.local');
+    await page.locator('#email').fill('manager@buonapp.local');
     await page.locator('#password').fill('WrongPassword!');
     await page.locator('button[type="submit"]').click();
     await expect(page.locator('text=Login failed')).toBeVisible();
@@ -86,7 +86,7 @@ test.describe('Localized Error Fallbacks', () => {
       localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'es' }, version: 3 }));
     });
     await page.goto(`${BASE}/auth/login`);
-    await page.locator('#email').fill('manager@flo.local');
+    await page.locator('#email').fill('manager@buonapp.local');
     await page.locator('#password').fill('WrongPassword!');
     await page.locator('button[type="submit"]').click();
     await expect(page.locator('text=No se pudo iniciar sesión')).toBeVisible();
@@ -98,7 +98,7 @@ test.describe('Localized Error Fallbacks', () => {
       localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'pt' }, version: 3 }));
     });
     await page.goto(`${BASE}/auth/login`);
-    await page.locator('#email').fill('manager@flo.local');
+    await page.locator('#email').fill('manager@buonapp.local');
     await page.locator('#password').fill('WrongPassword!');
     await page.locator('button[type="submit"]').click();
     await expect(page.locator('text=Falha no login')).toBeVisible();
@@ -110,7 +110,7 @@ test.describe('Localized Error Fallbacks', () => {
       localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'fa' }, version: 3 }));
     });
     await page.goto(`${BASE}/auth/login`);
-    await page.locator('#email').fill('manager@flo.local');
+    await page.locator('#email').fill('manager@buonapp.local');
     await page.locator('#password').fill('WrongPassword!');
     await page.locator('button[type="submit"]').click();
     await expect(page.locator('text=ورود ناموفق بود')).toBeVisible();
@@ -132,7 +132,7 @@ test.describe('Localized Error Fallbacks', () => {
       localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'fa' }, version: 3 }));
     });
     await page.goto(`${BASE}/auth/login`);
-    await page.locator('#email').fill('manager@flo.local');
+    await page.locator('#email').fill('manager@buonapp.local');
     await page.locator('#password').fill('WrongPassword!');
     await page.locator('button[type="submit"]').click();
 
@@ -159,7 +159,7 @@ test.describe('Localized Error Fallbacks', () => {
 
     // 1. English recover error
     await page.goto(`${BASE}/auth/recover`);
-    await page.locator('#recover-email').fill('owner@flo.local');
+    await page.locator('#recover-email').fill('owner@buonapp.local');
     await page.locator('#recover-pin').fill('9999');
     await page.locator('#new-password').fill('NewPass123!');
     await page.locator('#confirm-new-password').fill('NewPass123!');
@@ -174,7 +174,7 @@ test.describe('Localized Error Fallbacks', () => {
       localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'es' }, version: 3 }));
     });
     await page.goto(`${BASE}/auth/recover`);
-    await page.locator('#recover-email').fill('owner@flo.local');
+    await page.locator('#recover-email').fill('owner@buonapp.local');
     await page.locator('#recover-pin').fill('9999');
     await page.locator('#new-password').fill('NewPass123!');
     await page.locator('#confirm-new-password').fill('NewPass123!');
@@ -189,7 +189,7 @@ test.describe('Localized Error Fallbacks', () => {
       localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'fa' }, version: 3 }));
     });
     await page.goto(`${BASE}/auth/recover`);
-    await page.locator('#recover-email').fill('owner@flo.local');
+    await page.locator('#recover-email').fill('owner@buonapp.local');
     await page.locator('#recover-pin').fill('9999');
     await page.locator('#new-password').fill('NewPass123!');
     await page.locator('#confirm-new-password').fill('NewPass123!');

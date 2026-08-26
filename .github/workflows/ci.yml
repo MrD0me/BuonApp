@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# FloCafe — CI Validation
+# BuonApp — CI Validation
 # ---------------------------------------------------------------
 
 name: CI
@@ -223,7 +223,7 @@ jobs:
         env:
           CI: true
           REQUIRE_VISUAL_EVIDENCE: '1'
-          EVIDENCE_DIR: ${{ runner.temp }}/flocafe-release-regressions
+          EVIDENCE_DIR: ${{ runner.temp }}/buonapp-release-regressions
 
       - name: Run Playwright tests
         working-directory: frontend
@@ -242,7 +242,7 @@ jobs:
         if: always()
         with:
           name: release-regression-evidence
-          path: ${{ runner.temp }}/flocafe-release-regressions/
+          path: ${{ runner.temp }}/buonapp-release-regressions/
           if-no-files-found: ignore
           retention-days: 10
 

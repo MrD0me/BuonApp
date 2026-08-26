@@ -4,7 +4,7 @@ const BASE = process.env.E2E_BASE_URL || 'http://localhost:3001';
 
 test('KDS sidebar link selects the KDS tab after switching Settings tabs', async ({ page }) => {
   await page.goto(`${BASE}/auth/login`);
-  await page.getByLabel('Email').fill('manager@flo.local');
+  await page.getByLabel('Email').fill('manager@buonapp.local');
   await page.getByLabel('Password').fill('E2ePass123!');
   await page.getByRole('button', { name: 'Sign In' }).click();
 

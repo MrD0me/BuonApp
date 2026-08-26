@@ -1,8 +1,8 @@
-# FloUI
+# BuonApp UI
 
-**Frontend for FloCafe POS** — a Next.js 16 + React 19 application with Tailwind CSS v4 and shadcn/ui components.
+**Frontend for BuonApp POS** — a Next.js 16 + React 19 application with Tailwind CSS v4 and shadcn/ui components.
 
-FloUI is the user interface for the FloCafe point-of-sale system. It runs as a static export inside Electron and communicates with the local Express backend (`:3001`) and KDS server (`:3002`).
+BuonApp UI is the user interface for the BuonApp point-of-sale system. It runs as a static export inside Electron and communicates with the local Express backend (`:3001`) and KDS server (`:3002`).
 
 ## Features
 
@@ -106,7 +106,7 @@ src/
 
 ## API Communication
 
-FloUI communicates with the FloCafe backend via Axios:
+BuonApp UI communicates with the BuonApp backend via Axios:
 
 ```typescript
 import api from '@/lib/api';
@@ -130,9 +130,9 @@ Uses Zustand for global state:
 - **held-orders.ts** — Suspended/held orders
 - **pos-settings.ts** — POS configuration from backend
 
-## Integration with FloCafe
+## Integration with BuonApp
 
-FloUI is included directly in the FloCafe repo:
+BuonApp UI is included directly in the BuonApp repo:
 
 ```bash
 npm run build:frontend  # Builds static export to frontend/out/
@@ -150,4 +150,4 @@ The static export is served by the Electron main process.
 
 ## License
 
-MIT License — see [FloCafe License](https://github.com/FreeOpenSourcePOS/FloCafe/blob/main/license_instructions.md)
+MIT License — see [BuonApp License](https://github.com/MrD0me/BuonApp/blob/main/license_instructions.md)

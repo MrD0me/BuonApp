@@ -11,7 +11,7 @@ if (!fs.existsSync(EVIDENCE_DIR)) {
 test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({ page }) => {
   // Log in as owner for full administrative access
   await page.goto('http://localhost:3001/auth/login');
-  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#email').fill('owner@buonapp.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
   await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 15000 });

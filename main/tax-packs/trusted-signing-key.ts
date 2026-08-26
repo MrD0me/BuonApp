@@ -1,5 +1,5 @@
 /**
- * Public Ed25519 release-signing key for official FloCafe country packs.
+ * Public Ed25519 release-signing key for official BuonApp country packs.
  *
  * This is public verification material, not a credential. The corresponding
  * private key exists only as the TAX_PACK_SIGNING_KEY GitHub Actions secret.

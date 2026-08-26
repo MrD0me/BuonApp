@@ -6,7 +6,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
 
   // 1. Create a fresh order via POS API with pending kitchen status
   const loginRes = await page.request.post('http://localhost:3001/api/auth/login', {
-    data: { email: 'manager@flo.local', password: 'E2ePass123!' },
+    data: { email: 'manager@buonapp.local', password: 'E2ePass123!' },
   });
   expect(loginRes.ok()).toBeTruthy();
   const { access_token } = await loginRes.json();
@@ -28,7 +28,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   // 2. Open standalone KDS
   await page.goto('http://localhost:3002/kds-standalone');
   if (await page.getByTestId('kds-login-form').isVisible()) {
-    await page.getByTestId('kds-login-email').fill('manager@flo.local');
+    await page.getByTestId('kds-login-email').fill('manager@buonapp.local');
     await page.getByTestId('kds-login-password').fill('E2ePass123!');
     await page.getByTestId('kds-login-submit').click();
   }

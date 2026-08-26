@@ -20,12 +20,26 @@ type DraftLine = { product: Product; quantity: number; note: string };
 
 type ServerAppKey = keyof AppConfig['Messages']['serverApp'];
 
-const TOKEN_KEY = 'flocafe:server-app-token';
+const TOKEN_KEY = 'buonapp:server-app-token';
+const LEGACY_TOKEN_KEY = 'flocafe:server-app-token';
+
+// Carries a tableside device that paired before the BuonApp rename over to the
+// new key, so it does not get bounced back to the login screen mid-service.
+function readToken(): string | null {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) return token;
+  const legacy = localStorage.getItem(LEGACY_TOKEN_KEY);
+  if (legacy) {
+    localStorage.setItem(TOKEN_KEY, legacy);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  }
+  return legacy;
+}
 
 function createApi(): AxiosInstance {
   const api = axios.create({ baseURL: window.location.origin, timeout: 10000 });
   api.interceptors.request.use((config) => {
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = readToken();
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   });
