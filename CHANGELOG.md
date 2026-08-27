@@ -4,6 +4,22 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [4.0.1] - 2026-08-27
+
+The rename to BuonApp changed every name and none of the artwork. Until this release the app still shipped the upstream Flo mark — a blue glyph — as its Windows icon, its Store tiles, its PWA icons, its favicons, and the logo on the login screen.
+
+### Changed
+
+- **A new application icon, in two variants rather than one.** No single drawing serves both ends of the range: the full illustration collapses into an orange smudge at 16 and 24 pixels, which is the size a taskbar button and a browser favicon actually get. So the icon set is built from a simplified mark — a chef's hat over a phone, two colours, no background rays — up to 48px, and from the full illustration from 64px up. Every target is regenerated from those two: `icon.ico` (seven PNG entries, 16 through 256), `icon.icns`, the ten `assets/icon-*.png`, the macOS iconset, the thirty AppX tiles, the PWA icons, both favicons, the apple-touch icon, and the browser tab icon.
+- **A new logo**, without the "gestionale comande e sala" line. That line is 80 pixels tall inside a 1895-pixel lockup: at the size the login screen draws the logo it renders as five pixels of smear, so the in-app asset carries the mark and the wordmark only.
+- **The login and setup screens size the logo to its real proportions.** The new lockup is very nearly square where the old one was half again as wide as it was tall, and the `<img>` elements still declared the old dimensions, which would have stretched the new artwork sideways.
+- **The service worker cache key is `buonapp-v19`, was `flo-v18`.** `icon-192.png` and `icon-512.png` are precached, so without a new key an existing install would keep serving the old icons out of its cache no matter what shipped. The `activate` handler deletes every cache that is not the current one, so the change is enough to refresh them.
+- `docs/social-preview.html` draws the new mark. It was still loading `logo/Flo.svg` in two places.
+
+### Removed
+
+- The remains of the upstream mark, none of which any code referenced: `frontend/public/logo.svg` — the blue `#1324dc` Flo glyph, precached by the service worker and never rendered anywhere — along with `flo-logo.png`, `logo-white.png`, and the `logo/` directory. The `assets/icons/hicolor/**/flocafe.png` tree, which still carried the old project's name in its filenames, is regenerated as `buonapp.png`.
+
 ## [4.0.0] - 2026-08-27
 
 The release that turns a general-purpose café POS into a restaurant floor tool, and cuts the last tie to the upstream vendor. The dining room becomes a map with rooms, service days, and reservations; kitchen tickets print by round instead of reprinting the whole check; accented text and the euro sign print correctly; and the cloud bridge, the telemetry, and the dashboard are gone.

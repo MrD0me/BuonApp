@@ -1,10 +1,9 @@
-const CACHE_NAME = 'flo-v18';
+const CACHE_NAME = 'buonapp-v19';
 const PRECACHE_URLS = [
   '/pos',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
-  '/logo.svg',
 ];
 
 self.addEventListener('install', (event) => {
