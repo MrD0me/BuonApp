@@ -1,17 +1,21 @@
 /**
  * Verification test for Issue #241: Localized error and message surfaces across en, es, pt, fa.
  *
+ * The support-ticket surface this test used to cover is gone: filing a ticket went
+ * through the vendor cloud bridge, which was removed along with the whole `support.*`
+ * message namespace. What survives on the POS is a print-failure card that names the
+ * failure and shows the payload for whoever walks over to the printer, and its strings
+ * live under `pos.*` now.
+ *
  * Validates that:
- *  1. POS printer support-error card renders localized headers, messages, and action buttons
- *     (pos.printingFailed, pos.kotPrintFailed, pos.receiptPrintFailed, support.getHelp, support.dismiss)
+ *  1. POS print-failure card renders localized headers, messages, and action buttons
+ *     (pos.printingFailed, pos.kotPrintFailed, pos.printFailureDetail, pos.dismiss)
  *     while preserving raw English diagnostic error strings only inside the LTR telemetry payload.
  *  2. PrinterStatus component renders the localized pos.printerError text rather than the raw
  *     lastError string in its dropdown error banner.
  *  3. Settings DB import success handler displays the localized settings.importSuccess toast
  *     instead of the raw backend response message.
- *  4. Support ticket submission handler displays the localized support.queued toast
- *     instead of the raw backend message.
- *  5. Captures end-to-end visual HTML and screenshot PNG artifacts for all 4 languages in the evidence directory.
+ *  4. Captures end-to-end visual HTML and screenshot PNG artifacts for all 4 languages in the evidence directory.
  */
 
 import * as fs from 'fs';
@@ -224,12 +228,9 @@ async function run(): Promise<void> {
     'pos.kotPrintFailed',
     'pos.receiptPrintFailed',
     'pos.printerError',
+    'pos.printFailureDetail',
+    'pos.dismiss',
     'settings.importSuccess',
-    'support.getHelp',
-    'support.dismiss',
-    'support.queued',
-    'support.showPayload',
-    'support.requestQueued',
   ];
 
   // #375: prime the shared locale cache so synchronous t() resolves the
@@ -308,9 +309,9 @@ async function run(): Promise<void> {
   }
 
   // =========================================================================
-  // 3. Test POS Printer Support-Error Card (KOT & Receipt)
+  // 3. Test POS Print-Failure Card (KOT & Receipt)
   // =========================================================================
-  console.log('\n--- 3. POS Support-Error Card Rendering ---');
+  console.log('\n--- 3. POS Print-Failure Card Rendering ---');
   for (const lang of LANGUAGES) {
     usePosSettingsStore.setState({ language: lang });
 
@@ -337,7 +338,7 @@ async function run(): Promise<void> {
         React.createElement(
           'details',
           { className: 'mt-2 text-xs text-gray-500' },
-          React.createElement('summary', { className: 'cursor-pointer' }, t('support.showPayload', lang)),
+          React.createElement('summary', { className: 'cursor-pointer' }, t('pos.printFailureDetail', lang)),
           React.createElement(
             Ltr,
             { as: 'pre', className: 'mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs' },
@@ -346,16 +347,11 @@ async function run(): Promise<void> {
         ),
         React.createElement(
           'div',
-          { className: 'mt-3 flex gap-2' },
-          React.createElement(
-            'button',
-            { className: 'rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white' },
-            t('support.getHelp', lang),
-          ),
+          { className: 'mt-3' },
           React.createElement(
             'button',
             { className: 'rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700' },
-            t('support.dismiss', lang),
+            t('pos.dismiss', lang),
           ),
         ),
       );
@@ -366,21 +362,20 @@ async function run(): Promise<void> {
     // Asserts
     assert(cardMarkup.includes(t('pos.printingFailed', lang)), `Header not localized for ${lang}`);
     assert(cardMarkup.includes(t('pos.kotPrintFailed', lang)), `KOT message not localized for ${lang}`);
-    assert(cardMarkup.includes(t('support.getHelp', lang)), `Get help button not localized for ${lang}`);
-    assert(cardMarkup.includes(t('support.dismiss', lang)), `Dismiss button not localized for ${lang}`);
-    assert(cardMarkup.includes(t('support.showPayload', lang)), `Show payload summary not localized for ${lang}`);
+    assert(cardMarkup.includes(t('pos.dismiss', lang)), `Dismiss button not localized for ${lang}`);
+    assert(cardMarkup.includes(t('pos.printFailureDetail', lang)), `Failure detail summary not localized for ${lang}`);
     // Diagnostics JSON preserves raw English message inside LTR block
     assert(cardMarkup.includes(rawKotError), `Diagnostic payload must preserve raw English error`);
 
-    console.log(`  ✓ [${lang}] POS support-error card renders all UI strings localized with English payload`);
+    console.log(`  ✓ [${lang}] POS print-failure card renders all UI strings localized with English payload`);
 
     // Render HTML & Screenshot
-    const cardDocHtml = buildHtmlDocument(`POS Printer Support-Error Card (${lang})`, cardMarkup, lang);
+    const cardDocHtml = buildHtmlDocument(`POS Print-Failure Card (${lang})`, cardMarkup, lang);
     const cardHtmlPath = path.join(EVIDENCE_DIR, `pos-printer-error-card-${lang}.html`);
     const cardPngPath = path.join(EVIDENCE_DIR, `pos-printer-error-card-${lang}.png`);
     fs.writeFileSync(cardHtmlPath, cardDocHtml, 'utf8');
     if (await renderScreenshotWithPlaywright(cardDocHtml, cardPngPath)) {
-      generatedArtifacts.push({ kind: 'screenshot', label: `POS printer support-error card (${lang.toUpperCase()})`, path: cardPngPath });
+      generatedArtifacts.push({ kind: 'screenshot', label: `POS print-failure card (${lang.toUpperCase()})`, path: cardPngPath });
     }
   }
 
@@ -420,40 +415,6 @@ async function run(): Promise<void> {
     fs.writeFileSync(toastHtmlPath, toastDocHtml, 'utf8');
     if (await renderScreenshotWithPlaywright(toastDocHtml, toastPngPath, 500, 200)) {
       generatedArtifacts.push({ kind: 'screenshot', label: `Settings import success toast (${lang.toUpperCase()})`, path: toastPngPath });
-    }
-  }
-
-  // =========================================================================
-  // 5. Test Support Ticket Submission Success Toast
-  // =========================================================================
-  console.log('\n--- 5. Support Ticket Submission Success Toast ---');
-  for (const lang of LANGUAGES) {
-    const rawBackendData = { client_ticket_id: 'ticket-987123', message: 'Support ticket queued to local spooler' };
-
-    // Function matching SupportPage handleSubmit behavior:
-    const simulateSupportSubmit = (_res: typeof rawBackendData) => {
-      return t('support.queued', lang);
-    };
-
-    const toastMessage = simulateSupportSubmit(rawBackendData);
-    const expectedToast = t('support.queued', lang);
-    assert(toastMessage === expectedToast, `Support submit toast mismatch for ${lang}`);
-    assert(toastMessage !== rawBackendData.message, `Support submit toast leaked backend English message`);
-
-    console.log(`  ✓ [${lang}] Support submit success toast: "${toastMessage}"`);
-
-    const toastHtml = `
-      <div class="toast-preview">
-        <div class="toast-success-icon">✓</div>
-        <div class="font-medium">${toastMessage}</div>
-      </div>
-    `;
-    const toastDocHtml = buildHtmlDocument(`Support Ticket Queued Toast (${lang})`, toastHtml, lang);
-    const toastHtmlPath = path.join(EVIDENCE_DIR, `support-queued-toast-${lang}.html`);
-    const toastPngPath = path.join(EVIDENCE_DIR, `support-queued-toast-${lang}.png`);
-    fs.writeFileSync(toastHtmlPath, toastDocHtml, 'utf8');
-    if (await renderScreenshotWithPlaywright(toastDocHtml, toastPngPath, 500, 200)) {
-      generatedArtifacts.push({ kind: 'screenshot', label: `Support queued success toast (${lang.toUpperCase()})`, path: toastPngPath });
     }
   }
 
