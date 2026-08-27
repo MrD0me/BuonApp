@@ -45,7 +45,9 @@ test('Batch 5C Pages (Orders, Tables, Customers, OrderHistoryGrid) render correc
   await page.goto(`${BASE}/tables`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tables');
-  await expect(page.getByText('Add Table')).toBeVisible();
+  // The page opens in service mode, where 'Add Table' does not exist: it lives
+  // inside edit mode. The control that is always there is the mode toggle.
+  await expect(page.getByText('Edit map')).toBeVisible();
   await captureScreenshot(page, 'tables-en.png');
 
   // 1d. Customers (EN)
@@ -81,7 +83,7 @@ test('Batch 5C Pages (Orders, Tables, Customers, OrderHistoryGrid) render correc
     await page.goto(`${BASE}/tables`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('میزها');
-    await expect(page.getByText('افزودن میز')).toBeVisible();
+    await expect(page.getByText('ویرایش نقشه')).toBeVisible();
     await captureScreenshot(page, 'tables-fa.png');
 
     // 2d. Customers (FA)
