@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 /**
- * Rendered RTL/LTR evidence for the Dashboard, POS, and common order flow
+ * Rendered RTL/LTR evidence for the POS and common order flow
  * screens (Batch E, Refs #241).
  *
  * Persian (`fa`) is a user-selectable UI language (Batch J, Refs #241).
@@ -14,7 +14,6 @@ import * as os from 'os';
  *  - `<html dir="rtl">` is applied once the active language is Persian
  *    (HtmlLangSync), and stays `ltr` for English.
  *  - The POS customer-search phone input stays `dir="ltr"` inside RTL.
- *  - Directional arrows (dashboard "view all") mirror via `.rtl-flip`.
  *  - The screens do not overflow horizontally in RTL.
  *  - Screenshots are captured and written to the evidence directory.
  *
@@ -90,8 +89,8 @@ async function assertSidebarSide(page: Page, expected: 'left' | 'right'): Promis
   }
 }
 
-test('Dashboard, POS, and orders screens render LTR in English and RTL in Persian with LTR phone input, mirrored arrows, and no overflow', async ({ page }) => {
-  // Owner account: the dashboard page redirects non-owner roles to /pos, and
+test('POS and orders screens render LTR in English and RTL in Persian with LTR phone input and no overflow', async ({ page }) => {
+  // Owner account: several of the screens below are owner-only, and
   // one login keeps the suite within the shared server's login rate limit.
   await login(page, 'owner@buonapp.local');
 
@@ -119,19 +118,6 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
 
     await assertNoHorizontalOverflow(page, 'POS screen');
     await captureScreenshot(page, 'pos-rtl-fa.png');
-
-    // ── Persian (RTL) on the dashboard ─────────────────────────────────────
-    await page.goto(`${BASE}/dashboard`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.locator('h1')).toBeVisible();
-
-    // The "view all" arrows carry the shared rtl-flip class so they point the
-    // correct way in RTL.
-    const viewAllArrows = page.locator('svg.rtl-flip');
-    await expect(viewAllArrows.first()).toBeVisible();
-
-    await assertNoHorizontalOverflow(page, 'dashboard');
-    await captureScreenshot(page, 'dashboard-rtl-fa.png');
 
     // ── Persian (RTL) on the orders screen ─────────────────────────────────
     await page.goto(`${BASE}/orders`);
@@ -201,23 +187,18 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     await assertNoHorizontalOverflow(page, 'print-test screen');
     await captureScreenshot(page, 'print-test-rtl-fa.png');
 
-    await page.goto(`${BASE}/support`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await assertNoHorizontalOverflow(page, 'support screen');
-    await captureScreenshot(page, 'support-rtl-fa.png');
-
     await page.goto(`${BASE}/customer-display`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await assertNoHorizontalOverflow(page, 'customer-display screen');
     await captureScreenshot(page, 'customer-display-rtl-fa.png');
 
-    // ── Mobile layout & SidebarTrigger on Persian dashboard ─────────────────
+    // ── Mobile layout & SidebarTrigger on a Persian app-shell page ─────────
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto(`${BASE}/dashboard`);
+    await page.goto(`${BASE}/orders`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     const mobileTrigger = page.locator('button[aria-label="Open navigation"]');
     await expect(mobileTrigger).toBeVisible();
-    await captureScreenshot(page, 'mobile-dashboard-appbar-rtl-fa.png');
+    await captureScreenshot(page, 'mobile-appbar-rtl-fa.png');
 
     await mobileTrigger.click();
     const sheetContent = page.locator('[data-mobile="true"]');

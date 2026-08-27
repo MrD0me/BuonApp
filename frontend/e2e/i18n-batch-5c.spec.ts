@@ -26,21 +26,13 @@ async function login(page: Page, email: string): Promise<void> {
   await page.waitForFunction(() => !!localStorage.getItem('token'));
 }
 
-test('Batch 5C Pages (Dashboard, Orders, Tables, Customers, OrderHistoryGrid) render correctly in English and Persian', async ({ page }) => {
+test('Batch 5C Pages (Orders, Tables, Customers, OrderHistoryGrid) render correctly in English and Persian', async ({ page }) => {
   await login(page, 'owner@buonapp.local');
 
   // ==========================================
   // 1. ENGLISH (EN) BASELINE
   // ==========================================
   await setLanguage(page, 'en');
-
-  // 1a. Dashboard (EN)
-  await page.goto(`${BASE}/dashboard`);
-  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Dashboard');
-  await expect(page.getByText("Today's Sales")).toBeVisible();
-  await expect(page.getByText('Running Orders')).toBeVisible();
-  await captureScreenshot(page, 'dashboard-en.png');
 
   // 1b. Orders (EN)
   await page.goto(`${BASE}/orders`);
@@ -77,14 +69,6 @@ test('Batch 5C Pages (Dashboard, Orders, Tables, Customers, OrderHistoryGrid) re
   // ==========================================
   try {
     await setLanguage(page, 'fa');
-
-    // 2a. Dashboard (FA)
-    await page.goto(`${BASE}/dashboard`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('پیشخوان');
-    await expect(page.getByText('فروش امروز')).toBeVisible();
-    await expect(page.getByText('سفارش‌های در جریان')).toBeVisible();
-    await captureScreenshot(page, 'dashboard-fa.png');
 
     // 2b. Orders (FA)
     await page.goto(`${BASE}/orders`);

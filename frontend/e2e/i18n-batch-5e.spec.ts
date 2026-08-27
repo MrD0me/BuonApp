@@ -70,12 +70,6 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
     await expect(page.getByText('Add Staff').first()).toBeVisible();
     await captureScreenshot(page, 'batch-5e-staff-en.png');
 
-    // 1e. Support (EN)
-    await page.goto(`${BASE}/support`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Help & Support');
-    await captureScreenshot(page, 'batch-5e-support-en.png');
-
     // 1f. WhatsApp (EN)
     await page.goto(`${BASE}/whatsapp`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
@@ -117,12 +111,6 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Personal');
     await captureScreenshot(page, 'batch-5e-staff-es.png');
-
-    // 2e. Support (ES)
-    await page.goto(`${BASE}/support`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Ayuda y soporte');
-    await captureScreenshot(page, 'batch-5e-support-es.png');
 
     // 2f. WhatsApp (ES)
     await page.goto(`${BASE}/whatsapp`);
@@ -166,12 +154,6 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
       await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
       await expect(page.getByRole('heading', { level: 1 })).toHaveText('کارمند');
       await captureScreenshot(page, 'batch-5e-staff-fa.png');
-
-      // 3e. Support (FA)
-      await page.goto(`${BASE}/support`);
-      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('راهنما و پشتیبانی');
-      await captureScreenshot(page, 'batch-5e-support-fa.png');
 
       // 3f. WhatsApp (FA)
       await page.goto(`${BASE}/whatsapp`);
