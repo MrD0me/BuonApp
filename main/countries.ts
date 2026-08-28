@@ -84,7 +84,7 @@ const SUPPORTED: Record<string, Row> = {
   // Eurozone
   DE: { locale: 'de-DE', currency: 'EUR', tz: 'Europe/Berlin' },
   FR: { locale: 'fr-FR', currency: 'EUR', tz: 'Europe/Paris' },
-  IT: { locale: 'it-IT', currency: 'EUR', tz: 'Europe/Rome' },
+  IT: { locale: 'it-IT', currency: 'EUR', tz: 'Europe/Rome',                    taxIdLabel: 'P.IVA' },
   ES: { locale: 'es-ES', currency: 'EUR', tz: 'Europe/Madrid' },
   PT: { locale: 'pt-PT', currency: 'EUR', tz: 'Europe/Lisbon' },
   NL: { locale: 'nl-NL', currency: 'EUR', tz: 'Europe/Amsterdam' },
