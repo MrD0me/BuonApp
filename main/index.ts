@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, session, Tray, nativeImage, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -222,14 +222,29 @@ migrateLegacyUserData();
 
 gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
-  console.log('[Lock] Another instance is already running. Quitting.');
+  // The instance holding the lock can be invisible — hidden in the tray, or
+  // left over from a run whose window is gone. Quitting quietly with code 0
+  // made `npm run dev` look like it had done its job while nothing started,
+  // so say what is in the way and fail loudly in development.
+  console.error('[Lock] Another BuonApp instance already holds the lock. Quitting.');
+  if (isDev) {
+    console.error('[Lock] It may be hidden in the system tray, or left over from an earlier run.');
+    console.error('[Lock] Quit it from the tray icon, or run `npm run clean` to stop leftover dev instances.');
+  }
   app.quit();
-  process.exit(0);
+  process.exit(isDev ? 1 : 0);
 }
 
 if (gotSingleInstanceLock) {
   // Focus the existing window if a second launch is attempted.
   app.on('second-instance', () => {
+    // A destroyed window with a live process (crash recovery, or a shutdown
+    // that never finished) used to make every relaunch a silent no-op. Give
+    // the running instance its window back instead.
+    if (!isQuitting && (!mainWindow || mainWindow.isDestroyed())) {
+      createWindow();
+      return;
+    }
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -783,6 +798,13 @@ app.on('activate', () => {
 
 // --- Cleanup function (idempotent — safe to call from every entrypoint) ---
 const cleanupCoordinator = createShutdownCoordinator(() => [
+  // Destroying a window does not close the sockets Chromium's network service
+  // opened for it: the KDS WebSocket and the keep-alive pool stay up, and the
+  // listeners below then wait on a client that can no longer answer their
+  // close handshake. Every quit used to burn the full emergency timeout there
+  // and abort the rest of cleanup — the database close included. Cutting the
+  // app's own connections first lets each server drain in milliseconds.
+  { name: 'renderer connections', run: () => session.defaultSession.closeAllConnections(), blocksDatabase: true },
   {
     name: 'tray',
     run: () => {
@@ -825,7 +847,11 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   },
   onShutdownRequested: requestWhatsAppShutdown,
   destroyWindow: () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+    // Every window, not only the main one: a detached KDS or print window
+    // holds the same kind of connection to the servers that are draining.
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.destroy();
+    }
   },
   reportFailure: (context, error) => {
     console.error(`[BuonApp] Cleanup failed before ${context}:`, error);

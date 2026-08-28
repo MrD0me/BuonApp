@@ -6,7 +6,7 @@ import path from 'node:path';
 
 // Import kill-ports functions
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { isBuonAppProcess, BUONAPP_PATTERNS } = require('../kill-ports.js');
+const { isBuonAppProcess, BUONAPP_PATTERNS, isProjectDevInstance } = require('../kill-ports.js');
 
 const rootDir = path.resolve(__dirname, '..');
 const resetScript = path.join(rootDir, 'scripts/dev/nuclear-reset.sh');
@@ -95,6 +95,37 @@ function runTest() {
   }
 
   console.log('✓ kill-ports.js pattern matching verified');
+
+  console.log('Testing kill-ports.js leftover dev instance identity...');
+
+  // A dev instance that has already released its ports still owns the Electron
+  // single-instance lock, and the next launch quits on the spot. Port scanning
+  // cannot see it, so it is matched by this checkout's own Electron binary.
+  const projectRoot = '/home/dev/BuonApp';
+  const devElectron = path.join(projectRoot, 'node_modules', 'electron');
+
+  const devInstanceCases: Array<[string, boolean]> = [
+    [`${path.join(devElectron, 'dist', 'electron')} .`, true],
+    [`node ${path.join(devElectron, 'cli.js')} .`, true],
+    // Helper processes go down with the main one; naming them is only noise.
+    [`${path.join(devElectron, 'dist', 'electron')} --type=renderer --app-path=${projectRoot}`, false],
+    // A test suite drives the same binary and must survive `npm run clean`.
+    [`${path.join(devElectron, 'dist', 'electron')} ${path.join(projectRoot, 'tests', 'smoke-test.test.js')}`, false],
+    // Neither the installed app nor another checkout is in range.
+    ['/opt/BuonApp/buonapp --no-sandbox', false],
+    [`${path.join('/home/dev/other-app', 'node_modules', 'electron', 'dist', 'electron')} .`, false],
+    ['', false],
+  ];
+
+  for (const [cmd, expected] of devInstanceCases) {
+    assert.strictEqual(
+      isProjectDevInstance(cmd, projectRoot),
+      expected,
+      `Expected isProjectDevInstance("${cmd}") to be ${expected}`,
+    );
+  }
+
+  console.log('✓ kill-ports.js leftover dev instance identity verified');
 
   console.log('Testing scripts/dev/nuclear-reset.sh confirmation guard...');
 

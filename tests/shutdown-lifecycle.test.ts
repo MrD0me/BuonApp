@@ -9,6 +9,7 @@ import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import {
   closeServerResources,
+  closeWebSocketServer,
   cancelHttpShutdownWork,
   createExitCodeAwareShutdown,
   createShutdownCoordinator,
@@ -17,6 +18,8 @@ import {
   runShutdownSteps,
   trackHttpRequestWork,
   waitForHttpShutdownWork,
+  SHUTDOWN_TIMEOUT_MS,
+  WEBSOCKET_DRAIN_GRACE_MS,
 } from '../main/shutdown';
 import { startStandaloneServers } from '../main/standalone-startup';
 
@@ -242,6 +245,78 @@ async function testHttpStopsAcceptingBeforeSlowWebSocketDrain(): Promise<void> {
   }
 }
 
+async function testWebSocketDrainCutsUnreachableClient(): Promise<void> {
+  // A tablet that lost its network never answers the closing handshake, and
+  // its socket still looks open. The drain must cut it once the grace window
+  // is over instead of waiting out the shutdown timeout.
+  let terminated = false;
+  let closeListener: (() => void) | null = null;
+  const unreachableClient = {
+    readyState: WebSocket.OPEN,
+    close: () => {},
+    once: (event: string, listener: () => void) => { if (event === 'close') closeListener = listener; },
+    off: () => {},
+    terminate: () => { terminated = true; closeListener?.(); },
+  };
+  const wss = {
+    clients: new Set([unreachableClient]),
+    close: (callback: () => void) => { callback(); },
+  } as any;
+
+  const started = Date.now();
+  await closeWebSocketServer(wss, 'unreachable client test', SHUTDOWN_TIMEOUT_MS, 50);
+  const elapsed = Date.now() - started;
+  assert.equal(terminated, true, 'the grace window cuts a client that never answers the handshake');
+  assert.ok(
+    elapsed < SHUTDOWN_TIMEOUT_MS / 2,
+    `shutdown does not wait out the emergency timeout for an unreachable client (took ${elapsed}ms)`,
+  );
+
+  // A client that drops mid-handshake reports an error on a connection that
+  // was closing anyway: shutdown carries on so the database still gets closed.
+  const droppingClient = {
+    readyState: WebSocket.OPEN,
+    close: () => { throw new Error('ECONNRESET'); },
+    once: () => {},
+    off: () => {},
+    terminate: () => {},
+  };
+  await closeWebSocketServer(
+    { clients: new Set([droppingClient]), close: (callback: () => void) => callback() } as any,
+    'dropped client test',
+  );
+}
+
+async function testWebSocketDrainCutsSilentRealClient(): Promise<void> {
+  // The same case against a real ws client whose socket stops reading, which
+  // is what an out-of-range device looks like from the server's side.
+  const server = http.createServer((_request, response) => response.end('ok'));
+  const wss = new (await import('ws')).WebSocketServer({ server });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+
+  const wsClient = new WebSocket(`ws://127.0.0.1:${address.port}`);
+  wsClient.on('error', () => {});
+  await once(wsClient, 'open');
+  // Stop the client from reading, so it never answers the server's close frame.
+  (wsClient as unknown as { _socket: net.Socket })._socket.pause();
+
+  const started = Date.now();
+  await closeServerResources(server, wss, 'silent client test');
+  const elapsed = Date.now() - started;
+  assert.ok(
+    elapsed < SHUTDOWN_TIMEOUT_MS,
+    `a silent client cannot hold shutdown past the emergency timeout (took ${elapsed}ms)`,
+  );
+  assert.ok(
+    elapsed >= WEBSOCKET_DRAIN_GRACE_MS - 100,
+    `a client still gets its grace window to answer (took ${elapsed}ms)`,
+  );
+  assert.equal(server.listening, false, 'the HTTP listener is closed once the drain finishes');
+  wsClient.terminate();
+}
+
 async function testTrackedHttpHandlerDrain(): Promise<void> {
   let releaseHandler: (() => void) | null = null;
   let requestStarted: (() => void) | null = null;
@@ -368,15 +443,17 @@ async function testEntrypointCoverage(): Promise<void> {
     let cleanupCalls = 0;
     let windowDestroyCalls = 0;
     let quittingCalls = 0;
+    const order: string[] = [];
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
       cleanup: async () => {
         cleanupCalls++;
+        order.push('cleanup');
         await delay(5);
       },
       setQuitting: () => { quittingCalls++; },
-      destroyWindow: () => { windowDestroyCalls++; },
+      destroyWindow: () => { windowDestroyCalls++; order.push('destroy-window'); },
     });
 
     const cleanupPromise = entrypoints.runCleanup();
@@ -389,7 +466,9 @@ async function testEntrypointCoverage(): Promise<void> {
     assert.equal(cleanupCalls, 1, `${signal} runs cleanup once`);
     assert.deepEqual(process.exitCodes, [0], `${signal} exits once after repeated signals`);
     assert.equal(quittingCalls, 1, `${signal} marks the app as quitting`);
-    assert.equal(windowDestroyCalls, 0, `${signal} does not destroy the window through the quit path`);
+    // The renderer holds sockets on the servers cleanup is about to drain, so
+    // it is detached first on this path too — once, however many signals land.
+    assert.equal(windowDestroyCalls, 1, `${signal} destroys the window once`);
   };
 
   for (const [label, trayQuit] of [['normal quit', false], ['tray quit', true]] as const) {
@@ -398,15 +477,17 @@ async function testEntrypointCoverage(): Promise<void> {
     let cleanupCalls = 0;
     let windowDestroyCalls = 0;
     let quittingCalls = 0;
+    const order: string[] = [];
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
       cleanup: async () => {
         cleanupCalls++;
+        order.push('cleanup');
         await delay(5);
       },
       setQuitting: () => { quittingCalls++; },
-      destroyWindow: () => { windowDestroyCalls++; },
+      destroyWindow: () => { windowDestroyCalls++; order.push('destroy-window'); },
     });
     const firstWillQuit = { prevented: false, preventDefault: () => { firstWillQuit.prevented = true; } };
     app.emit('before-quit');
@@ -418,7 +499,14 @@ async function testEntrypointCoverage(): Promise<void> {
     assert.equal(app.quitCount, 1, `${label} resumes Electron quit after cleanup`);
     assert.equal(cleanupCalls, 1, `${label} runs cleanup once`);
     assert.equal(quittingCalls, trayQuit ? 3 : 2, `${label} marks both quit entrypoints as quitting`);
-    assert.equal(windowDestroyCalls, 1, `${label} destroys the window after cleanup`);
+    // Order matters: a live renderer keeps sockets open on the servers that
+    // cleanup drains, and waiting for them burned the emergency timeout.
+    assert.deepEqual(
+      order.slice(0, 2),
+      ['destroy-window', 'cleanup'],
+      `${label} detaches the window before cleanup drains the servers`,
+    );
+    assert.equal(windowDestroyCalls, 1, `${label} destroys the window once`);
 
     const secondWillQuit = { prevented: false, preventDefault: () => { secondWillQuit.prevented = true; } };
     app.emit('will-quit', secondWillQuit);
@@ -818,6 +906,8 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   console.log('phase resources');
   await testActiveHttpAndWebSocketDrain();
   await testHttpStopsAcceptingBeforeSlowWebSocketDrain();
+  await testWebSocketDrainCutsUnreachableClient();
+  await testWebSocketDrainCutsSilentRealClient();
   await testTrackedHttpHandlerDrain();
   await testTimedOutHttpHandlerBarrier();
   await testPendingHttpListenIsCancelled();

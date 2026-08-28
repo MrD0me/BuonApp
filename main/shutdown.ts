@@ -8,6 +8,16 @@ import { WebSocket, type WebSocketServer } from 'ws';
  */
 export const SHUTDOWN_TIMEOUT_MS = 10_000;
 
+/**
+ * How long a WebSocket client gets to answer the closing handshake before its
+ * socket is cut. A browser that is still there replies in milliseconds; a
+ * tablet that lost its network never will, and TCP keeps reporting its socket
+ * as open for minutes. Waiting on that one until SHUTDOWN_TIMEOUT_MS turned an
+ * unreachable device into a failed shutdown, which stopped cleanup before the
+ * database was closed.
+ */
+export const WEBSOCKET_DRAIN_GRACE_MS = 1_500;
+
 export function createShutdownCancellationError(label: string): Error & { code: string } {
   const error = new Error(`${label} startup cancelled during shutdown`) as Error & { code: string };
   error.code = 'ERR_SHUTDOWN_ABORTED';
@@ -255,11 +265,23 @@ function drainWebSocketClients(wss: WebSocketServer, onError: (error: unknown) =
 }
 
 /** Close WebSocket clients/server and wait for the ws close callback. */
-export function closeWebSocketServer(wss: WebSocketServer, label: string, timeoutMs = SHUTDOWN_TIMEOUT_MS): Promise<void> {
-  let clientCloseError: unknown;
+export function closeWebSocketServer(
+  wss: WebSocketServer,
+  label: string,
+  timeoutMs = SHUTDOWN_TIMEOUT_MS,
+  graceMs = WEBSOCKET_DRAIN_GRACE_MS,
+): Promise<void> {
+  // A client that drops during shutdown (a tablet going out of range, a
+  // browser killed mid-service) reports a socket error on a connection that
+  // was being closed anyway. That says nothing about the state of the data, so
+  // it is logged rather than failing the step and blocking the database close.
   const clientsPromise = drainWebSocketClients(wss, (error) => {
-    clientCloseError ??= error;
+    console.warn(`[Shutdown] ${label} client did not close cleanly:`, error);
   });
+
+  // Cut whatever has not answered the handshake by the end of the grace
+  // window, so one unreachable device cannot hold the whole shutdown open.
+  const graceTimer = setTimeout(() => terminateWebSocketClients(wss), Math.min(graceMs, timeoutMs));
 
   const serverPromise = new Promise<void>((resolve, reject) => {
     try {
@@ -278,9 +300,9 @@ export function closeWebSocketServer(wss: WebSocketServer, label: string, timeou
       }
     }
   });
-  const closePromise = Promise.all([serverPromise, clientsPromise]).then(() => {
-    if (clientCloseError) throw clientCloseError;
-  });
+  const closePromise = Promise.all([serverPromise, clientsPromise])
+    .finally(() => clearTimeout(graceTimer))
+    .then(() => undefined);
 
   return withShutdownTimeout(closePromise, label, () => terminateWebSocketClients(wss), timeoutMs);
 }
@@ -447,10 +469,16 @@ export function createShutdownEntrypoints({
     if (quitAfterCleanupRequested) return;
     quitAfterCleanupRequested = true;
     requestShutdown();
+    // The window goes before the servers drain, not after. A live renderer
+    // keeps keep-alive sockets and the KDS WebSocket open on the main server,
+    // and http.Server.close() waits for them: every quit ran into the
+    // emergency timeout, which aborts the remaining steps — including the
+    // database close. Quit has already been requested at this point, so the
+    // window has nothing left to save.
+    destroyWindow();
     void runCleanup().then(
       () => {
         const exitCode = getQuitExitCode();
-        destroyWindow();
         if (exitCode === 0) app.quit();
         else app.exit(exitCode);
       },
@@ -481,6 +509,9 @@ export function createShutdownEntrypoints({
     }
     signalExitRequested = true;
     requestShutdown();
+    // Same reason as the quit path: a renderer still attached to the servers
+    // would hold their listeners open until the emergency timeout fires.
+    destroyWindow();
     void runCleanup().then(
       () => process.exit(getSignalExitCode()),
       (error) => {

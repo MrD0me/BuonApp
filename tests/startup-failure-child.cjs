@@ -55,13 +55,14 @@ Module._load = function (request, parent, isMain) {
   if (request === 'electron') {
     return {
       app,
-      BrowserWindow: class {},
+      BrowserWindow: class { static getAllWindows() { return []; } },
       ipcMain: { handle() {} },
       dialog: { showErrorBox: () => { events.push('dialog.showErrorBox'); } },
       Menu: { buildFromTemplate: () => ({}), setApplicationMenu() {} },
       Tray: class {},
       nativeImage: { createFromPath: () => ({ resize: () => ({}) }) },
       shell: { openExternal: () => Promise.resolve() },
+      session: { defaultSession: { closeAllConnections: async () => { events.push('connections.close'); } } },
     };
   }
   if (request === 'electron-log/main' || request === 'electron-log') return log;
@@ -136,6 +137,7 @@ setTimeout(() => {
     ? [
       'database.init',
       'server.start',
+      'connections.close',
       'server-app.stop',
       'server.stop',
       'kds.stop',
@@ -147,6 +149,7 @@ setTimeout(() => {
     : [
       'database.init',
       'dialog.showErrorBox',
+      'connections.close',
       'server-app.stop',
       'server.stop',
       'kds.stop',

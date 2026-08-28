@@ -1,6 +1,6 @@
 {
   "name": "buonapp",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "description": "Free, open-source, offline-first POS for restaurant table service: floor map, service days, reservations, ESC/POS kitchen tickets, and a local SQLite database.",
   "engines": {
     "node": ">=22.12.0"

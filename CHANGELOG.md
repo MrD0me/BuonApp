@@ -4,6 +4,22 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [4.1.1] - 2026-08-28
+
+Quitting the app never actually finished. Every shutdown — from the menu, the
+tray, or a signal — spent ten seconds waiting on connections that could not
+answer, then gave up partway through cleanup, before the database was closed.
+The process that stayed behind held Electron's single-instance lock, and the
+next launch quit on the spot without saying why.
+
+### Fixed
+
+- **Shutdown no longer waits ten seconds and then abandons cleanup.** Destroying the window does not close the sockets Chromium's network service opened for it: the KDS WebSocket and the keep-alive pool stayed up, `http.Server.close()` waited on them, and the emergency timeout fired on every quit. A timeout is treated as fatal, so cleanup stopped there — the KDS server, Google Drive, WhatsApp, and mDNS were never stopped and `closeDatabase()` never ran, leaving the WAL for the next launch to recover. Cleanup now cuts the app's own connections first, and quitting takes about a quarter of a second with the database closed properly.
+- **A client that cannot answer no longer holds shutdown hostage.** A tablet that lost its network, or a browser killed mid-service, never replies to the closing handshake, and TCP keeps reporting its socket as open for minutes. WebSocket clients now get a short grace window before their sockets are cut, and a client that drops with a socket error is logged instead of failing the step — neither says anything about the state of the data, and both used to stop the database from being closed.
+- **A leftover instance says what it is.** Losing the single-instance lock logged one line and exited 0, so `npm run dev` looked like it had done its job while nothing started. It now names the likely cause — an instance hidden in the tray, or left over from an earlier run — and exits non-zero in development.
+- **A second launch repairs an instance whose window is gone.** `second-instance` only ever re-showed an existing window, so a process that had lost its window (crash recovery, or a shutdown that stopped halfway) ignored every relaunch forever. It recreates the window instead.
+- **`npm run clean` stops a development instance.** It matched processes by name against patterns like `buonapp.exe` and `--appName=buonapp`, and a dev run is neither — it is this checkout's bare Electron binary, which the port scan reported as somebody else's process and left running. It is now recognised on the ports it holds, and swept by the path it was launched from when it holds none, which is exactly the state a leftover instance is in. Helper processes, test runs, the installed app, and other checkouts stay out of range.
+
 ## [4.1.0] - 2026-08-28
 
 The taxation module is gone. This install never issued a fiscal document — the

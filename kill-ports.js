@@ -8,6 +8,7 @@
  */
 const { execSync, exec } = require('child_process');
 const os = require('os');
+const path = require('path');
 
 // ── Validate args ───────────────────────────────────────────────────────────
 const ports = process.argv.slice(2)
@@ -51,6 +52,30 @@ function isBuonAppProcess(cmdline) {
 
 function isValidPid(pid) {
   return typeof pid === 'string' && /^\d+$/.test(pid) && Number(pid) > 0;
+}
+
+// ── Identity: a leftover dev instance of THIS checkout ──────────────────────
+// A dev instance that has already released its ports still owns the Electron
+// single-instance lock, and the next `electron .` then quits on the spot. Port
+// scanning cannot see it, so match it by the Electron binary it was launched
+// from: that path is unique to this working copy, which keeps the installed
+// app and every other project out of range.
+
+function normalizeProcessPath(value) {
+  return String(value).replace(/\\/g, '/').toLowerCase();
+}
+
+function isProjectDevInstance(cmdline, projectRoot) {
+  if (!cmdline) return false;
+  const normalized = normalizeProcessPath(cmdline);
+  const electronDir = normalizeProcessPath(path.join(projectRoot, 'node_modules', 'electron'));
+  if (!normalized.includes(electronDir)) return false;
+  // Only the main process. Its renderer, GPU, and network helpers carry
+  // --type= and go down with it, so naming them here would just be noise.
+  if (/\s--type=/.test(normalized)) return false;
+  // The test harness drives the same binary; `npm run dev` must not shoot down
+  // a suite that is halfway through a run.
+  return !normalized.includes(normalizeProcessPath(path.join(projectRoot, 'tests')));
 }
 
 // ── Find processes on a port (cross-platform) ───────────────────────────────
@@ -218,9 +243,13 @@ function gracefulKillWindows(pid) {
           if (checkError || !new RegExp(`\\b${pid}\\b`).test(stdout)) return resolve(true);
           exec(`taskkill /F /PID ${pid} 2>nul`, { shell: 'cmd.exe' }, (killError) => {
             if (killError) return resolve(false);
-            exec(`tasklist /FI "PID eq ${pid}" /NH`, { shell: 'cmd.exe' }, (afterError, afterStdout) => {
-              resolve(Boolean(afterError) || !new RegExp(`\\b${pid}\\b`).test(afterStdout));
-            });
+            // Windows takes a moment to retire the process entry, and checking
+            // straight away reported a successful kill as a failure.
+            setTimeout(() => {
+              exec(`tasklist /FI "PID eq ${pid}" /NH`, { shell: 'cmd.exe' }, (afterError, afterStdout) => {
+                resolve(Boolean(afterError) || !new RegExp(`\\b${pid}\\b`).test(afterStdout));
+              });
+            }, 500);
           });
         });
       }, 2000);
@@ -237,8 +266,12 @@ async function killPort(port) {
     return;
   }
 
-  const buonAppProcs = procs.filter((p) => isBuonAppProcess(p.cmdline));
-  const otherProcs = procs.filter((p) => !isBuonAppProcess(p.cmdline));
+  // A dev run shows up as this checkout's bare Electron binary, which none of
+  // the name patterns above describe: the port scan used to report the app it
+  // was written to stop as somebody else's process and leave it running.
+  const isOwnProcess = (p) => isBuonAppProcess(p.cmdline) || isProjectDevInstance(p.cmdline, __dirname);
+  const buonAppProcs = procs.filter(isOwnProcess);
+  const otherProcs = procs.filter((p) => !isOwnProcess(p));
 
   // Report what we found but won't touch
   for (const p of otherProcs) {
@@ -270,12 +303,70 @@ async function killPort(port) {
   }
 }
 
+// ── List running processes (cross-platform) ─────────────────────────────────
+// Returns Array<{ pid: string, cmdline: string }>; an empty list when the
+// platform refuses to enumerate, so a failure here never kills anything.
+function listProcesses() {
+  const results = [];
+  const separator = '|~|';
+
+  try {
+    const out = isWindows
+      ? execSync(
+        'powershell.exe -NoProfile -NonInteractive -Command '
+        + `"Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'electron.exe' -or $_.Name -eq 'node.exe' } `
+        + `| ForEach-Object { $_.ProcessId.ToString() + '${separator}' + $_.CommandLine }"`,
+        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 15000 }
+      )
+      : execSync('ps -eo pid=,args=', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 15000 });
+
+    for (const line of out.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const [pid, cmdline] = isWindows
+        ? trimmed.split(separator)
+        : [trimmed.slice(0, trimmed.indexOf(' ')), trimmed.slice(trimmed.indexOf(' ') + 1)];
+      if (!isValidPid(pid) || !cmdline) continue;
+      results.push({ pid, cmdline: cmdline.trim() });
+    }
+  } catch { /* enumeration is unavailable; fail closed with an empty list */ }
+
+  return results;
+}
+
+// ── Stop leftover dev instances of this checkout ────────────────────────────
+async function killStaleDevInstances(projectRoot = __dirname) {
+  const stale = listProcesses().filter(
+    (p) => p.pid !== String(process.pid) && isProjectDevInstance(p.cmdline, projectRoot)
+  );
+
+  if (stale.length === 0) {
+    console.log('[kill-ports] No leftover BuonApp dev instance found.');
+    return;
+  }
+
+  for (const p of stale) {
+    console.log(`[kill-ports] Stopping leftover dev instance PID ${p.pid} (${p.cmdline.slice(0, 120)})...`);
+    const stopped = isWindows
+      ? await gracefulKillWindows(p.pid)
+      : await gracefulKill(p.pid);
+    if (stopped) {
+      console.log(`[kill-ports] PID ${p.pid} stopped.`);
+    } else {
+      console.warn(`[kill-ports] Could not stop PID ${p.pid}.`);
+    }
+  }
+}
+
 // ── Main / Export ───────────────────────────────────────────────────────────
 if (require.main === module) {
   (async () => {
     for (const port of ports) {
       await killPort(port);
     }
+    // Ports come first: an instance that is still serving is the common case,
+    // and this sweep then catches the one that kept only the instance lock.
+    await killStaleDevInstances();
   })();
 } else {
   module.exports = {
@@ -283,5 +374,8 @@ if (require.main === module) {
     BUONAPP_PATTERNS,
     getProcessesOnPort,
     killPort,
+    isProjectDevInstance,
+    listProcesses,
+    killStaleDevInstances,
   };
 }
