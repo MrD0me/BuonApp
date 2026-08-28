@@ -44,6 +44,21 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="4.1.0" date="2026-08-28">
+      <description>
+        <p>Removed the taxation module in full: the calculation engine, country tax packs and their catalog, per-product tax categories, split-check tax apportioning, the Tax Configuration screen, and the tax breakdown on receipts. This build issues no fiscal documents — the bill it prints is a preconto. Also removed the plugin receipt-template path, which could only be fed by a tax pack.</p>
+      </description>
+    </release>
+    <release version="4.0.1" date="2026-08-27">
+      <description>
+        <p>New application icon and logo for the BuonApp fork, in two variants so small sizes stay legible. Removed the remaining upstream Flo artwork.</p>
+      </description>
+    </release>
+    <release version="4.0.0" date="2026-08-27">
+      <description>
+        <p>First release of the BuonApp fork, turning a general-purpose cafe POS into a restaurant floor tool: service days, a multi-room graphical table map, reservations, joined tables, saved floor plans, and kitchen tickets sent in rounds. Removed the cloud bridge, the usage telemetry, and the statistics dashboard.</p>
+      </description>
+    </release>
     <release version="2.0.5" date="2026-07-23">
       <description>
         <p>Multi-arch Linux distribution publishing: snap-store + AppImageHub auto-discovery + arm64 AppImage, deb, rpm, snap. Migrated snap config to core24 + GNOME extension. Fixed strict-confinement plug list (network-bind, screen-inhibit-control). Release history after this point is appended automatically by `scripts/update-metainfo.js` at release time.</p>

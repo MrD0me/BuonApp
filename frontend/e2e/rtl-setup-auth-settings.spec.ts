@@ -291,12 +291,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
 
     await captureScreenshot(page, 'settings-account-rtl-fa.png');
 
-    // 3. Taxes tab in Persian (RTL)
-    await page.goto(`${BASE}/settings?tab=tax`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await captureScreenshot(page, 'settings-taxes-rtl-fa.png');
-
-    // 4. Health Check dialog in Persian (RTL)
+    // 3. Health Check dialog in Persian (RTL)
     await page.goto(`${BASE}/settings?tab=store&action=health-check`);
     await page.waitForTimeout(500);
     await captureScreenshot(page, 'settings-health-check-dialog-rtl-fa.png');

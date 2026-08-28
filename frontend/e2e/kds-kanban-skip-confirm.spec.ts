@@ -27,11 +27,14 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
 
   // 2. Open standalone KDS
   await page.goto('http://localhost:3002/kds-standalone');
-  if (await page.getByTestId('kds-login-form').isVisible()) {
-    await page.getByTestId('kds-login-email').fill('manager@buonapp.local');
-    await page.getByTestId('kds-login-password').fill('E2ePass123!');
-    await page.getByTestId('kds-login-submit').click();
-  }
+  // Wait for the form rather than probing it with isVisible(), which does not
+  // wait: on a cold page it reads false before the form has rendered, the
+  // login is skipped, and the assertion below times out on a workspace nobody
+  // signed in to. Same sequence as kds-login.spec.ts.
+  await expect(page.getByTestId('kds-login-form')).toBeVisible();
+  await page.getByTestId('kds-login-email').fill('manager@buonapp.local');
+  await page.getByTestId('kds-login-password').fill('E2ePass123!');
+  await page.getByTestId('kds-login-submit').click();
   await expect(page.getByTestId('kds-workspace')).toBeVisible();
 
   // 3. Switch to Kanban view

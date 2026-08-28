@@ -10,11 +10,10 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
   await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
   await page.getByRole('button', { name: 'Place Order' }).click();
 
-  await expect(page.getByRole('button', { name: 'Tax ฿4.20' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿60.00' })).toBeVisible();
   await expect(page.getByText('Round off', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Cash' }).click();
-  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿60.00' })).toBeEnabled();
 
   const orderResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -29,17 +28,17 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
     return response.request().method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname);
   });
 
-  await page.getByRole('button', { name: 'Confirm Payment · ฿64.20' }).click();
+  await page.getByRole('button', { name: 'Confirm Payment · ฿60.00' }).click();
 
   const orderPayload = await (await orderResponse).json();
   const billPayload = await (await billResponse).json();
   const paymentPayload = await (await paymentResponse).json();
 
-  expect(orderPayload.order.total).toBe(64.2);
+  expect(orderPayload.order.total).toBe(60);
   expect(orderPayload.order.round_off).toBe(0);
-  expect(billPayload.bill.total).toBe(64.2);
+  expect(billPayload.bill.total).toBe(60);
   expect(billPayload.bill.round_off).toBe(0);
-  expect(paymentPayload.bill.paid_amount).toBe(64.2);
+  expect(paymentPayload.bill.paid_amount).toBe(60);
   expect(paymentPayload.bill.balance).toBe(0);
   expect(paymentPayload.bill.payment_status).toBe('paid');
   await expect(page.getByText(/Order #ORD-\d+-\d+ paid!/)).toBeVisible();
@@ -54,9 +53,9 @@ test('prepaid checkout never reports success when the payment response is partia
   await page.getByTestId('pos-product-card').click();
   await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
   await page.getByRole('button', { name: 'Place Order' }).click();
-  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿60.00' })).toBeVisible();
   await page.getByRole('button', { name: 'Cash' }).click();
-  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿60.00' })).toBeEnabled();
 
   let paymentBatchRequests = 0;
   await page.route('**/api/bills/*/payments', async (route) => {
@@ -74,7 +73,7 @@ test('prepaid checkout never reports success when the payment response is partia
     });
   });
 
-  await page.getByRole('button', { name: 'Confirm Payment · ฿64.20' }).click();
+  await page.getByRole('button', { name: 'Confirm Payment · ฿60.00' }).click();
 
   await expect(page.getByText(/Payment incomplete/)).toBeVisible();
   expect(paymentBatchRequests).toBe(1);

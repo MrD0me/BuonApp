@@ -35,14 +35,6 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
     await expect(page.getByText('Store Details').first()).toBeVisible();
     await captureScreenshot(page, 'batch-5e-settings-en.png');
 
-    // Settings -> Tax configuration panel
-    const taxTab = page.locator('button', { hasText: 'Tax Configuration' }).first();
-    if (await taxTab.isVisible()) {
-      await taxTab.click();
-      await page.waitForTimeout(300);
-      await captureScreenshot(page, 'batch-5e-settings-tax-en.png');
-    }
-
     // Settings -> Payment methods
     const paymentsTab = page.locator('button', { hasText: 'Payments' }).first();
     if (await paymentsTab.isVisible()) {
