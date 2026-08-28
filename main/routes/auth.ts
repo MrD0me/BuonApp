@@ -208,98 +208,173 @@ function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel:
   }
 }
 
+/** Languages that ship a localized demo menu (anything else falls back to `en`). */
+type DemoLang = 'en' | 'es' | 'pt' | 'it';
+
+/** One demo restaurant: menu, floor labels, sample customers, and staff names. */
+interface DemoMenu {
+  /** Country used for the sample phone numbers when the wizard sent none. */
+  readonly country: string;
+  /** Prefix for seeded table numbers (T1, M1, ...). */
+  readonly tableLabel: string;
+  /** [id, name, color, icon, sortOrder] */
+  readonly categories: ReadonlyArray<readonly [string, string, string, string, number]>;
+  /** [id, categoryId, name, price, sortOrder] */
+  readonly products: ReadonlyArray<readonly [string, string, string, number, number]>;
+  /** [id, name, localPhone] */
+  readonly customers: ReadonlyArray<readonly [string, string, string]>;
+  readonly staff: { readonly manager: string; readonly cashier: string; readonly chef: string };
+}
+
+/**
+ * Demo data keyed by language. A new language is one entry here instead of a
+ * fourth branch in five parallel ternary chains, and an unknown language falls
+ * back to English in exactly one place ({@link demoLanguage}) instead of five.
+ */
+const DEMO_MENUS: Record<DemoLang, DemoMenu> = {
+  en: {
+    country: 'IN',
+    tableLabel: 'T',
+    categories: [
+      ['cat-demo-starters', 'Starters', '#FF6B6B', '🍔', 1],
+      ['cat-demo-main', 'Main Course', '#4ECDC4', '🍛', 2],
+      ['cat-demo-beverages', 'Beverages', '#45B7D1', '🥤', 3],
+      ['cat-demo-desserts', 'Desserts', '#96CEB4', '🍰', 4],
+    ],
+    products: [
+      ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Paneer Tikka', 250, 1],
+      ['prod-demo-chicken-wings', 'cat-demo-starters', 'Chicken Wings', 280, 2],
+      ['prod-demo-butter-chicken', 'cat-demo-main', 'Butter Chicken', 320, 1],
+      ['prod-demo-dal-makhani', 'cat-demo-main', 'Dal Makhani', 220, 2],
+      ['prod-demo-jeera-rice', 'cat-demo-main', 'Jeera Rice', 150, 3],
+      ['prod-demo-cola', 'cat-demo-beverages', 'Cola', 60, 1],
+      ['prod-demo-lemon-soda', 'cat-demo-beverages', 'Lemon Soda', 70, 2],
+      ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'Gulab Jamun', 80, 1],
+    ],
+    customers: [
+      ['cust-demo-1', 'Aarav Sharma', '9876543210'],
+      ['cust-demo-2', 'Maya Iyer', '9876543211'],
+      ['cust-demo-3', 'Kabir Khan', '9876543212'],
+    ],
+    staff: { manager: 'Demo Manager', cashier: 'Demo Cashier', chef: 'Demo Chef' },
+  },
+  es: {
+    country: 'AR',
+    tableLabel: 'M',
+    categories: [
+      ['cat-demo-starters', 'Entradas', '#FF6B6B', '🍟', 1],
+      ['cat-demo-burger', 'Hamburguesas', '#4ECDC4', '🍔', 2],
+      ['cat-demo-beverages', 'Bebidas', '#45B7D1', '🥤', 3],
+      ['cat-demo-desserts', 'Postres', '#96CEB4', '🍰', 4],
+    ],
+    products: [
+      ['prod-demo-empanadas', 'cat-demo-starters', 'Empanadas de Carne', 280, 1],
+      ['prod-demo-papas', 'cat-demo-starters', 'Papas Fritas', 250, 2],
+      ['prod-demo-hamburguesa-clasica', 'cat-demo-burger', 'Hamburguesa Clásica', 800, 1],
+      ['prod-demo-doble', 'cat-demo-burger', 'Hamburguesa Doble', 1100, 2],
+      ['prod-demo-bbq', 'cat-demo-burger', 'Hamburguesa BBQ', 1200, 3],
+      ['prod-demo-gaseosa', 'cat-demo-beverages', 'Gaseosa Cola', 350, 1],
+      ['prod-demo-agua', 'cat-demo-beverages', 'Agua Mineral', 200, 2],
+      ['prod-demo-flan', 'cat-demo-desserts', 'Flan Casero', 400, 1],
+    ],
+    customers: [
+      ['cust-demo-1', 'Juan Pérez', '1145678901'],
+      ['cust-demo-2', 'María González', '1145678902'],
+      ['cust-demo-3', 'Carlos Rodríguez', '1145678903'],
+    ],
+    staff: { manager: 'Gerente Demo', cashier: 'Cajero Demo', chef: 'Cocinero Demo' },
+  },
+  pt: {
+    country: 'BR',
+    tableLabel: 'M',
+    categories: [
+      ['cat-demo-starters', 'Entradas', '#FF6B6B', '🍟', 1],
+      ['cat-demo-burger', 'Hambúrgueres', '#4ECDC4', '🍔', 2],
+      ['cat-demo-beverages', 'Bebidas', '#45B7D1', '🥤', 3],
+      ['cat-demo-desserts', 'Sobremesas', '#96CEB4', '🍰', 4],
+    ],
+    products: [
+      ['prod-demo-coxinha', 'cat-demo-starters', 'Coxinha de Frango', 280, 1],
+      ['prod-demo-pastel', 'cat-demo-starters', 'Pastel de Queijo', 250, 2],
+      ['prod-demo-x-burger', 'cat-demo-burger', 'X-Burger', 800, 1],
+      ['prod-demo-x-dobro', 'cat-demo-burger', 'X-Dobro', 1100, 2],
+      ['prod-demo-x-bacon', 'cat-demo-burger', 'X-Bacon', 1200, 3],
+      ['prod-demo-refri', 'cat-demo-beverages', 'Refrigerante Cola', 350, 1],
+      ['prod-demo-agua', 'cat-demo-beverages', 'Água Mineral', 200, 2],
+      ['prod-demo-pudim', 'cat-demo-desserts', 'Pudim de Leite', 400, 1],
+    ],
+    customers: [
+      ['cust-demo-1', 'João Silva', '1198765432'],
+      ['cust-demo-2', 'Maria Santos', '1198765433'],
+      ['cust-demo-3', 'Carlos Oliveira', '1198765434'],
+    ],
+    staff: { manager: 'Gerente Demo', cashier: 'Caixa Demo', chef: 'Cozinheiro Demo' },
+  },
+  it: {
+    country: 'IT',
+    tableLabel: 'T',
+    categories: [
+      ['cat-demo-starters', 'Antipasti', '#FF6B6B', '🥖', 1],
+      ['cat-demo-pasta', 'Primi', '#4ECDC4', '🍝', 2],
+      ['cat-demo-main', 'Secondi', '#F97316', '🥩', 3],
+      ['cat-demo-beverages', 'Bevande', '#45B7D1', '🥤', 4],
+      ['cat-demo-desserts', 'Dolci', '#96CEB4', '🍰', 5],
+    ],
+    products: [
+      ['prod-demo-bruschette', 'cat-demo-starters', 'Bruschette al Pomodoro', 5, 1],
+      ['prod-demo-tagliere', 'cat-demo-starters', 'Tagliere di Salumi', 12, 2],
+      ['prod-demo-carbonara', 'cat-demo-pasta', 'Spaghetti alla Carbonara', 12, 1],
+      ['prod-demo-lasagne', 'cat-demo-pasta', 'Lasagne al Forno', 11, 2],
+      ['prod-demo-scaloppine', 'cat-demo-main', 'Scaloppine al Limone', 14, 1],
+      ['prod-demo-tagliata', 'cat-demo-main', 'Tagliata di Manzo', 18, 2],
+      ['prod-demo-acqua', 'cat-demo-beverages', 'Acqua Minerale', 2, 1],
+      ['prod-demo-bibita', 'cat-demo-beverages', 'Bibita alla Cola', 3, 2],
+      ['prod-demo-vino', 'cat-demo-beverages', 'Vino Rosso della Casa', 5, 3],
+      ['prod-demo-tiramisu', 'cat-demo-desserts', 'Tiramisù', 5, 1],
+      ['prod-demo-panna-cotta', 'cat-demo-desserts', 'Panna Cotta', 4.5, 2],
+    ],
+    customers: [
+      ['cust-demo-1', 'Marco Rossi', '3331234567'],
+      ['cust-demo-2', 'Giulia Bianchi', '3331234568'],
+      ['cust-demo-3', 'Luca Ferrari', '3331234569'],
+    ],
+    staff: { manager: 'Responsabile Demo', cashier: 'Cassiere Demo', chef: 'Cuoco Demo' },
+  },
+};
+
+/** Resolves the demo menu language, falling back to English for the rest. */
+function demoLanguage(language: string | undefined): DemoLang {
+  return language && Object.prototype.hasOwnProperty.call(DEMO_MENUS, language)
+    ? (language as DemoLang)
+    : 'en';
+}
+
+/** Seat counts of the tables seeded for table-service demos. */
+const DEMO_TABLE_SEATS = [4, 4, 6, 2];
+
 function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: string, language?: string, country?: string): void {
-  const lang: 'en' | 'es' | 'pt' = language === 'es' ? 'es' : language === 'pt' ? 'pt' : 'en';
+  const menu = DEMO_MENUS[demoLanguage(language)];
   const dialCode = dialCodeFor(country);
 
-  const cats = lang === 'es'
-    ? [
-        ['cat-demo-starters', 'Entradas', '#FF6B6B', '🍟', 1],
-        ['cat-demo-burger', 'Hamburguesas', '#4ECDC4', '🍔', 2],
-        ['cat-demo-beverages', 'Bebidas', '#45B7D1', '🥤', 3],
-        ['cat-demo-desserts', 'Postres', '#96CEB4', '🍰', 4],
-      ] as const
-    : lang === 'pt'
-    ? [
-        ['cat-demo-starters', 'Entradas', '#FF6B6B', '🍟', 1],
-        ['cat-demo-burger', 'Hambúrgueres', '#4ECDC4', '🍔', 2],
-        ['cat-demo-beverages', 'Bebidas', '#45B7D1', '🥤', 3],
-        ['cat-demo-desserts', 'Sobremesas', '#96CEB4', '🍰', 4],
-      ] as const
-    : [
-        ['cat-demo-starters', 'Starters', '#FF6B6B', '🍔', 1],
-        ['cat-demo-main', 'Main Course', '#4ECDC4', '🍛', 2],
-        ['cat-demo-beverages', 'Beverages', '#45B7D1', '🥤', 3],
-        ['cat-demo-desserts', 'Desserts', '#96CEB4', '🍰', 4],
-      ] as const;
-  for (const [id, name, color, icon, sort] of cats) insertCategory(db, id, name, color, icon, sort);
-
-  const products = lang === 'es'
-    ? [
-        ['prod-demo-empanadas', 'cat-demo-starters', 'Empanadas de Carne', 280, 1],
-        ['prod-demo-papas', 'cat-demo-starters', 'Papas Fritas', 250, 2],
-        ['prod-demo-hamburguesa-clasica', 'cat-demo-burger', 'Hamburguesa Clásica', 800, 1],
-        ['prod-demo-doble', 'cat-demo-burger', 'Hamburguesa Doble', 1100, 2],
-        ['prod-demo-bbq', 'cat-demo-burger', 'Hamburguesa BBQ', 1200, 3],
-        ['prod-demo-gaseosa', 'cat-demo-beverages', 'Gaseosa Cola', 350, 1],
-        ['prod-demo-agua', 'cat-demo-beverages', 'Agua Mineral', 200, 2],
-        ['prod-demo-flan', 'cat-demo-desserts', 'Flan Casero', 400, 1],
-      ] as const
-    : lang === 'pt'
-    ? [
-        ['prod-demo-coxinha', 'cat-demo-starters', 'Coxinha de Frango', 280, 1],
-        ['prod-demo-pastel', 'cat-demo-starters', 'Pastel de Queijo', 250, 2],
-        ['prod-demo-x-burger', 'cat-demo-burger', 'X-Burger', 800, 1],
-        ['prod-demo-x-dobro', 'cat-demo-burger', 'X-Dobro', 1100, 2],
-        ['prod-demo-x-bacon', 'cat-demo-burger', 'X-Bacon', 1200, 3],
-        ['prod-demo-refri', 'cat-demo-beverages', 'Refrigerante Cola', 350, 1],
-        ['prod-demo-agua', 'cat-demo-beverages', 'Água Mineral', 200, 2],
-        ['prod-demo-pudim', 'cat-demo-desserts', 'Pudim de Leite', 400, 1],
-      ] as const
-    : [
-        ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Paneer Tikka', 250, 1],
-        ['prod-demo-chicken-wings', 'cat-demo-starters', 'Chicken Wings', 280, 2],
-        ['prod-demo-butter-chicken', 'cat-demo-main', 'Butter Chicken', 320, 1],
-        ['prod-demo-dal-makhani', 'cat-demo-main', 'Dal Makhani', 220, 2],
-        ['prod-demo-jeera-rice', 'cat-demo-main', 'Jeera Rice', 150, 3],
-        ['prod-demo-cola', 'cat-demo-beverages', 'Cola', 60, 1],
-        ['prod-demo-lemon-soda', 'cat-demo-beverages', 'Lemon Soda', 70, 2],
-        ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'Gulab Jamun', 80, 1],
-      ] as const;
-  for (const [id, categoryId, name, price, sort] of products) insertProduct(db, id, categoryId, name, price, sort);
+  for (const [id, name, color, icon, sort] of menu.categories) insertCategory(db, id, name, color, icon, sort);
+  for (const [id, categoryId, name, price, sort] of menu.products) insertProduct(db, id, categoryId, name, price, sort);
 
   if (serviceModel === 'finedine') {
-    const tableLabel = lang === 'es' ? 'M' : lang === 'pt' ? 'M' : 'T';
-    insertTable(db, 'tbl-demo-1', `${tableLabel}1`, 4);
-    insertTable(db, 'tbl-demo-2', `${tableLabel}2`, 4);
-    insertTable(db, 'tbl-demo-3', `${tableLabel}3`, 6);
-    insertTable(db, 'tbl-demo-4', `${tableLabel}4`, 2);
+    DEMO_TABLE_SEATS.forEach((capacity, index) => {
+      const number = index + 1;
+      insertTable(db, `tbl-demo-${number}`, `${menu.tableLabel}${number}`, capacity);
+    });
   }
 
-  const demoCountry = country || (lang === 'es' ? 'AR' : lang === 'pt' ? 'BR' : 'IN');
-  if (lang === 'es') {
-    insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'María González', '1145678902', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '1145678903', dialCode, demoCountry);
-  } else if (lang === 'pt') {
-    insertCustomer(db, 'cust-demo-1', 'João Silva', '1198765432', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Maria Santos', '1198765433', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '1198765434', dialCode, demoCountry);
-  } else {
-    insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '9876543210', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '9876543211', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '9876543212', dialCode, demoCountry);
-  }
+  const demoCountry = country || menu.country;
+  for (const [id, name, phone] of menu.customers) insertCustomer(db, id, name, phone, dialCode, demoCountry);
 
-  const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'pt' ? 'Gerente Demo' : 'Demo Manager';
-  const cashierName = lang === 'es' ? 'Cajero Demo' : lang === 'pt' ? 'Caixa Demo' : 'Demo Cashier';
-  const chefName = lang === 'es' ? 'Cocinero Demo' : lang === 'pt' ? 'Cozinheiro Demo' : 'Demo Chef';
   // Demo staff remains useful as localized sample rows, but must never ship with
   // a reusable public credential. The inactive rows can be explicitly replaced
   // by an owner during setup if staff access is wanted.
-  insertStaffUser(db, 'user-demo-manager', managerName, 'manager@buonapp.local', 'manager', randomBytes(32).toString('hex'), 0);
-  insertStaffUser(db, 'user-demo-cashier', cashierName, 'cashier@buonapp.local', 'cashier', randomBytes(32).toString('hex'), 0);
-  insertStaffUser(db, 'user-demo-chef', chefName, 'chef@buonapp.local', 'chef', randomBytes(32).toString('hex'), 0);
+  insertStaffUser(db, 'user-demo-manager', menu.staff.manager, 'manager@buonapp.local', 'manager', randomBytes(32).toString('hex'), 0);
+  insertStaffUser(db, 'user-demo-cashier', menu.staff.cashier, 'cashier@buonapp.local', 'cashier', randomBytes(32).toString('hex'), 0);
+  insertStaffUser(db, 'user-demo-chef', menu.staff.chef, 'chef@buonapp.local', 'chef', randomBytes(32).toString('hex'), 0);
 }
 
 export function seedSetupProfile(db: ReturnType<typeof getDatabase>, profile: string, serviceModel: string, language?: string, country?: string): void {
