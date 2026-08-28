@@ -267,7 +267,10 @@ export default function SetupPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {languageOptions.map((option) => {
                     const selected = language === option;
-                    const label = option === 'es' ? t('languageSpanish') : option === 'pt' ? t('languagePortuguese') : option === 'fa' ? t('languagePersian') : t('languageEnglish');
+                    // Native names come from the language registry — the same source
+                    // the Settings selector uses — so every registered language labels
+                    // itself instead of falling through to the English label.
+                    const label = LANGUAGES[option].nativeName;
                     return (
                       <button
                         key={option}
