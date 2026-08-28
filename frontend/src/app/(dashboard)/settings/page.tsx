@@ -52,10 +52,10 @@ Item      Qty Amt
 Burger      1   99
   + Sauce        9
 ---------------
+Subtotal      108
 Discount       -5
-Subtotal      103
-TOTAL         109
-Cash          109
+TOTAL         103
+Cash          103
 ---------------
 Points Earned  10
 Pts Balance   210
