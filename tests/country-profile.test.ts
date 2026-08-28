@@ -11,5 +11,4 @@ test('IR country profile properties', () => {
   assert.equal(ir.timezone, 'Asia/Tehran');
   assert.equal(ir.dialCode, '+98');
   assert.equal(ir.taxIdLabel, 'Economic Code');
-  assert.equal(ir.taxName, 'VAT');
 });

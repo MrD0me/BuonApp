@@ -1967,7 +1967,12 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('taxIdLabel')}</label>
+                  {/* Name the number the way the country does - P.IVA, GSTIN, CUIT - the
+                      same label the printed bill uses. Countries whose profile declares
+                      none fall back to the translated generic. */}
+                  <label className="block text-sm text-gray-500 mb-1">
+                    {getCountryByCode(form.countryCode)?.taxIdLabel || t('taxIdLabel')}
+                  </label>
                   {isAdmin ? (
                     <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
                       placeholder={t('taxIdPlaceholder')}
