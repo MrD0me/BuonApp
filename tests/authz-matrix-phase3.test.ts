@@ -158,7 +158,6 @@ async function main() {
 
   const managerOrOwnerRoutes = [
     { method: 'post', path: '/api/categories', body: { name: 'Test Cat' } },
-    { method: 'get', path: '/api/tax/categories' },
     { method: 'post', path: '/api/bills/1/applyDiscount', body: { discount_type: 'amount', discount_value: 10 } },
   ];
 
@@ -194,8 +193,8 @@ async function main() {
   db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
     VALUES ('ORD-P3-1', 'takeaway', 'pending', 50, 50, ?, ?)`).run(now(), now());
   const orderRow = db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-P3-1'").get() as any;
-  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-    VALUES (?, 'prod-p3', 'P3 Item', 50, 1, 50, 0, 50, 'pending', ?, ?)`).run(orderRow.id, now(), now());
+  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
+    VALUES (?, 'prod-p3', 'P3 Item', 50, 1, 50, 50, 'pending', ?, ?)`).run(orderRow.id, now(), now());
   const itemRow = db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderRow.id) as any;
   db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
     VALUES ('ORD-P3-2', 'takeaway', 'pending', 25, 25, ?, ?)`).run(now(), now());

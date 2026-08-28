@@ -157,7 +157,7 @@ async function main() {
     db.prepare(`
       UPDATE products SET sku = 'SKU-247', barcode = 'BAR-247', description = 'desc',
         cost = 5, image_url = 'data:image/png;base64,AAAA', cb_percent = 10,
-        tags = '["a","b"]', tax_category_id = 'legacy-tax'
+        tags = '["a","b"]'
       WHERE id = 'prod-247-clear'
     `).run();
 
@@ -172,13 +172,12 @@ async function main() {
         cost_price: null,
         image_url: null,
         cb_percent: null,
-        tax_category_id: null,
         tags: null,
       },
     });
     assertEqual(res.status, 200, 'product update accepts explicit null clears');
     const clearedProduct = db.prepare(`
-      SELECT category_id, sku, barcode, description, cost, image_url, cb_percent, tax_category_id, tags
+      SELECT category_id, sku, barcode, description, cost, image_url, cb_percent, tags
       FROM products WHERE id = 'prod-247-clear'
     `).get() as any;
     assertEqual(clearedProduct.category_id, null, 'product category_id cleared');
@@ -188,7 +187,6 @@ async function main() {
     assertEqual(clearedProduct.cost, null, 'product cost cleared');
     assertEqual(clearedProduct.image_url, null, 'product image_url cleared');
     assertEqual(clearedProduct.cb_percent, null, 'product cb_percent cleared');
-    assertEqual(clearedProduct.tax_category_id, null, 'product tax_category_id cleared');
     assertEqual(clearedProduct.tags, '[]', 'product tags clear to an empty list');
 
     console.log('\n─── Add-on nullable field updates ───');
@@ -197,8 +195,8 @@ async function main() {
       VALUES ('ag-247', 'Clearable Group', 'desc', 0, 1, 1, ?, ?)
     `).run(now(), now());
     db.prepare(`
-      INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, is_active, created_at, updated_at)
-      VALUES ('addon-247', 'ag-247', 'Clearable Addon', 2, 'legacy-tax', 1, ?, ?)
+      INSERT INTO addons (id, addon_group_id, name, price, is_active, created_at, updated_at)
+      VALUES ('addon-247', 'ag-247', 'Clearable Addon', 2, 1, ?, ?)
     `).run(now(), now());
 
     res = await api(baseUrl, '/api/addon-groups/ag-247', {
@@ -208,14 +206,6 @@ async function main() {
     });
     assertEqual(res.status, 200, 'add-on group description can be explicitly cleared');
     assertEqual(db.prepare('SELECT description FROM addon_groups WHERE id = ?').get('ag-247').description, null, 'add-on group description cleared');
-
-    res = await api(baseUrl, '/api/addon-groups/ag-247/addons/addon-247', {
-      method: 'PUT',
-      headers: authHeader,
-      body: { tax_category_id: null },
-    });
-    assertEqual(res.status, 200, 'add-on tax_category_id can be explicitly cleared');
-    assertEqual(db.prepare('SELECT tax_category_id FROM addons WHERE id = ?').get('addon-247').tax_category_id, null, 'add-on tax_category_id cleared');
   } finally {
     server.close();
     closeDatabase();

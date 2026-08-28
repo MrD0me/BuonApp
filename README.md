@@ -83,15 +83,13 @@ BuonApp ships UI translations for:
 - Brazilian Portuguese
 - Persian (Farsi), including RTL layout support
 
-UI language is independent of the store's country and regional settings, and tax rules are a separate concern again. Receipts and kitchen tickets follow the UI language in English or Italian and fall back to English for the other three, rather than printing a half-translated bill. To edit a translation or add a language, see the [Internationalization and translation guide](docs/i18n.md).
+UI language is independent of the store's country and regional settings. Receipts and kitchen tickets follow the UI language in English or Italian and fall back to English for the other three, rather than printing a half-translated bill. To edit a translation or add a language, see the [Internationalization and translation guide](docs/i18n.md).
 
-## Tax and bills
+## Bills
 
-Tax calculation is **off by default**. Turned on, BuonApp offers a generic calculation engine, manual rules and rates, and signed country tax packs downloaded from the upstream FloCafe plugin catalog. A bill printed with tax disabled is an internal document for the guest and the till — not a fiscal receipt.
+BuonApp computes no taxes at all: an item costs what the menu says, and the bill is the sum of what was ordered. The document it prints is a **preconto** — what the table owes, for the guest and for the till — and never a fiscal receipt. The business registration number can be printed in the header if the owner turns it on, but it is only identity, not a tax figure.
 
-> **Notice:** BuonApp is software, not legal or tax advice. Neither the engine nor a tax pack certifies compliance with local regulations, and in several countries a fiscal receipt has to come from certified hardware. Verifying what applies to the business stays the operator's responsibility.
-
-For pack authoring, validation, and schema details, see the [Tax packs developer guide](docs/tax-packs.md).
+> **Notice:** in several countries a fiscal receipt has to come from certified hardware. BuonApp does not replace it, and does not try to: issue the receipt from whatever the business already uses for it.
 
 ## Development
 

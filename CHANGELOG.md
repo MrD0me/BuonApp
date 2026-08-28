@@ -4,6 +4,29 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [4.1.0] - 2026-08-28
+
+The taxation module is gone. This install never issued a fiscal document — the
+bill it prints is a preconto and the receipt comes from the till standing next
+to it — so an engine that resolved country rules, signed publisher packs, and
+apportioned tax evidence across split checks in integer minor units was weight
+carried for nothing. Roughly 16,000 lines lighter, with no printed total
+changed.
+
+### Removed
+
+- **The taxation module, in full** (migration v81). This install does not issue fiscal documents: the bill it prints is a *preconto*, and the receipt comes from the till standing next to it. Everything built to compute a tax it never charges is gone — the calculation engine and its rule resolver, the country packs with their publisher signatures and catalog distribution, the per-product tax categories and behaviours, the charge-level categories for packaging and delivery, the split-check machinery that apportioned tax evidence across guest checks in integer minor units, the `/api/tax-packs` and `/api/tax/*` endpoints, the `/api/settings/tax` pair, the `/api/reports/tax-components` report, the Tax Configuration screen, the tax column and bulk-assign action on the product list, the tax breakdown on receipts and in the checkout modals, the "Detailed (Tax)" receipt template, and the tax-invoice print path. Migration v81 drops `country_packs`, `country_pack_versions`, `tax_categories`, `tax_rules`, `tax_overrides`, and `tax_config_audit`, and clears `taxes_enabled`, `tax_registered`, `tax_scheme`, and `bill_show_tax_breakdown` from the settings.
+
+  An item now costs what the menu says and the bill is the sum of what was ordered, minus the discount, plus delivery and packaging. That is what the totals already were: taxation was off by default and no country pack was ever installed here, so every stored tax amount is zero and no printed total changes.
+
+  The per-transaction tax columns on `orders`, `order_items`, and `bills` are deliberately left in place. They hold historical amounts, and rebuilding three billing tables to drop columns that are already zero would be surgery on the money trail for no gain. Nothing writes them any more.
+
+- **The receipt-template plugin path** (migration v82). A printable template could only ever arrive inside a country tax pack, installed through the routes v81 removed — so with the packs gone the whole path was unreachable: the `escpos-line-template-v1` renderer and its column/width engine in `main/printers/thermal.ts`, the two queries that loaded a stored template, the `GET /api/settings/bill-templates` endpoint, and the plugin cards in the bill-template picker. Migration v82 drops `installed_print_templates` and resets any stored `bill_template` that is not `classic` or `compact`. The two built-in layouts are compiled in and unaffected.
+
+### Changed
+
+- **The business registration number is identity, not a tax figure.** `tax_registration_number` (P.IVA, VAT, GSTIN…) is still stored and still printed in the bill header, but nothing validates its shape against a country format any more, and it appears on the receipt because the owner switched *Show tax ID* on — not because a tax happened to be computed. The "Are you tax registered?" toggle that used to gate the field is gone; the field is simply there.
+
 ## [4.0.1] - 2026-08-27
 
 The rename to BuonApp changed every name and none of the artwork. Until this release the app still shipped the upstream Flo mark — a blue glyph — as its Windows icon, its Store tiles, its PWA icons, its favicons, and the logo on the login screen.

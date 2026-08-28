@@ -66,10 +66,6 @@ export interface Product {
   price: number;
   cost_price: number | null;
   cb_percent?: number | null;
-  tax_type: 'none' | 'inclusive' | 'exclusive';
-  tax_rate: number;
-  tax_category_id?: string | null;
-  tax_behavior?: 'country_default' | 'inclusive' | 'exclusive' | 'exempt';
   track_inventory: boolean;
   stock_quantity: number;
   low_stock_threshold: number | null;
@@ -243,13 +239,9 @@ export interface Order {
   type: 'dine_in' | 'takeaway' | 'delivery' | 'online';
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';
   subtotal: number;
-  tax_amount: number;
   discount_amount: number;
   delivery_charge: number;
   packaging_charge?: number;
-  round_off?: number;
-  tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
-  tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;
   total: number;
   guest_count: number | null;
   special_instructions: string | null;
@@ -271,10 +263,7 @@ export interface OrderItem {
   unit_price: number;
   quantity: number;
   subtotal: number;
-  tax_amount: number;
   total: number;
-  tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
-  tax_snapshot?: TaxSnapshot | null;
   addons: { id?: number | string | null; name: string; price?: number; quantity?: number }[] | null;
   special_instructions: string | null;
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided' | 'void_adjustment';
@@ -288,7 +277,6 @@ export interface Bill {
   order_id: number;
   customer_id?: number | string | null;
   subtotal: number;
-  tax_amount: number;
   discount_amount: number;
   discount_type?: string | null;
   discount_value?: number | null;
@@ -296,7 +284,6 @@ export interface Bill {
   service_charge: number;
   delivery_charge: number;
   packaging_charge?: number;
-  round_off?: number;
   total: number;
   paid_amount: number;
   balance: number;
@@ -304,26 +291,9 @@ export interface Bill {
   payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string }[] | null;
   split_group_id?: string | null;
   split_label?: string | null;
-  tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
-  tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;
   order?: Order;
   /** Loyalty points credited for this bill (sum of loyalty_ledger credits). Only populated by /orders endpoints. */
   points_earned?: number;
-}
-
-export interface TaxSnapshot {
-  lines: Array<{
-    lineId?: string;
-    components: Array<{
-      ruleId?: string;
-      label?: string;
-      title?: string;
-      type?: string;
-      rate?: string | number;
-      amount: string | number;
-    }>;
-  }>;
-  [key: string]: unknown;
 }
 
 export interface Staff {

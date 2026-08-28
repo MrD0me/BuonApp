@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const channels = [
       'new-order', 'quick-search', 'backup-database', 'restore-backup',
       'view-orders', 'report-daily', 'report-sales', 'report-x', 'report-z',
-      'settings-business', 'settings-tax', 'settings-printer', 'settings-kitchen',
+      'settings-business', 'settings-printer', 'settings-kitchen',
       'menu-db-health-check', 'menu-db-initialize', 'menu-master-pin',
     ];
     const handlers: (() => void)[] = [];

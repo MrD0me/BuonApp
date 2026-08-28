@@ -10,7 +10,6 @@ import {
   type ReceiptOptions,
 } from '@/lib/printer/receipt-encoder';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
 import type { PrintWarning } from '@/lib/printer/warnings';
 import api from '@/lib/api';
@@ -19,7 +18,7 @@ import type { Bill, Tenant, Order } from '@/lib/types';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
 
-type PrintModeType = 'receipt' | 'tax' | 'kot';
+type PrintModeType = 'receipt' | 'kot';
 type PaperWidth = 58 | 80;
 
 /** Tenant fields a browser/thermal receipt needs for locale-correct rendering. */
@@ -70,7 +69,6 @@ interface PrinterState {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
-  printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
   printKot: (order: Order, opts?: KotOptions) => Promise<KotSendResult>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;
@@ -126,7 +124,7 @@ export const usePrinterStore = create<PrinterState>()(
             billTemplate,
             billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
             billShowName, billShowAddress, billShowPhone, billShowTaxId,
-            billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
+            billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
             printerPaperSize,
             printerUseUnicode,
             printerTrimDecimals,
@@ -145,7 +143,6 @@ export const usePrinterStore = create<PrinterState>()(
               footerNote: billFooterMessage || undefined,
               businessName: tenant.business_name,
               showBusinessName: billShowName,
-              showTaxBreakdown: billShowTaxBreakdown,
               showCustomerName: billShowCustomerName,
               showCustomerPhone: billShowCustomerPhone,
               showTableNumber: billShowTableNumber,
@@ -189,7 +186,6 @@ export const usePrinterStore = create<PrinterState>()(
             phone: billShowPhone && billPhone ? billPhone : undefined,
             footerNote: billFooterMessage || undefined,
             showBusinessName: billShowName,
-            showTaxBreakdown: billShowTaxBreakdown,
             showCustomerName: billShowCustomerName,
             showCustomerPhone: billShowCustomerPhone,
             showTableNumber: billShowTableNumber,
@@ -206,70 +202,6 @@ export const usePrinterStore = create<PrinterState>()(
             bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, warnings);
           }
 
-          set({ lastPrintedBytes: bytes });
-          await printerService.print(bytes);
-          return warnings;
-        } catch (err) {
-          set({ lastError: (err as Error).message });
-          throw err;
-        }
-      },
-
-      printTaxBill: async (bill, tenant, opts) => {
-        set({ lastError: null });
-        try {
-          const {
-            printerUseUnicode, printerTrimDecimals, printerPaperSize,
-            billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
-            billShowName, billShowAddress, billShowPhone, billShowTaxId,
-            billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
-          } = usePosSettingsStore.getState();
-          const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
-
-          if (get().printMethod === 'browser') {
-            // Browser / A4 print path: render real HTML instead of decoding
-            // raw ESC/POS bytes (which would strip Persian digits/ریال to
-            // printer ASCII). Mirrors the printBill browser path.
-            const { printWebBill } = await import('@/lib/printer/web-print');
-            await printWebBill(bill, tenant, {
-              paperSize: printerPaperSize,
-              includeTaxId: billShowTaxId,
-              taxRegistrationNumber: billShowTaxId
-                ? (opts?.taxRegistrationNumber || billTaxRegistrationNumber || undefined)
-                : undefined,
-              address: billShowAddress ? (opts?.address || billAddress || undefined) : undefined,
-              phone: billShowPhone ? (opts?.phone || billPhone || undefined) : undefined,
-              footerNote: billFooterMessage || undefined,
-              businessName: tenant.business_name,
-              showBusinessName: billShowName,
-              showTaxBreakdown: billShowTaxBreakdown,
-              showCustomerName: billShowCustomerName,
-              showCustomerPhone: billShowCustomerPhone,
-              showTableNumber: billShowTableNumber,
-              useUnicode: printerUseUnicode,
-              trimDecimals: printerTrimDecimals,
-            });
-            return [];
-          }
-
-          const warnings: PrintWarning[] = [];
-          const bytes = buildTaxBillBytes(bill, tenant, {
-            ...opts,
-            paperWidth: opts?.paperWidth ?? configuredPaperWidth,
-            taxRegistrationNumber: billShowTaxId
-              ? (opts?.taxRegistrationNumber || billTaxRegistrationNumber || undefined)
-              : undefined,
-            address: billShowAddress ? (opts?.address || billAddress || undefined) : undefined,
-            phone: billShowPhone ? (opts?.phone || billPhone || undefined) : undefined,
-            showBusinessName: billShowName,
-            showTaxBreakdown: billShowTaxBreakdown,
-            showCustomerName: billShowCustomerName,
-            showCustomerPhone: billShowCustomerPhone,
-            showTableNumber: billShowTableNumber,
-            useUnicode: printerUseUnicode,
-            trimDecimals: printerTrimDecimals,
-            rawEscPos: true,
-          }, warnings);
           set({ lastPrintedBytes: bytes });
           await printerService.print(bytes);
           return warnings;
@@ -380,13 +312,14 @@ export const usePrinterStore = create<PrinterState>()(
     {
       name: 'flo-printer-settings',
       partialize: (state) => ({ printMode: state.printMode, paperWidth: state.paperWidth, printMethod: state.printMethod }),
-      // v1: the 'gst' print-mode value was renamed to 'tax'. Carry existing
-      // browsers' saved selection forward instead of silently resetting it.
-      version: 1,
-      migrate: (persisted, version) => {
+      // v2: the tax-invoice print mode is gone with the taxation module.
+      // Browsers that saved it (or its older 'gst' spelling) fall back to the
+      // plain receipt instead of restoring a mode nothing can print.
+      version: 2,
+      migrate: (persisted) => {
         const state = persisted as { printMode?: string };
-        if (version < 1 && state.printMode === 'gst') {
-          state.printMode = 'tax';
+        if (state.printMode === 'gst' || state.printMode === 'tax') {
+          state.printMode = 'receipt';
         }
         return state as unknown as PrinterState;
       },

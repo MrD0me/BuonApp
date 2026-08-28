@@ -111,7 +111,6 @@ export default function MenuActionHandler() {
           router.push('/reports');
           break;
         case 'settings-business':
-        case 'settings-tax':
         case 'settings-printer':
         case 'settings-kitchen':
           router.push('/settings');

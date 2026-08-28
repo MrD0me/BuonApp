@@ -24,14 +24,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [linux.md](linux.md) | Linux package formats (AppImage, deb, rpm, Snap) built from source, FUSE setup, CUPS printing, and system tray behavior. | CURRENT |
 | [printers.md](printers.md) | ESC/POS printer configuration, network/USB/OS-queue/WebUSB connection types, kitchen stations, kitchen-ticket layout, code pages, and troubleshooting. | CURRENT |
 | [google-drive-setup.md](google-drive-setup.md) | Maintainer setup for the optional Google Drive backup OAuth client. | CURRENT |
-| [tax-packs.md](tax-packs.md) | Tax pack schema, authoring guide, cryptographic signing, and catalog distribution workflow. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
-
-### Active design & forward-looking plans
-
-| Document | Description | Status |
-| --- | --- | --- |
-| [tax-engine-v2-spec.md](tax-engine-v2-spec.md) | Architectural specification for Tax Engine v2, data-only country packs, and future capability plugin boundaries. *(Note: 2026-07-31 amendment establishes that country packs are catalog-only and not auto-bundled. Tax calculation is off by default in this fork.)* | ACTIVE DESIGN |
 
 ### Historical records
 

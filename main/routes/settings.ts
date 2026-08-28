@@ -4,12 +4,11 @@ import { getDatabase, now, areCustomersEnabled } from '../db';
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
-import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { getCountryByCode, getCurrencySymbol, isValidTimeZone, type CountryLocaleOptions } from '../countries';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
-import { CORE_BILL_TEMPLATES, isAvailableBillTemplate, listInstalledPrintTemplates } from '../services/print-templates';
+import { isCoreBillTemplate } from '../services/print-templates';
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -129,33 +128,16 @@ function businessShape(s: Record<string, string>) {
     instagram_handle: s.instagram_handle || '',
     billing_type: s.billing_type || 'postpaid',
     tables_required: s.tables_required !== 'false',
-    tax_registered: s.tax_registered === 'true' || s.tax_registered === '1',
     bill_show_name: s.bill_show_name !== 'false',
     bill_show_address: s.bill_show_address !== 'false',
     bill_show_phone: s.bill_show_phone !== 'false',
     bill_show_tax_id: s.bill_show_tax_id === 'true',
-    bill_show_tax_breakdown: s.bill_show_tax_breakdown !== 'false',
     bill_show_customer_name: s.bill_show_customer_name !== 'false',
     bill_show_customer_phone: s.bill_show_customer_phone !== 'false',
     bill_show_table_number: s.bill_show_table_number !== 'false',
     currency_display: resolveStoredLocalePreference('currency_display', s.currency_display, s.country || 'IN'),
     number_digits: resolveStoredLocalePreference('number_digits', s.number_digits, s.country || 'IN'),
     calendar: resolveStoredLocalePreference('calendar', s.calendar, s.country || 'IN'),
-    // Informational only — the active country pack's format if it declares
-    // one, else the static main/countries.ts fallback, else null. Never
-    // blocks the save; the UI uses this to show a non-blocking warning.
-    tax_id_format: resolveTaxIdFormat(s.country || 'IN'),
-  };
-}
-
-function taxShape(s: Record<string, string>) {
-  return {
-    tax_registered: s.tax_registered === 'true',
-    tax_registration_number: s.tax_registration_number || '',
-    state_code: s.state_code || '',
-    tax_scheme: s.tax_scheme || 'regular',
-    country: s.country || 'IN',
-    tax_id_format: resolveTaxIdFormat(s.country || 'IN'),
   };
 }
 
@@ -175,9 +157,9 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
   try {
     const { business_name, timezone, currency, country, language,
       tax_registration_number, state_code, business_address, business_phone, instagram_handle,
-      billing_type, tables_required, tax_registered,
+      billing_type, tables_required,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
-      bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
+      bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
       currency_display, number_digits, calendar } = req.body;
 
     if (!validBusinessLocation(timezone, currency, country)) {
@@ -208,16 +190,6 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       }
     }
 
-    if (tax_registration_number) {
-      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
-      if (!valid && format) {
-        return res.status(400).json({
-          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
-          tax_id_format: format,
-        });
-      }
-    }
-
     let normalizedPhone: string | undefined = undefined;
     if (business_phone !== undefined) {
       const phoneRes = normalizeOptionalPhone(business_phone, effectiveCountry);
@@ -235,60 +207,13 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       tax_registration_number, state_code, business_address,
       business_phone: normalizedPhone !== undefined ? normalizedPhone : undefined,
       instagram_handle,
-      billing_type, tables_required, tax_registered,
+      billing_type, tables_required,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
-      bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
+      bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
       ...localeUpdates,
     });
 
     res.json(businessShape(getAllSettings(db)));
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get('/tax', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
-  try {
-    const s = getAllSettings(getDatabase());
-    res.json(taxShape(s));
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response) => {
-  try {
-    const { tax_registered, tax_registration_number, state_code, tax_scheme, country } = req.body;
-
-    if (!validBusinessLocation(undefined, undefined, country)) {
-      return res.status(400).json({ error: 'Invalid country' });
-    }
-
-    const db = getDatabase();
-    const currentSettings = getAllSettings(db);
-    const effectiveCountry = country || currentSettings.country || 'IN';
-    if (tax_registration_number) {
-      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
-      if (!valid && format) {
-        return res.status(400).json({
-          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
-          tax_id_format: format,
-        });
-      }
-    }
-    upsertSettings(db, {
-      tax_registered,
-      tax_registration_number,
-      state_code,
-      tax_scheme,
-      country,
-      currency_symbol: country !== undefined
-        ? deriveCurrencySymbol(currentSettings.currency || 'INR', country || currentSettings.country || 'IN')
-        : undefined,
-    });
-    res.json(taxShape(getAllSettings(db)));
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -593,11 +518,9 @@ router.post('/google-drive/backup-now', requireRole('owner'), asyncHandler(async
 const ALLOWED_WILDCARD_KEYS = new Set([
   'business_name', 'timezone', 'currency', 'country',
   'state_code', 'business_address', 'business_phone',
-  'billing_type', 'tables_required', 'tax_registered', 'bill_show_name', 'bill_show_address',
-  'bill_show_phone', 'bill_show_tax_id', 'bill_show_tax_breakdown', 'bill_show_customer_name',
+  'billing_type', 'tables_required', 'bill_show_name', 'bill_show_address',
+  'bill_show_phone', 'bill_show_tax_id', 'bill_show_customer_name',
   'bill_show_customer_phone', 'bill_show_table_number',
-  'tax_scheme',
-  'taxes_enabled',
   'loyalty_enabled',
   'language',
   'kds_default_view',
@@ -609,43 +532,13 @@ const ALLOWED_WILDCARD_KEYS = new Set([
 ]);
 
 function isAllowedWildcardKey(key: string): boolean {
-  return ALLOWED_WILDCARD_KEYS.has(key) || /^tax_plugin_request:[A-Z]{2}$/.test(key);
+  return ALLOWED_WILDCARD_KEYS.has(key);
 }
 
 router.get('/', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json({ settings: publicSettingsShape(s) });
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get('/bill-templates', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
-  try {
-    const plugins = listInstalledPrintTemplates().map((template) => {
-      let storedWidths: string[] = [];
-      try {
-        const parsed = JSON.parse(template.paper_widths_json);
-        storedWidths = Array.isArray(parsed) ? parsed.filter((width) => typeof width === 'string') : [];
-      } catch { /* Ignore malformed rows; install validation owns the contract. */ }
-      const paperColumns = storedWidths
-        .map((width) => /^cols-(\d+)$/.exec(width)?.[1])
-        .filter((width): width is string => !!width)
-        .map((width) => Number(width));
-      return {
-        id: template.template_id,
-        displayName: template.display_name,
-        country: template.country,
-        jurisdiction: template.jurisdiction,
-        paperColumns,
-        status: template.status,
-        packId: template.pack_id,
-        packVersionId: template.pack_version_id,
-      };
-    });
-    res.json({ core: [...CORE_BILL_TEMPLATES], plugins });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -683,7 +576,7 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
     if (value === undefined) {
       return res.status(400).json({ error: 'Value is required' });
     }
-    if (req.params.key === 'bill_template' && !isAvailableBillTemplate(String(value))) {
+    if (req.params.key === 'bill_template' && !isCoreBillTemplate(String(value))) {
       return res.status(400).json({ error: 'Unsupported bill template' });
     }
     const db = getDatabase();

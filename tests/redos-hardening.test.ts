@@ -1,7 +1,6 @@
 /**
- * Regression tests for the js/polynomial-redos hardening:
+ * Regression test for the js/polynomial-redos hardening:
  *  - bounded email validation (auth.ts isValidEmail)
- *  - linear tax-id slugify (tax-packs.ts slugifyTaxId)
  *
  * Usage: node tests/run-electron-node-test.cjs tests/redos-hardening.test.ts
  */
@@ -21,7 +20,6 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const { isValidEmail, MAX_EMAIL_LENGTH } = require('../main/routes/auth');
-const { slugifyTaxId } = require('../main/routes/tax-packs');
 
 function run() {
   console.log('Testing ReDoS hardening...');
@@ -41,24 +39,6 @@ function run() {
     false,
     'pathological ReDoS input is rejected without regex backtracking',
   );
-
-  // ── Tax id slugify is linear and deterministic ────────────────────
-  assert.equal(slugifyTaxId('  Beverage  ', new Set(), 'fallback'), 'beverage', 'trims and lowercases');
-  assert.equal(slugifyTaxId('___', new Set(), 'fallback'), 'fallback', 'all-underscore falls back');
-  assert.equal(slugifyTaxId('a_b', new Set(), 'fallback'), 'a_b', 'keeps an internal separator');
-  assert.equal(slugifyTaxId('_foo_', new Set(), 'fallback'), 'foo', 'strips leading and trailing underscores');
-  assert.equal(slugifyTaxId('foo_', new Set(), 'fallback'), 'foo', 'strips a trailing underscore');
-  assert.equal(slugifyTaxId('_foo', new Set(), 'fallback'), 'foo', 'strips a leading underscore');
-  // The super-linear input shape (`a` + "_"*N + `b`) collapses to one separator
-  // before the trim, and must complete without quadratic backtracking.
-  assert.equal(
-    slugifyTaxId('a' + '_'.repeat(5000) + 'b', new Set(), 'fallback'),
-    'a_b',
-    'a long underscore run collapses linearly',
-  );
-
-  const used = new Set(['tax']);
-  assert.equal(slugifyTaxId('tax', used, 'fallback'), 'tax_2', 'collision gets a numeric suffix');
 
   fs.rmSync(testDir, { recursive: true, force: true });
   console.log('✅ ReDoS hardening tests passed');

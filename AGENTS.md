@@ -42,9 +42,9 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 
 1. **Offline-first operation:** Core POS operation (orders, billing, tables and service days, kitchen tickets, printing) must function without internet connectivity. This fork carries no cloud bridge and no usage telemetry — they were removed, along with the settings that armed them (migration v80). The only things that may reach the network are features the owner explicitly configures (Google Drive backup, WhatsApp) and the update check against this fork's own GitHub releases; all of them must fail gracefully when offline. Do not reintroduce an outbound channel to a vendor.
 2. **Data safety:** Existing customer data must survive upgrades. Never reset, truncate, or drop user databases as a shortcut for migration design.
-3. **Architecture boundaries:** UI language, tenant regional settings, and tax/compliance behavior are separate, decoupled domains.
+3. **Architecture boundaries:** UI language and tenant regional settings are separate, decoupled domains. This fork computes no taxes: prices are what the guest pays, the bill is a preconto, and the fiscal receipt comes from the till beside it. Do not reintroduce a taxation engine, country tax packs, or per-item tax fields.
 4. **Business timestamps:** Persisted timestamps follow BuonApp's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.
-5. **Backend authority:** Security-critical, payment, and tax calculations remain backend-authoritative.
+5. **Backend authority:** Security-critical and payment calculations remain backend-authoritative.
 6. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
 7. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
 
@@ -89,7 +89,7 @@ Select checks that cover the changed subsystem:
 | Database migrations | Fresh database test and upgrade-path migration test |
 | Tables / service days / reservations | `npm run test:table-crud`, `test:rooms-map`, `test:reservations`, `test:reservation-sheet`, `test:table-merge-layouts`, `test:service-days` |
 | Printing / kitchen tickets | `npm run test:printer`, `test:kot-batch`, `test:receipt-printing` |
-| Tax / Auth / Security | Relevant focused test suite plus broader integration tests |
+| Auth / Security | Relevant focused test suite plus broader integration tests |
 | Packaging / Releases | Target platform build commands and release checks |
 
 Run `npm test` when a full validation pass is requested, before releases, or when changes touch multiple core subsystems. Note that the six floor-management suites in the table above are **not** part of the `npm test` chain and have to be run explicitly.

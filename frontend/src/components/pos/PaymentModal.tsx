@@ -6,8 +6,6 @@ import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill } from '@/lib/types';
-import TaxBreakdown from '@/components/pos/TaxBreakdown';
-import { resolveTaxComponents } from '@/lib/printer/tax-components';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
@@ -427,10 +425,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   <span>− {currencyFmt(Number(bill.discount_amount))}</span>
                 </div>
               )}
-              <TaxBreakdown taxAmount={Number(bill.tax_amount)} taxBreakdown={resolveTaxComponents(bill).map((component) => ({
-                ...component,
-                rate: component.rate ?? 0,
-              }))} />
               {Number(bill.delivery_charge) > 0 && (
                 <div className="flex justify-between text-slate-300">
                   <span>{t('delivery')}</span>
@@ -441,12 +435,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                 <div className="flex justify-between text-slate-300">
                   <span>{t('packaging')}</span>
                   <span>{currencyFmt(Number(bill.packaging_charge))}</span>
-                </div>
-              )}
-              {Number(bill.round_off) !== 0 && (
-                <div className="flex justify-between text-slate-300">
-                  <span>{t('roundOff')}</span>
-                  <span>{Number(bill.round_off) > 0 ? '+' : ''}{currencyFmt(Number(bill.round_off))}</span>
                 </div>
               )}
               <div className="flex justify-between text-white font-semibold border-t border-white/10 pt-1.5 mt-1">

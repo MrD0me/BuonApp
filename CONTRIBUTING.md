@@ -34,7 +34,6 @@ Do not open implementation PRs for the following areas until maintainers have di
 - Database schema changes and migration designs
 - Authentication, authorization, and security architecture
 - Table, service-day, and reservation semantics, which are shaped around one restaurant's way of working
-- Tax engine changes, fiscal compliance architecture, and country tax packs
 - Plugin execution or plugin security models
 - Major internationalization (i18n) architecture, or adding new languages
 - Large cross-cutting refactors across multiple subsystems
@@ -132,13 +131,13 @@ Before opening a pull request, run checks appropriate to the affected subsystem:
 
 - **Frontend changes:** Run `npm run lint` and `npm run build:frontend`.
 - **Translation / i18n changes:** Run `npm run i18n:check`.
-- **Backend changes:** Run `npm run lint`, `npm run build`, and relevant focused test suites (e.g., `npm run test:printer`, `npm run test:tax-engine`).
+- **Backend changes:** Run `npm run lint`, `npm run build`, and relevant focused test suites (e.g., `npm run test:printer`, `npm run test:table-crud`).
 - **Behavior changes:** Add or update focused tests demonstrating the fix or feature.
 - **Cross-cutting or release-sensitive work:** Run the full `npm test` suite.
 
 ### Additional review for high-risk areas
 
-Changes touching database migrations, customer data handling, authentication, tax calculations, payment or bill totals, or plugin boundaries receive deeper maintainer scrutiny and require thorough automated test verification.
+Changes touching database migrations, customer data handling, authentication, payment or bill totals, or plugin boundaries receive deeper maintainer scrutiny and require thorough automated test verification.
 
 ---
 
@@ -166,19 +165,6 @@ Printed output is a narrower set: receipts, bills, and kitchen tickets render th
 The validation command is fully offline and checks registry/file consistency, exact English key parity, string and ICU validity, placeholder/tag parity, Persian fallback safeguards, and frontend translation-key safety.
 
 For complete authoring, scaffolding, RTL support, and verification instructions, see the [Internationalization and translation guide](docs/i18n.md).
-
----
-
-## Tax packs and compliance contributions
-
-BuonApp uses a generic calculation engine paired with data-only country tax packs (`main/tax-packs/`).
-
-- **Authoritative sources:** Tax rules must be backed by authoritative references (official tax authorities, enacted legislation, or official administrative guidelines). Blog posts or AI summaries are not sufficient primary sources.
-- **Jurisdictional scope:** Clearly identify the geographic and legal scope of the pack (country-wide VAT, state/province sales taxes, intra/inter-state rules).
-- **Process:** Open a proposal issue before authoring a pack, provide test vectors covering representative transactions, and verify against `main/tax-packs/types.ts`.
-- **Disclaimer:** BuonApp is software, not certified legal or tax advice. Tax packs do not by themselves guarantee compliance with local regulations.
-
-For complete authoring instructions, see the [Tax packs developer guide](docs/tax-packs.md).
 
 ---
 

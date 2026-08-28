@@ -6,7 +6,6 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, defaultTableSize, createGridPlacer } from './lib/table-geometry';
@@ -311,10 +310,6 @@ function randomSecret(): string {
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/g, '');
-}
-
-function sha256Hex(value: string): string {
-  return crypto.createHash('sha256').update(value).digest('hex');
 }
 
 export function getSettingValue(key: string): string | null {
@@ -2902,7 +2897,10 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 35,
     name: 'add_tax_pack_configuration_tables',
     up: () => {
-      createTaxPackSchema();
+      // Neutralized: the taxation module was removed from this fork. The
+      // tables this step used to create are dropped again by v81, so an
+      // upgrade no longer builds them just to throw them away. Databases
+      // that already ran this step keep their tables until v81 removes them.
     },
   },
   {
@@ -2959,110 +2957,8 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 38,
     name: 'register_bundled_tax_pack_versions',
     up: () => {
-      createTaxPackSchema();
-      const insertPack = db.prepare(`
-        INSERT INTO country_packs (
-          id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          publisher = excluded.publisher,
-          country = excluded.country,
-          jurisdiction = excluded.jurisdiction,
-          active_version_id = COALESCE(country_packs.active_version_id, excluded.active_version_id),
-          updated_at = excluded.updated_at
-      `);
-      const insertVersion = db.prepare(`
-        INSERT OR IGNORE INTO country_pack_versions (
-          id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
-          effective_from, effective_to, min_flo_version, published_at, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', ?)
-      `);
-      const insertCategory = db.prepare(`
-        INSERT OR IGNORE INTO tax_categories (
-          id, pack_version_id, category_id, label, default_behavior, definition_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      const insertRule = db.prepare(`
-        INSERT OR IGNORE INTO tax_rules (
-          id, pack_version_id, rule_id, label, calculation_type, rate, amount,
-          applies_per, base_rule_ids, definition_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      for (const pack of BUNDLED_COUNTRY_PACKS) {
-        const versionId = bundledPackVersionId(pack);
-        const packJson = JSON.stringify(pack);
-        const installedAt = now();
-        const alreadyInstalled = db.prepare(
-          'SELECT 1 FROM country_pack_versions WHERE id = ?'
-        ).get(versionId);
-
-        insertPack.run(
-          pack.id, pack.publisher, pack.country, pack.jurisdiction,
-          versionId, installedAt, installedAt,
-        );
-        insertVersion.run(
-          versionId,
-          pack.id,
-          pack.version,
-          pack.schemaVersion,
-          JSON.stringify({
-            id: pack.id,
-            publisher: pack.publisher,
-            country: pack.country,
-            jurisdiction: pack.jurisdiction,
-            version: pack.version,
-            publishedAt: pack.publishedAt,
-          }),
-          packJson,
-          sha256Hex(packJson),
-          pack.effectiveFrom,
-          pack.effectiveTo || null,
-          pack.minFloVersion,
-          pack.publishedAt,
-          installedAt,
-        );
-
-        for (const category of pack.categories) {
-          insertCategory.run(
-            `${versionId}:category:${category.id}`,
-            versionId,
-            category.id,
-            category.label,
-            category.defaultBehavior || null,
-            JSON.stringify(category),
-            installedAt,
-          );
-        }
-        for (const rule of pack.rules) {
-          insertRule.run(
-            `${versionId}:rule:${rule.id}`,
-            versionId,
-            rule.id,
-            rule.label,
-            rule.type,
-            rule.rate || null,
-            rule.amount || null,
-            rule.appliesPer || null,
-            JSON.stringify(rule.baseRuleIds || []),
-            JSON.stringify(rule),
-            installedAt,
-          );
-        }
-
-        if (!alreadyInstalled) {
-          db.prepare(`
-            INSERT INTO tax_config_audit (
-              action, pack_id, pack_version_id, details_json, created_at
-            ) VALUES ('install_bundled_pack', ?, ?, ?, ?)
-          `).run(
-            pack.id,
-            versionId,
-            JSON.stringify({ source: 'application_bundle', version: pack.version }),
-            installedAt,
-          );
-        }
-      }
+      // Neutralized alongside v35: there are no bundled country packs left to
+      // register. See v81.
     },
   },
   {
@@ -4243,6 +4139,57 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[MIGRATION v80] cloud bridge removed; ${removed} setting(s) purged`);
     },
   },
+  {
+    version: 81,
+    name: 'remove_tax_module',
+    up: () => {
+      // This fork does not issue fiscal documents: the bill it prints is a
+      // preconto, and the till next to it issues the receipt. The taxation
+      // engine, the country packs that fed it and the whole configuration UI
+      // are gone from the code, so their tables are dead storage — and
+      // `country_pack_versions` in particular carried publisher signatures and
+      // rule sets for a module nothing reads any more.
+      //
+      // The per-transaction tax columns on orders/order_items/bills stay: they
+      // are historical amounts (all zero on an install that never enabled the
+      // module), and rebuilding those three tables to drop a few always-zero
+      // columns would be surgery on billing history for no gain. Nothing
+      // writes them any more.
+      db.exec(`
+        DROP TABLE IF EXISTS tax_config_audit;
+        DROP TABLE IF EXISTS tax_overrides;
+        DROP TABLE IF EXISTS tax_rules;
+        DROP TABLE IF EXISTS tax_categories;
+        DROP TABLE IF EXISTS country_pack_versions;
+        DROP TABLE IF EXISTS country_packs;
+      `);
+      const removed = db.prepare(`
+        DELETE FROM settings
+        WHERE key IN ('taxes_enabled', 'tax_registered', 'tax_scheme', 'bill_show_tax_breakdown')
+           OR key LIKE 'tax_plugin_request:%'
+      `).run().changes;
+      console.log(`[MIGRATION v81] taxation module removed; ${removed} setting(s) purged`);
+    },
+  },
+  {
+    version: 82,
+    name: 'remove_plugin_print_templates',
+    up: () => {
+      // A receipt template could only ever arrive inside a country tax pack,
+      // installed through the pack routes v81 removed. With no way left to put
+      // a row in this table and no renderer to draw one, it is storage for a
+      // feature that no longer exists. The two built-in layouts (classic and
+      // compact) are compiled in, not stored.
+      db.exec(`DROP TABLE IF EXISTS installed_print_templates;`);
+      // A store that had selected a plugin template would otherwise keep a
+      // bill_template value nothing can render; send it back to the default.
+      const reset = db.prepare(`
+        UPDATE settings SET value = 'classic', updated_at = ?
+        WHERE key = 'bill_template' AND value NOT IN ('classic', 'compact')
+      `).run(now()).changes;
+      console.log(`[MIGRATION v82] plugin print templates removed; ${reset} template selection(s) reset`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4693,98 +4640,6 @@ function createSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE IF NOT EXISTS country_packs (
-      id TEXT PRIMARY KEY,
-      publisher TEXT NOT NULL,
-      country TEXT NOT NULL,
-      jurisdiction TEXT NOT NULL,
-      active_version_id TEXT,
-      status TEXT NOT NULL DEFAULT 'installed',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS country_pack_versions (
-      id TEXT PRIMARY KEY,
-      pack_id TEXT NOT NULL,
-      version TEXT NOT NULL,
-      schema_version INTEGER NOT NULL,
-      manifest_json TEXT NOT NULL,
-      pack_json TEXT NOT NULL,
-      digest TEXT,
-      signature TEXT,
-      effective_from TEXT NOT NULL,
-      effective_to TEXT,
-      min_flo_version TEXT NOT NULL,
-      published_at TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'staged',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(pack_id, version)
-    );
-
-    CREATE TABLE IF NOT EXISTS tax_categories (
-      id TEXT PRIMARY KEY,
-      pack_version_id TEXT NOT NULL,
-      category_id TEXT NOT NULL,
-      label TEXT NOT NULL,
-      default_behavior TEXT,
-      definition_json TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(pack_version_id, category_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS tax_rules (
-      id TEXT PRIMARY KEY,
-      pack_version_id TEXT NOT NULL,
-      rule_id TEXT NOT NULL,
-      label TEXT NOT NULL,
-      calculation_type TEXT NOT NULL,
-      rate TEXT,
-      amount TEXT,
-      applies_per TEXT,
-      base_rule_ids TEXT,
-      definition_json TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(pack_version_id, rule_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS tax_overrides (
-      id TEXT PRIMARY KEY,
-      pack_version_id TEXT NOT NULL,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT,
-      field_name TEXT NOT NULL,
-      value_json TEXT NOT NULL,
-      created_by_user_id TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS installed_print_templates (
-      template_id TEXT PRIMARY KEY,
-      pack_id TEXT NOT NULL,
-      pack_version_id TEXT NOT NULL,
-      country TEXT NOT NULL,
-      jurisdiction TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      paper_widths_json TEXT NOT NULL,
-      renderer_json TEXT NOT NULL,
-      template_payload_json TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'installed',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS tax_config_audit (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      action TEXT NOT NULL,
-      pack_id TEXT,
-      pack_version_id TEXT,
-      override_id TEXT,
-      actor_user_id TEXT,
-      details_json TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
     -- ── Indexes ──────────────────────────────────────────────────────────
 
     CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
@@ -4794,113 +4649,6 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_orders_user       ON orders(user_id);
     CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
     CREATE INDEX IF NOT EXISTS idx_bills_order       ON bills(order_id);
-    CREATE INDEX IF NOT EXISTS idx_country_pack_versions_pack ON country_pack_versions(pack_id);
-    CREATE INDEX IF NOT EXISTS idx_tax_categories_pack_version ON tax_categories(pack_version_id);
-    CREATE INDEX IF NOT EXISTS idx_tax_rules_pack_version ON tax_rules(pack_version_id);
-    CREATE INDEX IF NOT EXISTS idx_tax_overrides_pack_version ON tax_overrides(pack_version_id);
-    CREATE INDEX IF NOT EXISTS idx_installed_print_templates_pack_version ON installed_print_templates(pack_version_id);
-  `);
-}
-
-function createTaxPackSchema(): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS country_packs (
-      id TEXT PRIMARY KEY,
-      publisher TEXT NOT NULL,
-      country TEXT NOT NULL,
-      jurisdiction TEXT NOT NULL,
-      active_version_id TEXT,
-      status TEXT NOT NULL DEFAULT 'installed',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS country_pack_versions (
-      id TEXT PRIMARY KEY,
-      pack_id TEXT NOT NULL,
-      version TEXT NOT NULL,
-      schema_version INTEGER NOT NULL,
-      manifest_json TEXT NOT NULL,
-      pack_json TEXT NOT NULL,
-      digest TEXT,
-      signature TEXT,
-      effective_from TEXT NOT NULL,
-      effective_to TEXT,
-      min_flo_version TEXT NOT NULL,
-      published_at TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'staged',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(pack_id, version)
-    );
-
-    CREATE TABLE IF NOT EXISTS tax_categories (
-      id TEXT PRIMARY KEY,
-      pack_version_id TEXT NOT NULL,
-      category_id TEXT NOT NULL,
-      label TEXT NOT NULL,
-      default_behavior TEXT,
-      definition_json TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(pack_version_id, category_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS tax_rules (
-      id TEXT PRIMARY KEY,
-      pack_version_id TEXT NOT NULL,
-      rule_id TEXT NOT NULL,
-      label TEXT NOT NULL,
-      calculation_type TEXT NOT NULL,
-      rate TEXT,
-      amount TEXT,
-      applies_per TEXT,
-      base_rule_ids TEXT,
-      definition_json TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(pack_version_id, rule_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS tax_overrides (
-      id TEXT PRIMARY KEY,
-      pack_version_id TEXT NOT NULL,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT,
-      field_name TEXT NOT NULL,
-      value_json TEXT NOT NULL,
-      created_by_user_id TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS installed_print_templates (
-      template_id TEXT PRIMARY KEY,
-      pack_id TEXT NOT NULL,
-      pack_version_id TEXT NOT NULL,
-      country TEXT NOT NULL,
-      jurisdiction TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      paper_widths_json TEXT NOT NULL,
-      renderer_json TEXT NOT NULL,
-      template_payload_json TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'installed',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS tax_config_audit (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      action TEXT NOT NULL,
-      pack_id TEXT,
-      pack_version_id TEXT,
-      override_id TEXT,
-      actor_user_id TEXT,
-      details_json TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_country_pack_versions_pack ON country_pack_versions(pack_id);
-    CREATE INDEX IF NOT EXISTS idx_tax_categories_pack_version ON tax_categories(pack_version_id);
-    CREATE INDEX IF NOT EXISTS idx_tax_rules_pack_version ON tax_rules(pack_version_id);
-    CREATE INDEX IF NOT EXISTS idx_tax_overrides_pack_version ON tax_overrides(pack_version_id);
-    CREATE INDEX IF NOT EXISTS idx_installed_print_templates_pack_version ON installed_print_templates(pack_version_id);
   `);
 }
 
@@ -4977,11 +4725,8 @@ function seedInstallDefaults(): void {
   insert('business_address', '');
   insert('business_phone', '');
   insert('instagram_handle', '');
-  insert('tax_registered', 'false');
   insert('tax_registration_number', '');
   insert('state_code', '');
-  insert('tax_scheme', 'regular');
-  insert('taxes_enabled', 'false');
   insert('billing_type', 'postpaid');
   insert('tables_required', 'true');
   insert('service_model', 'finedine');
@@ -4997,7 +4742,6 @@ function seedInstallDefaults(): void {
   insert('bill_show_address', 'true');
   insert('bill_show_phone', 'true');
   insert('bill_show_tax_id', 'false');
-  insert('bill_show_tax_breakdown', 'true');
   insert('bill_show_customer_name', 'true');
   insert('bill_show_customer_phone', 'true');
   insert('bill_show_table_number', 'true');
@@ -5332,8 +5076,6 @@ export function parseItemJson(item: any): any {
     ...item,
     variant_selection: tryParse(item.variant_selection),
     modifier_selection: tryParse(item.modifier_selection),
-    tax_breakdown: tryParse(item.tax_breakdown),
-    tax_snapshot: tryParse(item.tax_snapshot),
   };
 }
 
@@ -5374,31 +5116,8 @@ export function parseRowJson(row: any): any {
     try { return JSON.parse(val); } catch { return val; }
   };
 
-  // tax_breakdown is stored as an array of per-item breakdowns (array of arrays).
-  // Aggregate into a flat array of { title, rate, amount } for the frontend.
-  let taxBreakdown = tryParse(row.tax_breakdown);
-  if (Array.isArray(taxBreakdown) && taxBreakdown.length > 0 && Array.isArray(taxBreakdown[0])) {
-    const merged: Record<string, { title: string; rate: number; amount: number }> = {};
-    for (const itemBreakdown of taxBreakdown) {
-      if (!Array.isArray(itemBreakdown)) continue;
-      for (const line of itemBreakdown) {
-        const key = `${line.title}_${line.rate}`;
-        if (!merged[key]) {
-          merged[key] = { title: line.title, rate: line.rate, amount: 0 };
-        }
-        merged[key].amount += line.amount;
-      }
-    }
-    taxBreakdown = Object.values(merged).filter((line) => line.amount !== 0).map((line) => ({
-      ...line,
-      amount: Math.round(line.amount * 100) / 100,
-    }));
-  }
-
   return {
     ...row,
-    tax_breakdown: taxBreakdown,
-    tax_snapshot: tryParse(row.tax_snapshot),
     payment_details: tryParse(row.payment_details),
   };
 }

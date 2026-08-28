@@ -114,8 +114,8 @@ function main() {
   console.log('   ✓ an old (pre-migration-array) install migrates through to the latest schema without crashing');
 
   const db = getDatabase();
-  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'taxes_enabled'").get().value, 'false',
-    'taxes remain off until the merchant enables them');
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'taxes_enabled'").get(), undefined,
+    'v81 purges the taxation toggle along with the module');
   // An install old enough to predate the migration array carries cloud settings
   // and outbox tables from every era of the bridge. v80 has to leave none of
   // them behind, whatever route the database took to get here.
@@ -192,7 +192,7 @@ function main() {
   assert.ok(customerColumns.includes('tag_counts'), 'customers.tag_counts exists after migrating an old install');
   console.log('   ✓ customers.country_code and customers.tag_counts are present (the 9c92409 regression)');
 
-  const requiredTaxTables = [
+  const removedTaxTables = [
     'country_packs',
     'country_pack_versions',
     'tax_categories',
@@ -200,13 +200,13 @@ function main() {
     'tax_overrides',
     'tax_config_audit',
   ];
-  for (const table of requiredTaxTables) {
+  for (const table of removedTaxTables) {
     assert.ok(
-      db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
-      `${table} exists after upgrading an old install`,
+      !db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
+      `${table} is gone after upgrading an old install`,
     );
   }
-  const expectedTaxColumns: Record<string, string[]> = {
+  const retainedTaxColumns: Record<string, string[]> = {
     products: ['tax_category_id', 'tax_behavior', 'tax_type', 'tax_rate'],
     addons: ['tax_category_id', 'tax_behavior', 'inherit_parent_tax_category'],
     orders: [
@@ -218,48 +218,15 @@ function main() {
     order_items: ['tax_snapshot'],
     bills: ['tax_snapshot'],
   };
-  for (const [table, expected] of Object.entries(expectedTaxColumns)) {
+  for (const [table, expected] of Object.entries(retainedTaxColumns)) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
     for (const column of expected) {
-      assert.ok(columns.includes(column), `${table}.${column} exists after upgrading an old install`);
+      assert.ok(columns.includes(column), `${table}.${column} is kept after upgrading an old install`);
     }
   }
-  console.log('   ✓ old installs receive every Phase 1 tax table and guarded additive column');
-  assert.equal(
-    (db.prepare('SELECT COUNT(*) AS count FROM country_packs').get() as { count: number }).count,
-    1,
-    'old installs register only the generic tax pack during upgrade',
-  );
-  assert.equal(
-    (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number }).count,
-    1,
-    'old installs register only the generic tax pack version during upgrade',
-  );
-  console.log('   ✓ old installs receive generic tax behavior without replacing legacy tax data');
+  console.log('   ✓ upgrading drops the taxation tables and keeps the historical amount columns');
 
   assert.equal((db.prepare('SELECT COUNT(*) AS count FROM products').get() as any).count, 10);
-  // A product originating in this pre-tax-engine fixture can still carry the
-  // old tax_type/tax_rate columns after Phase 1, but those columns are not
-  // authoritative for new calculations — tax is opt-in through an explicitly
-  // resolved category only. An upgraded install must not silently start
-  // charging tax again based on stale legacy columns.
-  const legacyProduct = db.prepare('SELECT * FROM products LIMIT 1').get() as any;
-  db.prepare(`UPDATE products SET tax_category_id = NULL, tax_type = 'exclusive', tax_rate = 18 WHERE id = ?`)
-    .run(legacyProduct.id);
-  const { calculateItemTax } = require('../main/services/tax');
-  const legacyTax = calculateItemTax(
-    // taxes_enabled: true here, deliberately, even though this install's
-    // actual setting is 'false' (asserted above) — the point of this
-    // assertion is that an unresolved category charges no tax on its own
-    // merits, not that the global switch happens to also be off.
-    { country: 'IN', business_type: 'restaurant', state_code: 'KA', taxes_enabled: true },
-    db.prepare('SELECT * FROM products WHERE id = ?').get(legacyProduct.id),
-    100,
-    null,
-  );
-  assert.equal(legacyTax.tax_amount, 0, 'an upgraded product with no resolved tax category charges no tax');
-  assert.deepEqual(legacyTax.tax_breakdown, []);
-  console.log('   ✓ an upgraded product with stale legacy tax_type/tax_rate charges no tax until categorized');
   const preservedOrder = db.prepare(`
     SELECT tax_amount, tax_breakdown, tax_snapshot FROM orders WHERE order_number = 'ORD-LEGACY-TAX'
   `).get() as any;
@@ -294,57 +261,12 @@ function main() {
     console.log('   ✓ the backfilled columns are readable and writable');
   }
 
-  const existingCountryPack = require('./fixtures/synthetic-dual-rate-pack.json');
-  const preservedVersionId = `${existingCountryPack.id}@existing-active`;
-  const preservedAt = '2026-07-30T00:00:00.000Z';
-  db.prepare(`
-    INSERT INTO country_packs (
-      id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
-  `).run(
-    existingCountryPack.id,
-    existingCountryPack.publisher,
-    existingCountryPack.country,
-    existingCountryPack.jurisdiction,
-    preservedVersionId,
-    preservedAt,
-    preservedAt,
-  );
-  db.prepare(`
-    INSERT INTO country_pack_versions (
-      id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
-      effective_from, effective_to, min_flo_version, published_at, status, created_at
-    ) VALUES (?, ?, ?, ?, '{}', ?, ?, NULL, ?, NULL, ?, ?, 'active', ?)
-  `).run(
-    preservedVersionId,
-    existingCountryPack.id,
-    'existing-active',
-    existingCountryPack.schemaVersion,
-    JSON.stringify(existingCountryPack),
-    'preserved-existing-version',
-    existingCountryPack.effectiveFrom,
-    existingCountryPack.minFloVersion,
-    existingCountryPack.publishedAt,
-    preservedAt,
-  );
   db.prepare("UPDATE settings SET value = 'true' WHERE key = 'split_checks_enabled'").run();
   db.pragma('user_version = 37');
   closeDatabase();
   initDatabase();
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
   assert.equal(runHealthCheck().findings.length, 0);
-  const preservedPack = getDatabase().prepare(`
-    SELECT active_version_id, status FROM country_packs WHERE id = ?
-  `).get(existingCountryPack.id) as { active_version_id: string; status: string };
-  assert.deepEqual(
-    preservedPack,
-    { active_version_id: preservedVersionId, status: 'active' },
-    'an already-active country pack survives the changed bundle migration untouched',
-  );
-  assert.ok(
-    getDatabase().prepare('SELECT 1 FROM country_pack_versions WHERE id = ?').get(preservedVersionId),
-    'the previously installed active pack version is preserved',
-  );
   assert.equal(
     (getDatabase().prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as { value: string }).value,
     'true',
@@ -364,7 +286,7 @@ function main() {
     undefined,
     'replaying the migrations from an older stamp purges the cloud settings again',
   );
-  console.log('   ✓ reopening is idempotent and preserves an already-active country pack');
+  console.log('   ✓ reopening is idempotent and preserves deliberate settings');
   closeDatabase();
 
   console.log('='.repeat(60));

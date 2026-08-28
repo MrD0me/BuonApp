@@ -103,13 +103,13 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     0,
     'the outbox tables the cloud bridge used are not created',
   );
-  assert.equal(count('country_packs'), 1, 'fresh install registers only the generic tax pack');
-  assert.deepEqual(
-    getDatabase().prepare(
-      'SELECT id, country, status FROM country_packs ORDER BY id'
-    ).all(),
-    [{ id: 'local-generic', country: '*', status: 'active' }],
-    'fresh setup does not preinstall a country-specific tax pack',
+  assert.equal(
+    (getDatabase().prepare(
+      `SELECT COUNT(*) AS count FROM sqlite_master
+       WHERE type = 'table' AND name IN ('country_packs', 'country_pack_versions', 'tax_categories', 'tax_rules', 'tax_overrides', 'tax_config_audit')`
+    ).get() as { count: number }).count,
+    0,
+    'a fresh install carries no taxation tables',
   );
   console.log('   ✓ fresh database has schema/default settings only and awaits setup');
 

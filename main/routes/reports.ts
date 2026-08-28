@@ -1,21 +1,18 @@
 /**
- * The read side of the till: what was taken, by which method, and which taxes
- * it carried, over a date range.
+ * The read side of the till: what was taken and by which method, over a date
+ * range.
  *
  * This used to be a much larger module feeding an owner dashboard of tiles and
  * 30-day averages. That dashboard is gone — the service day's own close summary
  * (main/services/service-day.ts) is where a restaurant reads its numbers, and
  * it does it per service day rather than per calendar midnight. What is left
- * here are the three queries that reconcile money and tax, which the payment
- * integrity and split-check suites lean on as their oracle.
+ * here are the queries that reconcile money, which the payment integrity and
+ * split-check suites lean on as their oracle.
  */
 
 import { Router, Request, Response } from 'express';
-import Decimal from 'decimal.js';
 import { getDatabase, utcDayBounds, utcTodayDate } from '../db';
 import { requireRole } from '../middleware/security';
-import { getOrdersWithItemsForBills } from './bills';
-import { aggregateTaxComponents } from '../services/tax-components';
 
 const router = Router();
 
@@ -114,57 +111,6 @@ router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Resp
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Dynamic tax-component report for receipt/report consumers. Components are
-// derived item by item so mixed legacy + categorized bills cannot double-count
-// the categorized portion already present in the bill-level tax_breakdown.
-router.get('/tax-components', requireRole('owner', 'manager'), (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const today = utcTodayDate();
-    const startDate = reportDate(req.query.start_date, today);
-    const endDate = reportDate(req.query.end_date, today);
-    if (startDate > endDate) {
-      return res.status(400).json({ error: 'start_date must be on or before end_date' });
-    }
-    const windowStart = utcDayBounds(startDate)[0];
-    const windowEnd = utcDayBounds(endDate)[1];
-
-    const bills = db.prepare(`
-      SELECT b.*
-      FROM bills b
-      JOIN orders o ON o.id = b.order_id
-      WHERE b.created_at >= ? AND b.created_at < ?
-        AND o.status != 'cancelled'
-      ORDER BY b.created_at, b.id
-    `).all(windowStart, windowEnd) as any[];
-
-    const orders = getOrdersWithItemsForBills(db, bills);
-    const documents = bills.map((bill) => ({
-      tax_amount: bill.tax_amount,
-      tax_snapshot: bill.tax_snapshot,
-      tax_breakdown: bill.tax_breakdown,
-      items: orders.get(Number(bill.id))?.items || [],
-    }));
-    const taxAmount = bills.reduce(
-      (sum, bill) => sum.plus(bill.tax_amount || 0),
-      new Decimal(0),
-    );
-
-    res.json({
-      taxComponents: {
-        startDate,
-        endDate,
-        billCount: bills.length,
-        taxAmount: taxAmount.toDecimalPlaces(6).toNumber(),
-        components: aggregateTaxComponents(documents),
-      },
-    });
-  } catch (error: any) {
-    console.error('[API] Tax component report failed:', error);
-    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

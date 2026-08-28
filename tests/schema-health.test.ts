@@ -64,7 +64,7 @@ function main() {
 
   const db = getDatabase();
 
-  const requiredTaxTables = [
+  const removedTaxTables = [
     'country_packs',
     'country_pack_versions',
     'tax_categories',
@@ -72,13 +72,13 @@ function main() {
     'tax_overrides',
     'tax_config_audit',
   ];
-  for (const table of requiredTaxTables) {
+  for (const table of removedTaxTables) {
     assert.ok(
-      db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
-      `${table} exists on a fresh install`,
+      !db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
+      `${table} is gone on a fresh install`,
     );
   }
-  const expectedTaxColumns: Record<string, string[]> = {
+  const retainedTaxColumns: Record<string, string[]> = {
     products: ['tax_category_id', 'tax_behavior', 'tax_type', 'tax_rate'],
     addons: ['tax_category_id', 'tax_behavior', 'inherit_parent_tax_category'],
     orders: [
@@ -90,31 +90,13 @@ function main() {
     order_items: ['tax_snapshot'],
     bills: ['tax_snapshot'],
   };
-  for (const [table, expected] of Object.entries(expectedTaxColumns)) {
+  for (const [table, expected] of Object.entries(retainedTaxColumns)) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
     for (const column of expected) {
-      assert.ok(columns.includes(column), `${table}.${column} exists on a fresh install`);
+      assert.ok(columns.includes(column), `${table}.${column} is kept on a fresh install`);
     }
   }
-  console.log('   ✓ fresh installs include every Phase 1 tax table and column');
-  assert.equal(
-    (db.prepare('SELECT COUNT(*) AS count FROM country_packs').get() as { count: number }).count,
-    1,
-    'fresh installs register only the generic tax pack',
-  );
-  assert.equal(
-    (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number }).count,
-    1,
-    'fresh installs register only the generic tax pack version',
-  );
-  assert.ok(
-    (db.prepare(`
-      SELECT 1 FROM country_pack_versions
-      WHERE pack_id = 'local-generic' AND version = '1.0.0' AND status = 'active'
-    `).get()),
-    'fresh installs activate the generic no-tax pack version',
-  );
-  console.log('   ✓ fresh installs register only the generic pack artifact used by Settings');
+  console.log('   ✓ fresh installs carry no taxation tables, only the inert historical columns');
 
   // ── Extra column is flagged manual_review, never auto-applicable ────────
   db.exec(`ALTER TABLE products ADD COLUMN __test_extra_col TEXT`);

@@ -2,7 +2,6 @@ import { randomUUID } from 'crypto';
 
 export type FloErrorCode =
   | `print.${string}`
-  | `tax.${string}`
   | `migration.${string}`
   | `backup.${string}`
   | `cloud.${string}`

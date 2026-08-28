@@ -54,29 +54,7 @@ jobs:
             db: ['main/db.ts', 'main/migrations/**', 'tests/fixtures/upgrade-snapshots/**', 'tests/upgrade-path.test.ts']
             uninstaller: ['scripts/uninstallers/**', 'tests/windows-uninstaller.Tests.ps1', 'tests/run-windows-uninstaller-tests.cjs', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']
 
-  # 3. Tax Safety Net
-  # This deliberately runs independently of path filtering so every push to
-  # main gets a visible status for the no-category-means-no-tax invariant.
-  tax-category-invariant:
-    name: Tax invariant — uncategorized products remain zero-tax
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Uncategorized products must never charge legacy fallback tax
-        run: npm run test:tax-engine
-
-  # 4. Linux Baseline
+  # 3. Linux Baseline
   linux-baseline:
     name: Lint & Build Validation (Linux)
     needs: changes
@@ -173,7 +151,7 @@ jobs:
         run: |
           SHARD_TOTAL=2 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs
 
-  # 5. Playwright E2E
+  # 4. Playwright E2E
   e2e-playwright:
     name: End-to-End Playwright Tests
     needs: changes
@@ -246,7 +224,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 10
 
-  # 6. Windows Uninstaller Pester Suite
+  # 5. Windows Uninstaller Pester Suite
   windows-uninstaller:
     name: Windows Uninstaller Tests
     needs: changes

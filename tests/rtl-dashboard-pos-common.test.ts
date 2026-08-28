@@ -59,7 +59,6 @@ const SCREEN_FILES = [
   'frontend/src/components/pos/CartPanel.tsx',
   'frontend/src/components/pos/ProductGrid.tsx',
   'frontend/src/components/pos/PosTopbar.tsx',
-  'frontend/src/components/pos/TaxBreakdown.tsx',
   'frontend/src/components/pos/PaymentModal.tsx',
   'frontend/src/components/pos/PrepaidCheckoutModal.tsx',
   'frontend/src/components/pos/TablePickerModal.tsx',

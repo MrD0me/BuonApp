@@ -17,7 +17,6 @@ import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
-import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { safePrinterText, type PrintWarning } from './warnings';
 
 export interface ReceiptOptions {
@@ -27,14 +26,12 @@ export interface ReceiptOptions {
   showFooter?: boolean;
   /** Extra line of custom text printed below the footer. */
   footerNote?: string;
-  /** Tax registration number to print in footer / header */
+  /** Business registration number (P.IVA, VAT, GSTIN…) to print in footer / header */
   taxRegistrationNumber?: string;
   /** Business address to print */
   address?: string;
   /** Business phone to print */
   phone?: string;
-  /** Show per-tax-rate breakdown lines */
-  showTaxBreakdown?: boolean;
   /** Show the restaurant name when available. Default: true */
   showBusinessName?: boolean;
   /** Show the customer name when available. Default: true */
@@ -211,7 +208,6 @@ export function buildClassicReceiptBytes(
     taxRegistrationNumber,
     address,
     phone,
-    showTaxBreakdown = false,
     showBusinessName = true,
     showCustomerName = true,
     showCustomerPhone = true,
@@ -226,7 +222,6 @@ export function buildClassicReceiptBytes(
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
-  const taxComponents = resolveTaxComponents(bill);
   const col4Layout = resolveCol4Widths(cols, order?.items ?? [], currency, locale, trimDecimals);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
@@ -299,9 +294,6 @@ export function buildClassicReceiptBytes(
   if (Number(bill.discount_amount) > 0) {
     enc.text(padRow('Discount', `-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}`, cols)).newline();
   }
-  if (Number(bill.tax_amount) > 0) {
-    enc.text(padRow('Tax', formatAmount(bill.tax_amount, currency, locale, trimDecimals), cols)).newline();
-  }
   if (Number(bill.service_charge) > 0) {
     enc.text(padRow('Service Charge', formatAmount(bill.service_charge, currency, locale, trimDecimals), cols)).newline();
   }
@@ -325,15 +317,6 @@ export function buildClassicReceiptBytes(
   }
 
   enc.newline();
-
-  // Tax breakdown (optional)
-  if (showTaxBreakdown && taxComponents.length > 0) {
-    for (const component of taxComponents) {
-      enc
-        .text(padRow(` ${formatTaxComponentLabel(component)}`, formatAmount(component.amount, currency, locale, trimDecimals), cols))
-        .newline();
-    }
-  }
 
   // Footer
   if (showFooter) {
@@ -378,7 +361,6 @@ export function buildCompactReceiptBytes(
     taxRegistrationNumber,
     address,
     phone,
-    showTaxBreakdown = false,
     showBusinessName = true,
     showCustomerName = true,
     showCustomerPhone = true,
@@ -393,7 +375,6 @@ export function buildCompactReceiptBytes(
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
-  const taxComponents = resolveTaxComponents(bill);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -451,15 +432,6 @@ export function buildCompactReceiptBytes(
   if (Number(bill.discount_amount) > 0) {
     enc.text(padRow('Discount', `-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}`, cols)).newline();
   }
-  if (Number(bill.tax_amount) > 0) {
-    enc.text(padRow('Tax', formatAmount(bill.tax_amount, currency, locale, trimDecimals), cols)).newline();
-  }
-  if (showTaxBreakdown && taxComponents.length > 0) {
-    for (const component of taxComponents) {
-      enc.text(padRow(formatTaxComponentLabel(component), formatAmount(component.amount, currency, locale, trimDecimals), cols)).newline();
-    }
-  }
-
   enc.rule({ style: 'double' });
   enc
     .bold(true)
@@ -480,176 +452,6 @@ export function buildCompactReceiptBytes(
   if (address) safePrinterText(enc, truncate(address, cols), warnings).newline();
   if (phone) safePrinterText(enc, `Ph: ${phone}`, warnings).newline();
   enc.text('Thank you!').newline();
-  if (footerNote) {
-    safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
-  }
-
-  enc.newline().newline().newline().cut();
-
-  return enc.encode();
-}
-
-// ---------------------------------------------------------------------------
-// Legacy detailed tax encoder. Tax-specific templates are no longer exposed
-// as core bill templates; future country-specific templates should come from
-// the active tax pack/plugin contract instead.
-// ---------------------------------------------------------------------------
-
-export function buildDetailedReceiptBytes(
-  bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
-  opts: ReceiptOptions = {},
-  warnings?: PrintWarning[]
-): Uint8Array {
-  const {
-    paperWidth = 58,
-    footerNote,
-    taxRegistrationNumber,
-    address,
-    phone,
-    showTaxBreakdown = true,
-    showBusinessName = true,
-    showCustomerName = true,
-    showCustomerPhone = true,
-    showTableNumber = true,
-    useUnicode = false,
-    isReprint = false,
-    trimDecimals = false,
-  } = opts;
-  const cols = CHARS[paperWidth];
-  const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
-  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
-  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
-  const order = bill.order;
-  const taxComponents = resolveTaxComponents(bill);
-  const col4Layout = resolveCol4Widths(cols, order?.items ?? [], currency, locale, trimDecimals);
-
-  const enc = new ReceiptPrinterEncoder({ columns: cols });
-
-  enc.initialize();
-  if (isReprint) printReprintBanner(enc);
-
-  // Header
-  if (showBusinessName && tenant.business_name) {
-    enc.align('center').bold(true).width(2).height(2);
-    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true);
-    enc.width(1).height(1).bold(false).newline();
-  }
-
-  if (taxRegistrationNumber) {
-    enc.bold(true);
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings);
-    enc.bold(false).newline();
-  }
-
-  enc.bold(true).text('TAX INVOICE').bold(false).newline();
-
-  if (address) {
-    safePrinterText(enc, truncate(address, cols), warnings).newline();
-  }
-  if (phone) {
-    safePrinterText(enc, phone, warnings).newline();
-  }
-
-  enc.align('left').rule({ style: 'single' });
-
-  // Bill info
-  enc
-    .text(padRow(`Bill #: ${bill.bill_number}`, formatDate(bill.order?.created_at, locale), cols))
-    .newline();
-
-  if (showCustomerName && order?.customer?.name) {
-    safePrinterText(
-      enc,
-      padRow(
-        `Customer: ${truncate(order.customer.name, cols - 20)}`,
-        '',
-        cols
-      ),
-      warnings
-    ).newline();
-  }
-  if (showCustomerPhone && order?.customer?.phone) {
-    safePrinterText(enc, `Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings).newline();
-  }
-  if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings).newline();
-  }
-
-  enc.rule({ style: 'single' });
-
-  // 4-column items header
-  enc.text(col4Header(col4Layout)).newline();
-
-  // Line items
-  const items = order?.items ?? [];
-  for (const item of items) {
-    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
-      safePrinterText(enc, row, warnings).newline();
-    }
-
-    if (item.addons && item.addons.length > 0) {
-      for (const addon of item.addons) {
-        const qty = addon.quantity || 1;
-        const addonLabel = truncate(`  + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`, cols - 8);
-        if (addon.price && Number(addon.price) > 0) {
-          const addonTotal = Number(addon.price) * qty * item.quantity;
-          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings).newline();
-        } else {
-          safePrinterText(enc, addonLabel, warnings).newline();
-        }
-      }
-    }
-
-    if (item.special_instructions) {
-      safePrinterText(enc, truncate(`  >> ${item.special_instructions}`, cols), warnings).newline();
-    }
-  }
-
-  enc.rule({ style: 'single' });
-
-  // Subtotal (excl. tax)
-  enc
-    .text(padRow('Subtotal (excl. tax)', formatAmount(bill.subtotal, currency, locale, trimDecimals), cols))
-    .newline();
-
-  enc.rule({ style: 'single' });
-
-  if (showTaxBreakdown && taxComponents.length > 0) {
-    for (const component of taxComponents) {
-      enc
-        .text(padRow(` ${formatTaxComponentLabel(component)}`, formatAmount(component.amount, currency, locale, trimDecimals), cols))
-        .newline();
-    }
-  } else if (Number(bill.tax_amount) > 0) {
-    enc.text(padRow('Tax', formatAmount(bill.tax_amount, currency, locale, trimDecimals), cols)).newline();
-  }
-
-  enc.rule({ style: 'double' });
-  enc
-    .bold(true)
-    .text(padRow('TOTAL', formatAmount(bill.total, currency, locale, trimDecimals), cols))
-    .bold(false)
-    .newline();
-  enc.rule({ style: 'single' });
-
-  // Payment methods
-  if (bill.payment_details && bill.payment_details.length > 0) {
-    for (const p of bill.payment_details) {
-      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale, trimDecimals), cols)).newline();
-    }
-  }
-
-  enc.newline();
-  enc
-    .size('small')
-    .align('center')
-    .text('Rates inclusive of all applicable taxes')
-    .newline()
-    .size('normal')
-    .align('left');
-
   if (footerNote) {
     safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
   }

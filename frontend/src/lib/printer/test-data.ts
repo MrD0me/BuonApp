@@ -1,6 +1,6 @@
 /**
  * Print Test Utilities
- * 
+ *
  * This file provides test data and utilities to verify the printing
  * capabilities without needing actual orders/bills.
  */
@@ -12,27 +12,21 @@ import type { Bill, Order, Tenant, Customer, OrderItem, Table } from '@/lib/type
  */
 export function createTestBill(overrides?: Partial<Bill>): Bill {
   const testOrder = createTestOrder();
-  
   return {
     id: 1,
     bill_number: 'BILL-001',
     order_id: testOrder.id,
     customer_id: testOrder.customer_id,
-    subtotal: 450,
-    tax_amount: 54,
+    subtotal: 530,
     discount_amount: 0,
     service_charge: 0,
     delivery_charge: 0,
-    total: 504,
-    paid_amount: 504,
+    total: 530,
+    paid_amount: 530,
     balance: 0,
     payment_status: 'paid',
     payment_details: [
-      { method: 'cash', amount: 504, timestamp: new Date().toISOString() },
-    ],
-    tax_breakdown: [
-      { title: 'Tax A', rate: 6, amount: 27 },
-      { title: 'Tax B', rate: 6, amount: 27 },
+      { method: 'cash', amount: 530, timestamp: new Date().toISOString() },
     ],
     order: testOrder,
     ...overrides,
@@ -82,8 +76,7 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
       unit_price: 180,
       quantity: 2,
       subtotal: 360,
-      tax_amount: 18,
-      total: 378,
+      total: 360,
       addons: [
         { id: 1, name: 'Extra Spice', price: 20 },
       ],
@@ -99,8 +92,7 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
       unit_price: 30,
       quantity: 4,
       subtotal: 120,
-      tax_amount: 6,
-      total: 126,
+      total: 120,
       addons: null,
       special_instructions: null,
       status: 'pending',
@@ -114,8 +106,7 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
       unit_price: 50,
       quantity: 1,
       subtotal: 50,
-      tax_amount: 2.5,
-      total: 52.5,
+      total: 50,
       addons: null,
       special_instructions: null,
       status: 'ready',
@@ -130,10 +121,9 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
     type: 'dine_in',
     status: 'preparing',
     subtotal: 530,
-    tax_amount: 53,
     discount_amount: 0,
     delivery_charge: 0,
-    total: 583,
+    total: 530,
     guest_count: 3,
     special_instructions: 'Birthday celebration',
     created_by: 1,

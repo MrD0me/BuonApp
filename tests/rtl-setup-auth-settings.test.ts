@@ -40,7 +40,6 @@ const SCREEN_FILES = [
   'frontend/src/app/auth/login/page.tsx',
   'frontend/src/app/auth/recover/page.tsx',
   'frontend/src/app/(dashboard)/settings/page.tsx',
-  'frontend/src/components/settings/TaxConfigurationPanel.tsx',
   'frontend/src/components/settings/PaymentMethodsSettings.tsx',
   'frontend/src/components/settings/InitializeDatabaseDialog.tsx',
   'frontend/src/components/settings/HealthCheckDialog.tsx',

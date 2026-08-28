@@ -197,8 +197,8 @@ async function main() {
     const badCsv1 = await api(baseUrl, '/api/menu/csv/import/products', {
       method: 'POST',
       body: {
-        csv: 'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active\n' +
-             ',,Bad Product,Global Rate Menu,100,Desc,50,,,10abc,veg,yes'
+        csv: 'id,sku,name,category,price,description,cost,cashback_percent,tags,is_active\n' +
+             ',,Bad Product,Global Rate Menu,100,Desc,50,10abc,veg,yes'
       },
       headers: authHeader,
     });
@@ -208,8 +208,8 @@ async function main() {
     const badCsv2 = await api(baseUrl, '/api/menu/csv/import/products', {
       method: 'POST',
       body: {
-        csv: 'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active\n' +
-             ',,Bad Product,Global Rate Menu,100,Desc,50,,,-5,veg,yes'
+        csv: 'id,sku,name,category,price,description,cost,cashback_percent,tags,is_active\n' +
+             ',,Bad Product,Global Rate Menu,100,Desc,50,-5,veg,yes'
       },
       headers: authHeader,
     });

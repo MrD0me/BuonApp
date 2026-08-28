@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { X, ShoppingCart, Users, ChefHat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -218,11 +217,6 @@ export default function TableCheckoutModal({
             <span className="text-gray-500">{t('subtotal')}</span>
             <span>{fmt(Number(order.subtotal))}</span>
           </div>
-          <TaxBreakdown
-            taxAmount={Number(order.tax_amount)}
-            taxBreakdown={order.tax_breakdown}
-            theme="light"
-          />
           <div className="flex justify-between text-lg font-bold">
             <span>{t('total')}</span>
             <span className="text-brand">{fmt(Number(order.total))}</span>

@@ -28,7 +28,7 @@ const {
 } = require('./helpers/test-setup');
 const { menuCsvRoutes } = require('../main/routes/menu-csv');
 
-const PRODUCT_HEADER = 'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active';
+const PRODUCT_HEADER = 'id,sku,name,category,price,description,cost,cashback_percent,tags,is_active';
 const ADDON_HEADER = 'group_name,addon_name,price,group_required,group_min_select,group_max_select';
 
 function productCsv(...rows: string[]): string {
@@ -60,9 +60,9 @@ async function main() {
       method: 'POST',
       body: {
         csv: productCsv(
-          ',,"Quoted, Coffee","CSV Category",12.50,"He said ""hot"",\nthen served",3.25,,,2.5,"coffee,featured",yes',
-          ',,"CR Product","CSV Category",12,"line1\rline2",1,,,,,yes',
-          ',,"CRLF Product","CSV Category",12,"line1\r\nline2",1,,,,,yes',
+          ',,"Quoted, Coffee","CSV Category",12.50,"He said ""hot"",\nthen served",3.25,2.5,"coffee,featured",yes',
+          ',,"CR Product","CSV Category",12,"line1\rline2",1,,,yes',
+          ',,"CRLF Product","CSV Category",12,"line1\r\nline2",1,,,yes',
         ),
       },
       headers: authHeader,
@@ -84,7 +84,7 @@ async function main() {
       method: 'POST',
       body: {
         csv: productCsv(
-          ',,"Malformed" ,"CSV Category",10,Description,1,,,,,yes',
+          ',,"Malformed" ,"CSV Category",10,Description,1,,,yes',
         ),
       },
       headers: authHeader,
@@ -99,8 +99,8 @@ async function main() {
       method: 'POST',
       body: {
         csv: productCsv(
-          ',,Should Roll Back,CSV Category,10,Description,1,,,,,yes',
-          ',,Unterminated,CSV Category,11,"description never closes,1,,,,yes',
+          ',,Should Roll Back,CSV Category,10,Description,1,,,yes',
+          ',,Unterminated,CSV Category,11,"description never closes,1,,yes',
         ),
       },
       headers: authHeader,
@@ -117,8 +117,8 @@ async function main() {
       method: 'POST',
       body: {
         csv: productCsv(
-          ',,Partial Price,CSV Category,12abc,Description,1,,,,,yes',
-          ',,Partial Cost,CSV Category,12,Description,5xyz,,,,,yes',
+          ',,Partial Price,CSV Category,12abc,Description,1,,,yes',
+          ',,Partial Cost,CSV Category,12,Description,5xyz,,,yes',
         ),
       },
       headers: authHeader,
@@ -133,8 +133,8 @@ async function main() {
       method: 'POST',
       body: {
         csv: productCsv(
-          ',,Valid Beside Failure,CSV Category,13,Description,2,,,,,yes',
-          ',,Rejected Beside Valid,CSV Category,14abc,Description,2,,,,,yes',
+          ',,Valid Beside Failure,CSV Category,13,Description,2,,,yes',
+          ',,Rejected Beside Valid,CSV Category,14abc,Description,2,,,yes',
         ),
       },
       headers: authHeader,
@@ -149,11 +149,11 @@ async function main() {
       method: 'POST',
       body: {
         csv: productCsv(
-          ',,Negative Price,CSV Category,-1,Description,1,,,,,yes',
-          ',,NaN Price,CSV Category,NaN,Description,1,,,,,yes',
-          ',,Infinity Price,CSV Category,Infinity,Description,1,,,,,yes',
-          ',,Empty Price,CSV Category,,Description,1,,,,,yes',
-          ',,Negative Cost,CSV Category,15,Description,-1,,,,,yes',
+          ',,Negative Price,CSV Category,-1,Description,1,,,yes',
+          ',,NaN Price,CSV Category,NaN,Description,1,,,yes',
+          ',,Infinity Price,CSV Category,Infinity,Description,1,,,yes',
+          ',,Empty Price,CSV Category,,Description,1,,,yes',
+          ',,Negative Cost,CSV Category,15,Description,-1,,,yes',
         ),
       },
       headers: authHeader,

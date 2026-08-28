@@ -38,7 +38,6 @@ export interface PosSettingsState {
   billShowAddress: boolean;
   billShowPhone: boolean;
   billShowTaxId: boolean;
-  billShowTaxBreakdown: boolean;
   billShowCustomerName: boolean;
   billShowCustomerPhone: boolean;
   billShowTableNumber: boolean;
@@ -79,7 +78,6 @@ export interface PosSettingsState {
   setBillShowAddress: (v: boolean) => void;
   setBillShowPhone: (v: boolean) => void;
   setBillShowTaxId: (v: boolean) => void;
-  setBillShowTaxBreakdown: (v: boolean) => void;
   setBillShowCustomerName: (v: boolean) => void;
   setBillShowCustomerPhone: (v: boolean) => void;
   setBillShowTableNumber: (v: boolean) => void;
@@ -120,7 +118,6 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billShowAddress: true,
       billShowPhone: true,
       billShowTaxId: false,
-      billShowTaxBreakdown: true,
       billShowCustomerName: true,
       billShowCustomerPhone: true,
       billShowTableNumber: true,
@@ -154,7 +151,6 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillShowAddress: (v) => set({ billShowAddress: v }),
       setBillShowPhone: (v) => set({ billShowPhone: v }),
       setBillShowTaxId: (v) => set({ billShowTaxId: v }),
-      setBillShowTaxBreakdown: (v) => set({ billShowTaxBreakdown: v }),
       setBillShowCustomerName: (v) => set({ billShowCustomerName: v }),
       setBillShowCustomerPhone: (v) => set({ billShowCustomerPhone: v }),
       setBillShowTableNumber: (v) => set({ billShowTableNumber: v }),
@@ -186,8 +182,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       // layout alive. A browser that saved 'a4'/'a5' before the removal
       // would otherwise keep a value nothing in the app still recognizes.
       // v3: web print now shares the main printerPaperSize setting, and bill
-      // content controls gained explicit customer/table/tax-breakdown flags.
-      version: 3,
+      // content controls gained explicit customer/table flags.
+      // v4: the tax-breakdown flag went away with the taxation module.
+      version: 4,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
@@ -209,10 +206,12 @@ export const usePosSettingsStore = create<PosSettingsState>()(
         if (version < 3) {
           if (!state.printerPaperSize && state.webPrintSize) state.printerPaperSize = state.webPrintSize;
           delete state.webPrintSize;
-          state.billShowTaxBreakdown ??= true;
           state.billShowCustomerName ??= true;
           state.billShowCustomerPhone ??= true;
           state.billShowTableNumber ??= true;
+        }
+        if (version < 4) {
+          delete state.billShowTaxBreakdown;
         }
         return state as unknown as PosSettingsState;
       },

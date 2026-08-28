@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, generateShortId, getSettingValue } from '../db';
+import { getDatabase, now, generateShortId } from '../db';
 import { requireRole, isBlockedSsrfTarget } from '../middleware/security';
 import { getHttpRequestSignal } from '../shutdown';
-import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as https from 'https';
@@ -268,8 +267,6 @@ function loadProductRelationsBatch(db: any, products: any[]) {
   return result;
 }
 
-const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
-
 const router = Router();
 
 function hasOwn(body: Record<string, unknown>, field: string): boolean {
@@ -290,7 +287,6 @@ function serializeAddon(addon: any): any {
   return {
     ...addon,
     is_active: toBoolean(addon.is_active),
-    inherit_parent_tax_category: toBoolean(addon.inherit_parent_tax_category),
   };
 }
 
@@ -335,22 +331,6 @@ function validateProductNumericFields(values: Record<string, unknown>, requirePr
     if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
       return `${field} must be a finite number between ${minimum} and ${maximum === Number.POSITIVE_INFINITY ? 'the maximum supported value' : maximum}`;
     }
-  }
-  return null;
-}
-
-function validateTaxCategoryId(categoryId: unknown): string | null {
-  if (categoryId === null || categoryId === undefined || categoryId === '') return null;
-  if (typeof categoryId !== 'string') return 'tax_category_id must be a string or null';
-
-  const country = getSettingValue('country') || 'IN';
-  const businessType = getSettingValue('business_type') || 'restaurant';
-  const pack = getActiveCountryPack(country);
-  if (!hasConfiguredTaxCategories(pack, businessType)) {
-    return `No configured tax categories are available for country ${country} and business type ${businessType}`;
-  }
-  if (!pack.categories.some((category) => category.id === categoryId)) {
-    return `Unknown tax_category_id "${categoryId}" for country ${country}`;
   }
   return null;
 }
@@ -431,7 +411,7 @@ router.get('/', (req: Request, res: Response) => {
     const db = getDatabase();
     let query = `SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
       p.is_active, p.sort_order, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
-      p.tax_type, p.tax_rate, p.tax_category_id, p.tax_behavior, p.cb_percent, p.tags, p.deleted_at, p.created_at, p.updated_at,
+      p.cb_percent, p.tags, p.deleted_at, p.created_at, p.updated_at,
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
       FROM products p 
       LEFT JOIN categories c ON p.category_id = c.id
@@ -705,7 +685,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
   try {
     const {
       category_id, name, sku, barcode, description, price, cost_price,
-      tax_category_id, tax_behavior, track_inventory, stock_quantity,
+      track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
@@ -721,14 +701,6 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       if (typeof cb_percent !== 'number' || !Number.isFinite(cb_percent) || cb_percent < 0 || cb_percent > 100) {
         return res.status(400).json({ error: 'cb_percent must be a number between 0 and 100' });
       }
-    }
-
-    if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
-      return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
-    }
-    const taxCategoryError = validateTaxCategoryId(tax_category_id);
-    if (taxCategoryError) {
-      return res.status(400).json({ error: taxCategoryError });
     }
 
     // Validate image_url at write time (server-side security boundary)
@@ -766,12 +738,11 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const insertProduct = db.transaction(() => {
       db.prepare(`
         INSERT INTO products (id, category_id, name, sku, barcode, description, price, cost,
-          tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity, low_stock_threshold,
+          track_inventory, stock_quantity, low_stock_threshold,
           is_active, image_url, sort_order, cb_percent, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, normalizeNullableString(category_id), productName, normalizeNullableString(sku), normalizedBarcode, normalizeNullableString(description), price, cost_price || 0,
-        'none', 0, normalizeNullableString(tax_category_id), tax_behavior || 'country_default',
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, normalizeNullableString(image_url),
         sort_order || 0, cb_percent !== undefined ? cb_percent : null, JSON.stringify(tags || []),
@@ -805,7 +776,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
     const {
       category_id, name, sku, barcode, description, price, cost_price,
-      tax_category_id, tax_behavior, track_inventory, stock_quantity,
+      track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
@@ -818,18 +789,10 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const numericError = validateProductNumericFields(req.body, false);
     if (numericError) return res.status(400).json({ error: numericError });
 
-    if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
-      return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
-    }
-
     if (cb_percent !== undefined && cb_percent !== null) {
       if (typeof cb_percent !== 'number' || !Number.isFinite(cb_percent) || cb_percent < 0 || cb_percent > 100) {
         return res.status(400).json({ error: 'cb_percent must be a number between 0 and 100' });
       }
-    }
-    const taxCategoryError = validateTaxCategoryId(tax_category_id);
-    if (taxCategoryError) {
-      return res.status(400).json({ error: taxCategoryError });
     }
     if (hasOwn(req.body, 'category_id')) {
       const categoryError = validateCategoryId(db, category_id);
@@ -858,7 +821,6 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     // Detect whether client explicitly sent image_url (even as null/undefined)
     // so we can distinguish "don't touch image_url" from "clear image_url"
     const hasImageUrl = 'image_url' in req.body;
-    const hasTaxCategoryId = 'tax_category_id' in req.body;
     const hasCbPercent = 'cb_percent' in req.body;
     const hasCategoryId = hasOwn(req.body, 'category_id');
     const hasSku = hasOwn(req.body, 'sku');
@@ -884,10 +846,6 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
           description = CASE WHEN @has_description = 1 THEN @description ELSE description END,
           price = COALESCE(@price, price),
           cost = CASE WHEN @has_cost = 1 THEN @cost ELSE cost END,
-          tax_type = 'none',
-          tax_rate = 0,
-          tax_category_id = CASE WHEN @has_tax_category_id = 1 THEN @tax_category_id ELSE tax_category_id END,
-          tax_behavior = COALESCE(@tax_behavior, tax_behavior),
           track_inventory = COALESCE(@track_inventory, track_inventory),
           stock_quantity = COALESCE(@stock_quantity, stock_quantity),
           low_stock_threshold = COALESCE(@low_stock_threshold, low_stock_threshold),
@@ -912,9 +870,6 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         price: price ?? null,
         has_cost: hasCostPrice ? 1 : 0,
         cost: cost_price ?? null,
-        tax_category_id: normalizeNullableString(tax_category_id),
-        tax_behavior: tax_behavior ?? null,
-        has_tax_category_id: hasTaxCategoryId ? 1 : 0,
         track_inventory: track_inventory ? 1 : track_inventory === 0 || track_inventory === false ? 0 : null,
         stock_quantity: stock_quantity ?? null,
         low_stock_threshold: low_stock_threshold ?? null,

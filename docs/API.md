@@ -882,7 +882,6 @@ Apply discount to a bill (owner/manager only).
 - `value`: must be positive; cannot exceed store limits (`discount_max_percentage`, `discount_max_amount`)
 - `discount_mode` setting is checked — restricts which discount types are allowed
 - If `discount_requires_approval` is true, `override_pin` is required
-- Recalculates tax on discounted subtotal
 - Updates both bill and order in a transaction
 
 **Error (400):**
@@ -1060,7 +1059,7 @@ Earn loyalty points.
 
 The owner dashboard these once fed is gone; a service day's own close summary
 (`GET /api/service-days/:id`) is where a restaurant reads its numbers. What
-remains here is the money-and-tax read side over a date range. All three are
+remains here is the money read side over a date range. Both are
 owner/manager only. Dates are UTC `YYYY-MM-DD`; a malformed date falls back to
 today rather than erroring.
 
@@ -1105,26 +1104,6 @@ lines are attributed to their own timestamp, falling back to the bill's
 
 ---
 
-### GET `/api/reports/tax-components`
-Tax carried by the bills in a range, aggregated by component.
-
-**Query params:** `?start_date=2026-03-01&end_date=2026-03-31`
-
-**Response:**
-```json
-{
-  "taxComponents": {
-    "startDate": "2026-03-01",
-    "endDate": "2026-03-31",
-    "billCount": 128,
-    "taxAmount": 640.5,
-    "components": [{ "title": "GST", "rate": 5, "amount": 640.5 }]
-  }
-}
-```
-
----
-
 ## Settings
 
 ### GET `/api/settings/business`
@@ -1151,28 +1130,9 @@ Update business settings.
 
 `timezone` is validated as an IANA identifier; invalid values return HTTP 400 with `"Invalid timezone, currency, or country"`.
 
-When `tax_registration_number` is provided, the backend validates it against the active country pack's registration format. A mismatch returns HTTP 400:
-
-```json
-{
-  "error": "Tax ID does not match the expected IN format: 15-digit GSTIN",
-  "tax_id_format": { "pattern": "...", "description": "..." }
-}
-```
+`tax_registration_number` is the business registration number printed on the bill header (P.IVA, VAT, GSTIN…). It is stored and printed verbatim — nothing validates or computes with it.
 
 Locale display preferences (`currency_display`, `number_digits`, `calendar`) are validated against the effective country's `localeOptions`. Unsupported values return HTTP 400 with `"Invalid <key> for country <code>"`. Changing the country normalizes any previously stored preferences that are not supported by the new country to their neutral defaults (`rial`, `locale`, `locale`).
-
----
-
-### GET `/api/settings/tax`
-Get tax settings.
-
----
-
-### PUT `/api/settings/tax`
-Update tax settings (owner/manager only).
-
-Validates `tax_registration_number` against the active country pack format, same as `PUT /api/settings/business`.
 
 ---
 

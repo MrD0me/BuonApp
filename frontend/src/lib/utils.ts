@@ -16,3 +16,13 @@ export function parseDbTimestamp(ts: string | null | undefined): Date {
   if (!ts) return new Date(NaN)
   return /^\d{4}-\d{2}-\d{2} /.test(ts) ? new Date(`${ts.replace(' ', 'T')}Z`) : new Date(ts)
 }
+
+/**
+ * Rounds a money amount to the two decimals a receipt shows, matching
+ * roundMoney() in main/money.ts so a total previewed in the UI is the total
+ * the backend stores.
+ */
+export function roundMoney(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Number(value.toFixed(2))
+}

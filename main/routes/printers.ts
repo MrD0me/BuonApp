@@ -509,7 +509,6 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
       show_address: settings.bill_show_address !== 'false',
       show_phone: settings.bill_show_phone !== 'false',
       show_tax_id: settings.bill_show_tax_id === 'true',
-      show_tax_breakdown: settings.bill_show_tax_breakdown !== 'false',
       show_customer_name: settings.bill_show_customer_name !== 'false',
       show_customer_phone: settings.bill_show_customer_phone !== 'false',
       show_table_number: settings.bill_show_table_number !== 'false',

@@ -112,7 +112,6 @@ export interface KdsOrder {
   customer_id?: string | null;
   status?: string;
   subtotal?: number;
-  tax_amount?: number;
   total?: number;
   guest_count?: number | null;
   special_instructions?: string | null;

@@ -12,5 +12,4 @@ test('IR country profile properties', () => {
   assert.equal(ir.dialCode, '+98');
   assert.equal(ir.taxIdLabel, 'Economic Code');
   assert.equal(ir.taxName, 'VAT');
-  assert.equal(ir.taxIdFormat, undefined, 'No tax ID format should be enforced for IR');
 });

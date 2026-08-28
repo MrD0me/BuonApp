@@ -52,5 +52,5 @@ body:
     id: environment
     attributes:
       label: Setup details
-      description: Include operating system, BuonApp version, printer type, payment flow, tax region, and number of terminals if relevant.
+      description: Include operating system, BuonApp version, printer type, payment flow, and number of terminals if relevant.
 

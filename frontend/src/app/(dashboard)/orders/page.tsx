@@ -40,7 +40,7 @@ import {
   type AppendAttempt,
   type AppendAttemptStorage,
 } from '@/lib/append-attempt';
-import { preferChildScopedBill } from '@/lib/printer/tax-components';
+import { preferChildScopedBill } from '@/lib/printer/bill-scope';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
@@ -1042,7 +1042,6 @@ export default function OrdersPage() {
             const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
             const bill = order.bill;
             const discount = bill ? Number(bill.discount_amount) : Number(order.discount_amount);
-            const tax = bill ? Number(bill.tax_amount) : Number(order.tax_amount);
             const subtotal = bill ? Number(bill.subtotal) : Number(order.subtotal);
             const total = bill ? Number(bill.total) : Number(order.total);
 
@@ -1247,12 +1246,6 @@ export default function OrdersPage() {
                       <div className="flex justify-between text-sm">
                         <span className="text-purple-600">{tCommon('discount')}</span>
                         <span className="text-purple-600">-{fmt(discount)}</span>
-                      </div>
-                    )}
-                    {tax > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">{tCommon('tax')}</span>
-                        <span className="text-gray-700">{fmt(tax)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-base font-bold pt-1 border-t border-gray-100">
@@ -1638,10 +1631,6 @@ placeholder={tOrders('managerPin')}
                   <span className="text-gray-900">{fmt(Number(discountModal.order.subtotal))}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">{tCommon('tax')}</span>
-                  <span className="text-gray-900">{fmt(Number(discountModal.order.tax_amount || 0))}</span>
-                </div>
-                <div className="flex justify-between text-sm">
                   <span className="text-purple-600">
                     {tCommon('discount')}
                     {discountModal.type === 'percentage' && discountModal.value > 0 && (
@@ -1661,8 +1650,8 @@ placeholder={tOrders('managerPin')}
                   <span className="text-gray-900">
                     {fmt(
                       discountModal.type === 'percentage'
-                        ? Number(discountModal.order.subtotal) * (1 - discountModal.value / 100) + Number(discountModal.order.tax_amount || 0)
-                        : Number(discountModal.order.subtotal) - Number(discountModal.value) + Number(discountModal.order.tax_amount || 0)
+                        ? Number(discountModal.order.subtotal) * (1 - discountModal.value / 100)
+                        : Number(discountModal.order.subtotal) - Number(discountModal.value)
                     )}
                   </span>
                 </div>

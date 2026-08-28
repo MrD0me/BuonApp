@@ -81,7 +81,7 @@ async function run() {
     customer_id: 'cust-ir-1',
     status: 'completed',
     subtotal: 900000,
-    tax_amount: 90000,
+
     discount_amount: 0,
     total: 990000,
     created_at: '2026-08-17T14:30:00.000Z',
@@ -94,7 +94,7 @@ async function run() {
         unit_price: 300000,
         quantity: 2,
         subtotal: 600000,
-        tax_amount: 60000,
+
         total: 660000,
         addons: [{ id: 1, name: 'هل اضافه', price: 50000, quantity: 1 }],
         special_instructions: 'کم شیرین',
@@ -108,7 +108,7 @@ async function run() {
         unit_price: 300000,
         quantity: 1,
         subtotal: 300000,
-        tax_amount: 30000,
+
         total: 330000,
         addons: null,
         special_instructions: null,
@@ -141,7 +141,7 @@ async function run() {
     order_id: 101,
     customer_id: 'cust-ir-1',
     subtotal: 900000,
-    tax_amount: 90000,
+
     discount_amount: 0,
     service_charge: 0,
     delivery_charge: 0,
@@ -151,9 +151,6 @@ async function run() {
     payment_status: 'paid',
     payment_details: [
       { method: 'card', amount: 990000, timestamp: '2026-08-17T14:35:00.000Z' },
-    ],
-    tax_breakdown: [
-      { title: 'ارزش افزوده (VAT)', rate: 10, amount: 90000 },
     ],
     order: testIranOrder,
   };
@@ -212,12 +209,10 @@ async function run() {
       html.includes('<th class="text-end">نرخ</th>') &&
       html.includes('<th class="text-end">مبلغ</th>')
     );
-    assert('Tax Details header shows Persian "جزئیات مالیات"', html.includes('<th colspan="2">جزئیات مالیات</th>'));
     assert('Grand Total row shows Persian "جمع کل"', html.includes('<strong>جمع کل</strong>'));
     assert('Payments section header shows Persian "پرداخت‌ها"', html.includes('<th colspan="2">پرداخت‌ها</th>'));
     assert('Card payment method translated to "کارت"', html.includes('<td>کارت</td>'));
     assert('Footer shows Persian thank you', html.includes('از بازدید شما سپاسگزاریم!'));
-    assert('Footer shows Persian tax notice', html.includes('مالیات در صورت اعمال، شامل شده است'));
     assert('Print button shows Persian "چاپ رسید"', html.includes('چاپ رسید</button>'));
   }
 
@@ -291,7 +286,7 @@ async function run() {
       bill_number: 'BILL-EN-001',
       total: 50.00,
       subtotal: 45.00,
-      tax_amount: 5.00,
+
       payment_details: [{ method: 'cash', amount: 50.00 }],
     };
     const usTenant = {
@@ -429,7 +424,7 @@ async function run() {
         ...testIranBill,
         bill_number: 'BILL-US-1001',
         subtotal: 45.00,
-        tax_amount: 4.50,
+
         total: 49.50,
         paid_amount: 49.50,
         payment_details: [{ method: 'card', amount: 49.50, timestamp: '2026-08-17T14:35:00.000Z' }],
@@ -440,7 +435,7 @@ async function run() {
           table: { id: 't1', name: 'Table 4', capacity: 2, status: 'occupied', is_active: true },
           items: [{
             id: 1, order_id: 101, product_id: 'p1', product_name: 'Espresso', unit_price: 15.00,
-            quantity: 3, subtotal: 45.00, tax_amount: 4.50, total: 49.50, addons: null, special_instructions: null, status: 'served'
+            quantity: 3, subtotal: 45.00, total: 49.50, addons: null, special_instructions: null, status: 'served'
           }],
         },
       }, {
@@ -463,7 +458,7 @@ async function run() {
         ...testIranBill,
         bill_number: 'COMP-ES-2045',
         subtotal: 30.00,
-        tax_amount: 3.00,
+
         total: 33.00,
         paid_amount: 33.00,
         payment_details: [{ method: 'cash', amount: 33.00, timestamp: '2026-08-17T14:35:00.000Z' }],
@@ -474,7 +469,7 @@ async function run() {
           table: { id: 't1', name: 'Mesa 7', capacity: 2, status: 'occupied', is_active: true },
           items: [{
             id: 1, order_id: 101, product_id: 'p1', product_name: 'Café con Leche', unit_price: 15.00,
-            quantity: 2, subtotal: 30.00, tax_amount: 3.00, total: 33.00, addons: null, special_instructions: null, status: 'served'
+            quantity: 2, subtotal: 30.00, total: 33.00, addons: null, special_instructions: null, status: 'served'
           }],
         },
       }, {
@@ -498,7 +493,7 @@ async function run() {
         ...testIranBill,
         bill_number: 'CONTA-PT-3001',
         subtotal: 80.00,
-        tax_amount: 8.00,
+
         total: 88.00,
         paid_amount: 88.00,
         payment_details: [{ method: 'wallet', amount: 88.00, timestamp: '2026-08-17T14:35:00.000Z' }],
@@ -509,7 +504,7 @@ async function run() {
           table: { id: 't1', name: 'Mesa 2', capacity: 4, status: 'occupied', is_active: true },
           items: [{
             id: 1, order_id: 101, product_id: 'p1', product_name: 'Pão de Queijo', unit_price: 40.00,
-            quantity: 2, subtotal: 80.00, tax_amount: 8.00, total: 88.00, addons: null, special_instructions: null, status: 'served'
+            quantity: 2, subtotal: 80.00, total: 88.00, addons: null, special_instructions: null, status: 'served'
           }],
         },
       }, {

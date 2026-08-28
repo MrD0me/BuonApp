@@ -12,10 +12,9 @@ import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
 import { shareBillViaWhatsApp, getWhatsAppMessage } from '@/lib/whatsapp-share';
 import { formatCurrencyForTenant, getCountryByCode } from '@/lib/countries';
 import { formatDate } from '@/lib/printer/format-date';
-import { formatTaxComponentLabel, resolveTaxComponents } from '@/lib/printer/tax-components';
 import toast from 'react-hot-toast';
 import { useTranslations, type AppConfig } from 'use-intl';
-type TestMode = 'receipt' | 'tax' | 'kot' | 'web-print' | 'whatsapp';
+type TestMode = 'receipt' | 'kot' | 'web-print' | 'whatsapp';
 type PaperWidth = 58 | 80;
 
 export default function PrintTestPage() {
@@ -23,7 +22,7 @@ export default function PrintTestPage() {
   const [paperWidth, setPaperWidth] = useState<PaperWidth>(58);
   const [testing, setTesting] = useState(false);
 
-  const { printBill, printTaxBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
+  const { printBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
   const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
   const printerPaperSize = usePosSettingsStore((s) => s.printerPaperSize);
   const t = useTranslations('printTest');
@@ -47,28 +46,6 @@ export default function PrintTestPage() {
           } else {
             const printWarnings = await printBill(testBill, testTenant, { paperWidth });
             toast.success(t('receiptPrinted'));
-            showPrintWarningsToast(printWarnings);
-          }
-          break;
-        case 'tax':
-          if (printMethod === 'browser') {
-            const html = generateThermalReceiptHtml(testBill, testTenant, paperWidth, {
-              t,
-              tCommon,
-              taxRegistrationNumber: 'TAXID-0001',
-              address: '123 Main Street, Mumbai - 400001',
-              phone: '+91 9876543210',
-            });
-            await printerService.printViaBrowser(html, paperWidth);
-            toast.success(t('browserDialogOpened'));
-          } else {
-            const printWarnings = await printTaxBill(testBill, testTenant, {
-              paperWidth,
-              taxRegistrationNumber: 'TAXID-0001',
-              address: '123 Main Street, Mumbai - 400001',
-              phone: '+91 9876543210',
-            });
-            toast.success(t('taxBillPrinted'));
             showPrintWarningsToast(printWarnings);
           }
           break;
@@ -139,7 +116,6 @@ export default function PrintTestPage() {
 
   const testOptions: { value: TestMode; label: string; icon: React.ElementType }[] = [
     { value: 'receipt', label: 'Basic Receipt (Thermal)', icon: Printer },
-    { value: 'tax', label: 'Detailed Tax Bill (Thermal)', icon: Printer },
     // Hidden entirely when KOT printing is disabled — this is a manual
     // "Print KOT" action, which must never be reachable in that state (#133).
     ...(kotPrintingEnabled ? [{ value: 'kot' as TestMode, label: 'KOT (Kitchen Ticket)', icon: Printer }] : []),
@@ -338,14 +314,7 @@ function generateThermalReceiptHtml(
     </tr>
   `).join('');
 
-  const taxComponents = resolveTaxComponents(bill);
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
-  const taxRows = taxComponents.map((component) => `
-        <tr>
-          <td style="padding:${padding};">${formatTaxComponentLabel(component)}</td>
-          <td style="text-align:right;padding:${padding};">${fmtCurrency(component.amount)}</td>
-        </tr>
-  `).join('');
 
   return `
     <div style="text-align:center;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
@@ -382,7 +351,6 @@ function generateThermalReceiptHtml(
           <td style="text-align:right;padding:${padding};">-${fmtCurrency(bill.discount_amount)}</td>
         </tr>
         ` : ''}
-        ${taxRows}
         <tr style="font-weight:bold;">
           <td style="padding:${padding};">${tCommon('total')}</td>
           <td style="text-align:right;padding:${padding};">${fmtCurrency(bill.total)}</td>

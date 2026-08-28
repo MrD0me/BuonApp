@@ -20,7 +20,6 @@ import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
-import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
@@ -87,16 +86,13 @@ type SettingsKey = keyof AppConfig['Messages']['settings'];
 
 interface TemplateCard {
   id: BillTemplate;
-  nameKey?: SettingsKey;
-  displayName?: string;
+  nameKey: SettingsKey;
   preview: string;
-  source: 'core' | 'plugin';
-  description?: string;
 }
 
 const TEMPLATE_CARDS: TemplateCard[] = [
-  { id: 'classic', nameKey: 'billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core' },
-  { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core' },
+  { id: 'classic', nameKey: 'billTemplateClassicName', preview: CLASSIC_PREVIEW },
+  { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW },
 ];
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -261,7 +257,6 @@ export default function SettingsPage() {
   const setLanguage = posSettings.setLanguage;
   const { formatDateTime } = useFormatDate();
   const isAdmin = currentTenant?.role === 'admin' || currentTenant?.role === 'owner';
-  const canViewTaxConfiguration = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
   const { confirm, ConfirmDialog } = useConfirm();
 
   // Whether this business keeps a customer book at all. Saved on the spot
@@ -975,7 +970,7 @@ export default function SettingsPage() {
     printerUseUnicode: boolean;
     printerTrimDecimals: boolean;
     billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
-    billShowTaxBreakdown: boolean; billShowCustomerName: boolean; billShowCustomerPhone: boolean; billShowTableNumber: boolean;
+    billShowCustomerName: boolean; billShowCustomerPhone: boolean; billShowTableNumber: boolean;
   };
   const initPrinting = (): PrintingForm => ({
     printerEnabled: posSettings.printerEnabled,
@@ -989,7 +984,6 @@ export default function SettingsPage() {
     billShowAddress: posSettings.billShowAddress,
     billShowPhone: posSettings.billShowPhone,
     billShowTaxId: posSettings.billShowTaxId,
-    billShowTaxBreakdown: posSettings.billShowTaxBreakdown,
     billShowCustomerName: posSettings.billShowCustomerName,
     billShowCustomerPhone: posSettings.billShowCustomerPhone,
     billShowTableNumber: posSettings.billShowTableNumber,
@@ -1008,7 +1002,6 @@ export default function SettingsPage() {
     posSettings.setBillShowAddress(printingForm.billShowAddress);
     posSettings.setBillShowPhone(printingForm.billShowPhone);
     posSettings.setBillShowTaxId(printingForm.billShowTaxId);
-    posSettings.setBillShowTaxBreakdown(printingForm.billShowTaxBreakdown);
     posSettings.setBillShowCustomerName(printingForm.billShowCustomerName);
     posSettings.setBillShowCustomerPhone(printingForm.billShowCustomerPhone);
     posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
@@ -1019,7 +1012,6 @@ export default function SettingsPage() {
         ['bill_show_address', printingForm.billShowAddress],
         ['bill_show_phone', printingForm.billShowPhone],
         ['bill_show_tax_id', printingForm.billShowTaxId],
-        ['bill_show_tax_breakdown', printingForm.billShowTaxBreakdown],
         ['bill_show_customer_name', printingForm.billShowCustomerName],
         ['bill_show_customer_phone', printingForm.billShowCustomerPhone],
         ['bill_show_table_number', printingForm.billShowTableNumber],
@@ -1038,7 +1030,6 @@ export default function SettingsPage() {
   });
   const [billForm, setBillForm] = useState<BillTemplateForm>(initBillTemplate);
   const [savedBillForm, setSavedBillForm] = useState<BillTemplateForm>(initBillTemplate);
-  const [billTemplateCards, setBillTemplateCards] = useState<TemplateCard[]>(TEMPLATE_CARDS);
   const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
@@ -1056,7 +1047,6 @@ export default function SettingsPage() {
     businessName: string; countryCode: string; timezone: string; currency: string;
     billingType: 'postpaid' | 'prepaid';
     tablesRequired: boolean;
-    taxRegistered: boolean;
     taxRegistrationNumber: string; businessAddress: string; businessPhone: string; instagramHandle: string;
     currencyDisplay: CurrencyDisplay;
     numberDigits: DigitMode;
@@ -1065,7 +1055,6 @@ export default function SettingsPage() {
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
     tablesRequired: true,
-    taxRegistered: false,
     taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
     currencyDisplay: 'rial',
     numberDigits: 'locale',
@@ -1073,33 +1062,6 @@ export default function SettingsPage() {
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
-  // Server-resolved: the active country tax pack's format if it declares
-  // one, else the static countries.ts fallback, else null. The backend is
-  // authoritative; this drives immediate warning feedback below the field.
-  const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
-  const [taxIdFormatCountryCode, setTaxIdFormatCountryCode] = useState('');
-  // check 25 (main/routes/tax-packs.ts) rejects the textbook nested-
-  // quantifier ReDoS shape at pack-activation time, but that's a known-shape
-  // heuristic, not a formal safety proof. This runs on every keystroke, so
-  // cap the input actually tested as a backstop too: the longest real
-  // registration-number scheme is 15 chars (India GSTIN), so 24 leaves
-  // generous headroom while bounding a worst-case pattern's backtracking to
-  // low milliseconds instead of freezing the tab.
-  const TAX_ID_WARNING_MAX_LENGTH = 24;
-  const taxIdWarning = (() => {
-    const value = form.taxRegistrationNumber.trim();
-    // Do not show a format against a country other than the one for which the
-    // server resolved it. This also keeps a rejected country-change response
-    // visible for the submitted country without mislabeling it after a revert.
-    if (!taxIdFormat || !value || form.countryCode !== taxIdFormatCountryCode) return null;
-    if (value.length > TAX_ID_WARNING_MAX_LENGTH) return null;
-    try {
-      return new RegExp(taxIdFormat.pattern, 'i').test(value) ? null : taxIdFormat.description;
-    } catch {
-      return null;
-    }
-  })();
-
   type GoogleDriveStatus = {
     configured: boolean;
     secure_storage_available: boolean;
@@ -1178,7 +1140,6 @@ export default function SettingsPage() {
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
-        taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
         taxRegistrationNumber: d.tax_registration_number || '',
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
@@ -1189,14 +1150,11 @@ export default function SettingsPage() {
       };
       setSavedBusiness(loaded);
       setForm(loaded);
-      setTaxIdFormat(d.tax_id_format || null);
-      setTaxIdFormatCountryCode(loaded.countryCode);
       const billDisplay = {
         billShowName: d.bill_show_name !== false,
         billShowAddress: d.bill_show_address !== false,
         billShowPhone: d.bill_show_phone !== false,
         billShowTaxId: d.bill_show_tax_id === true,
-        billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
         billShowCustomerName: d.bill_show_customer_name !== false,
         billShowCustomerPhone: d.bill_show_customer_phone !== false,
         billShowTableNumber: d.bill_show_table_number !== false,
@@ -1207,7 +1165,6 @@ export default function SettingsPage() {
       posSettings.setBillShowAddress(billDisplay.billShowAddress);
       posSettings.setBillShowPhone(billDisplay.billShowPhone);
       posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
-      posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
       posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
       posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
       posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
@@ -1359,24 +1316,10 @@ export default function SettingsPage() {
       setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
     }).catch(() => {});
     Promise.all([
-      api.get('/settings/bill-templates').catch(() => null),
       api.get('/settings/bill_template').catch(() => null),
       api.get('/settings/bill_footer_message').catch(() => null),
-    ]).then(([templatesResponse, templateResponse, footerResponse]) => {
-      const pluginCards: TemplateCard[] = (templatesResponse?.data?.plugins || []).map((template: {
-        id: string;
-        displayName: string;
-        country: string;
-        paperColumns: number[];
-      }) => ({
-        id: template.id,
-        displayName: template.displayName,
-        preview: `  ${template.displayName}\n-----------\nTax invoice\n${template.country} · ${template.paperColumns.join('/')} cols\n-----------\nTOTAL`,
-        source: 'plugin' as const,
-        description: `${template.country} tax template · ${template.paperColumns.join(', ')} columns`,
-      }));
-      const availableTemplateIds = new Set([...TEMPLATE_CARDS, ...pluginCards].map((card) => card.id));
-      setBillTemplateCards([...TEMPLATE_CARDS, ...pluginCards]);
+    ]).then(([templateResponse, footerResponse]) => {
+      const availableTemplateIds = new Set(TEMPLATE_CARDS.map((card) => card.id));
       const storedTemplate = templateResponse?.data.setting?.value;
       const billTemplate: BillTemplate = availableTemplateIds.has(storedTemplate)
         ? storedTemplate as BillTemplate
@@ -1414,7 +1357,6 @@ export default function SettingsPage() {
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
-        taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
         taxRegistrationNumber: d.tax_registration_number || '',
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
@@ -1425,15 +1367,12 @@ export default function SettingsPage() {
       };
       setSavedBusiness(loaded);
       setForm(loaded);
-      setTaxIdFormat(d.tax_id_format || null);
-      setTaxIdFormatCountryCode(loaded.countryCode);
       // Sync to pos-settings store for bill printing
       const billDisplay = {
         billShowName: d.bill_show_name !== false,
         billShowAddress: d.bill_show_address !== false,
         billShowPhone: d.bill_show_phone !== false,
         billShowTaxId: d.bill_show_tax_id === true,
-        billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
         billShowCustomerName: d.bill_show_customer_name !== false,
         billShowCustomerPhone: d.bill_show_customer_phone !== false,
         billShowTableNumber: d.bill_show_table_number !== false,
@@ -1444,7 +1383,6 @@ export default function SettingsPage() {
       posSettings.setBillShowAddress(billDisplay.billShowAddress);
       posSettings.setBillShowPhone(billDisplay.billShowPhone);
       posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
-      posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
       posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
       posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
       posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
@@ -1673,14 +1611,13 @@ export default function SettingsPage() {
 
     setSavingBusiness(true);
     try {
-      const putRes = await api.put('/settings/business', {
+      await api.put('/settings/business', {
         business_name: form.businessName,
         timezone: form.timezone,
         currency: form.currency,
         country: form.countryCode,
         billing_type: form.billingType,
         tables_required: form.tablesRequired,
-        tax_registered: form.taxRegistered,
         tax_registration_number: form.taxRegistrationNumber,
         business_address: form.businessAddress,
         business_phone: normalizedBusinessPhone,
@@ -1689,42 +1626,9 @@ export default function SettingsPage() {
         number_digits: form.numberDigits,
         calendar: form.calendar,
       });
-      let resolvedTaxIdFormat = putRes.data?.tax_id_format || null;
-      if (savedBusiness.countryCode !== form.countryCode) {
-        const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
-        if (taxSetting?.data.setting?.value === 'true') {
-          try {
-            const ensureRes = await api.post('/tax-packs/ensure-country', { country: form.countryCode });
-            resolvedTaxIdFormat = ensureRes.data?.tax_id_format || null;
-          } catch (error) {
-            const status = (error as { response?: { status?: number } }).response?.status;
-            if (status === 404) {
-              const key = `tax_plugin_request:${form.countryCode}`;
-              const requestSetting = await api.get(`/settings/${key}`).catch(() => null);
-              const clientTicketId = requestSetting?.data.setting?.value || crypto.randomUUID();
-              if (!requestSetting?.data.setting?.value) {
-                await api.put(`/settings/${key}`, { value: clientTicketId });
-              }
-              await api.post('/support-ticket', {
-                client_ticket_id: clientTicketId,
-                subject: `Request tax support for ${form.countryCode}`,
-                event_code: 'tax.country_plugin_unavailable',
-                message: `The merchant changed country to ${form.countryCode} while taxes were enabled, but no verified country tax plugin is available. Please create and publish it.`,
-                diagnostics: { country: form.countryCode },
-              }).catch(() => {});
-              await api.put('/settings/taxes_enabled', { value: 'false' }).catch(() => {});
-              toast.error(t('taxSupportUnavailable', { country: form.countryCode }));
-            } else {
-              toast.error(t('countrySavedTaxPluginFailed'));
-            }
-          }
-        }
-      }
       const updatedForm = { ...form, businessPhone: normalizedBusinessPhone };
       setSavedBusiness(updatedForm);
       setForm(updatedForm);
-      setTaxIdFormat(resolvedTaxIdFormat);
-      setTaxIdFormatCountryCode(form.countryCode);
       posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
       posSettings.setBillAddress(form.businessAddress);
       posSettings.setBillPhone(normalizedBusinessPhone);
@@ -1735,15 +1639,11 @@ export default function SettingsPage() {
     } catch (err: unknown) {
       const responseData = (err as { response?: { data?: unknown } }).response?.data;
       const serverError = responseData && typeof responseData === 'object'
-        ? responseData as { error?: string; tax_id_format?: { pattern: string; description: string } }
+        ? responseData as { error?: string }
         : null;
       if (!silent) {
         const message = serverError?.error || t('saveFailed');
         toast.error(message);
-      }
-      if (serverError?.tax_id_format) {
-        setTaxIdFormat(serverError.tax_id_format);
-        setTaxIdFormatCountryCode(form.countryCode);
       }
       throw err;
     } finally {
@@ -1877,9 +1777,6 @@ export default function SettingsPage() {
             <SettingsNavItem label={t('storeDetails')} value="store" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabPrinters')} value="receipts-printers" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('paymentMethods')} value="payments" active={activeTab} onClick={handleSettingsTabChange} />
-            {canViewTaxConfiguration && (
-              <SettingsNavItem label={t('taxConfiguration')} value="tax" active={activeTab} onClick={handleSettingsTabChange} />
-            )}
 
             {/* Operations group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
@@ -2070,40 +1967,15 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('taxRegistered')}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('taxIdLabel')}</label>
                   {isAdmin ? (
-                    <select
-                      value={form.taxRegistered ? 'yes' : 'no'}
-                      onChange={(e) => setForm((p) => ({ ...p, taxRegistered: e.target.value === 'yes' }))}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
-                    >
-                      <option value="yes">{t('yes')}</option>
-                      <option value="no">{t('no')}</option>
-                    </select>
+                    <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
+                      placeholder={t('taxIdPlaceholder')}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                   ) : (
-                    <p className="font-medium text-gray-900">{form.taxRegistered ? t('yes') : t('no')}</p>
+                    <p className="font-medium text-gray-900"><Ltr>{form.taxRegistrationNumber || '—'}</Ltr></p>
                   )}
                 </div>
-                {form.taxRegistered ? (
-                  <div>
-                    <label className="block text-sm text-gray-500 mb-1">{t('taxIdLabel')}</label>
-                    {isAdmin ? (
-                      <>
-                        <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
-                          placeholder={t('taxIdPlaceholder')}
-                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
-                        {taxIdWarning ? (
-                          <p className="mt-1 text-xs text-amber-600">
-                            {t('taxIdFormatWarning', { country: form.countryCode, format: taxIdWarning })}
-                          </p>
-                        ) : null}
-                      </>
-
-                    ) : (
-                      <p className="font-medium text-gray-900"><Ltr>{form.taxRegistrationNumber || '—'}</Ltr></p>
-                    )}
-                  </div>
-                ) : <div className="hidden md:block" />}
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('phone')}</label>
                   {isAdmin ? (
@@ -2347,12 +2219,6 @@ export default function SettingsPage() {
         <TabsContent value="payments">
           <PaymentMethodsSettings isAdmin={isAdmin} />
         </TabsContent>
-
-        {canViewTaxConfiguration && (
-          <TabsContent value="tax">
-            <TaxConfigurationPanel isOwner={currentTenant?.role === 'owner'} />
-          </TabsContent>
-        )}
 
         <TabsContent value="pos">
           <div className="pb-6 max-w-3xl space-y-6">
@@ -3420,7 +3286,6 @@ export default function SettingsPage() {
                       { label: t('showRestaurantAddress'), key: 'billShowAddress' as const },
                       { label: t('showRestaurantPhone'), key: 'billShowPhone' as const },
                       { label: t('showTaxId'), key: 'billShowTaxId' as const },
-                      { label: t('showTaxBreakdown'), key: 'billShowTaxBreakdown' as const },
                       { label: t('showCustomerName'), key: 'billShowCustomerName' as const },
                       { label: t('showCustomerPhone'), key: 'billShowCustomerPhone' as const },
                       { label: t('showTableNumber'), key: 'billShowTableNumber' as const },
@@ -3469,25 +3334,19 @@ export default function SettingsPage() {
                 <h2 className="font-semibold text-gray-900">{t('billTemplate')}</h2>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {billTemplateCards.map((card) => {
+                {TEMPLATE_CARDS.map((card) => {
                   const isSelected = billForm.billTemplate === card.id;
                   return (
                     <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id }))}
                       className={`text-start rounded-xl border-2 p-4 transition-all ${
                         isSelected ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 bg-white'
                       }`}>
-                      <p className="font-semibold text-gray-900 mb-2">
-                        {card.nameKey ? t(card.nameKey) : card.displayName}
-                      </p>
+                      <p className="font-semibold text-gray-900 mb-2">{t(card.nameKey)}</p>
                       <pre className="font-mono text-[9px] leading-tight text-gray-600 bg-gray-50 p-2 rounded overflow-hidden mb-3 whitespace-pre">
                         {card.preview}
                       </pre>
                       <p className="text-xs text-gray-500">
-                        {card.source === 'plugin'
-                          ? card.description
-                          : card.id === 'classic'
-                            ? t('billTemplateClassicDesc')
-                            : t('billTemplateCompactDesc')}
+                        {card.id === 'classic' ? t('billTemplateClassicDesc') : t('billTemplateCompactDesc')}
                       </p>
                     </button>
                   );

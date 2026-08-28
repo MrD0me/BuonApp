@@ -28,7 +28,6 @@ process.env.JWT_SECRET = 'test-secret-issue-24';
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
-  installAndActivateTestTaxPack,
   api, assert, assertEqual, assertIncludes,
   getResults, closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
@@ -36,26 +35,18 @@ const {
 const { registerRoutes } = require('../main/routes/index');
 const { billRoutes } = require('../main/routes/bills');
 const { orderRoutes } = require('../main/routes/orders');
-const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
-// Country/currency stay IN/INR (the default test business country) so
-// getActiveCountryPack() actually resolves this pack instead of falling
-// through to the generic no-tax default.
-const testTaxPack = { ...dualRatePackData, id: 'test-in-pack', country: 'IN', currency: 'INR', publisher: 'MrD0me' };
-
 async function main() {
   console.log('Integration Test: Issue #24 — Cancel item then checkout');
   console.log('='.repeat(60));
 
   const db = initTestDb();
-  installAndActivateTestTaxPack(db, testTaxPack);
 
   const { authHeader } = seedOwnerUser(db);
   seedManagerUser(db);
   seedCategory(db, 'cat-24', 'Drinks');
-  const taxableProduct = { tax_category_id: 'standard', tax_behavior: 'exclusive' };
-  seedProduct(db, 'prod-24-a', 'cat-24', 'Latte', 200, taxableProduct);
-  seedProduct(db, 'prod-24-b', 'cat-24', 'Espresso', 150, taxableProduct);
-  seedProduct(db, 'prod-24-c', 'cat-24', 'Muffin', 100, taxableProduct);
+  seedProduct(db, 'prod-24-a', 'cat-24', 'Latte', 200);
+  seedProduct(db, 'prod-24-b', 'cat-24', 'Espresso', 150);
+  seedProduct(db, 'prod-24-c', 'cat-24', 'Muffin', 100);
 
   // Mount all routes the same way as production
   const express = require('express');
@@ -112,8 +103,7 @@ async function main() {
       assertEqual(billRes.status, 201, 'A: bill generated after item cancel (not 500)');
       assert(billRes.data.bill?.id > 0, 'A: bill has valid id');
 
-      // Latte 200 + 5% tax = 210 total
-      assertEqual(billRes.data.bill.total, 210, 'A: bill total = 210 (only Latte after cancel)');
+      assertEqual(billRes.data.bill.total, 200, 'A: bill total = 200 (only Latte after cancel)');
     }
 
     // ── Scenario B: Cancel item WITH delivery charge, then generate bill ──
@@ -141,7 +131,7 @@ async function main() {
 
       // Verify order total includes delivery_charge after cancel
       const orderAfterCancel = cancelRes.data.order;
-      // Latte(200) + Espresso(150) = 350 subtotal, 5% tax = 17.5 → ~18 tax, + 50 delivery = 418
+      // Latte(200) + Espresso(150) = 350 subtotal, + 50 delivery = 400
       assert(orderAfterCancel.delivery_charge === 50, 'B: delivery_charge preserved on order');
       assert(orderAfterCancel.total > 0, 'B: order total > 0 after cancel');
 

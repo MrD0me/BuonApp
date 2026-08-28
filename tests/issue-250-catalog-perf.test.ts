@@ -53,8 +53,8 @@ async function main() {
     VALUES ('ag-250', 'Extras', 1, 1, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `).run();
   db.prepare(`
-    INSERT INTO addons (id, addon_group_id, name, price, inherit_parent_tax_category, is_active, sort_order, created_at, updated_at)
-    VALUES ('addon-250', 'ag-250', 'Extra', 10, 1, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, created_at, updated_at)
+    VALUES ('addon-250', 'ag-250', 'Extra', 10, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `).run();
   db.prepare('INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)').run('prod-250-a', 'ag-250');
 

@@ -573,7 +573,6 @@ function createMenu(): void {
       label: 'Settings',
       submenu: [
         { label: 'Business Settings', click: () => mainWindow?.webContents.send('settings-business') },
-        { label: 'Tax Settings', click: () => mainWindow?.webContents.send('settings-tax') },
         { label: 'Printer Setup', click: () => mainWindow?.webContents.send('settings-printer') },
         { label: 'Kitchen Stations', click: () => mainWindow?.webContents.send('settings-kitchen') },
       ],

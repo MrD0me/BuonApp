@@ -47,7 +47,6 @@ function assert(label: string, cond: boolean, detail?: string) {
  */
 function loadFrontendPrinterModules(): {
   receiptEncoder: typeof import('../frontend/src/lib/printer/receipt-encoder');
-  taxBillEncoder: typeof import('../frontend/src/lib/printer/tax-bill-encoder');
   unicode: typeof import('../frontend/src/lib/printer/unicode');
   warnings: typeof import('../frontend/src/lib/printer/warnings');
   webPrint: typeof import('../frontend/src/lib/printer/web-print');
@@ -71,7 +70,6 @@ function loadFrontendPrinterModules(): {
   try {
     return {
       receiptEncoder: require('../frontend/src/lib/printer/receipt-encoder'),
-      taxBillEncoder: require('../frontend/src/lib/printer/tax-bill-encoder'),
       unicode: require('../frontend/src/lib/printer/unicode'),
       warnings: require('../frontend/src/lib/printer/warnings'),
       webPrint: require('../frontend/src/lib/printer/web-print'),
@@ -221,6 +219,7 @@ const fixtureBusiness = {
   address: '42 MG Road, Bengaluru 560001',
   phone: '+91 98765 43210',
   taxRegistrationNumber: 'TAXID-0001',
+  show_tax_id: true,
 };
 
 console.log('🧪 FloDesktop Printer Tests');
@@ -346,11 +345,10 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   // Currency slot reserves up to 3 chars for labels such as USD/EUR/INR; the
   // minus sign sits outside that slot.
   assert('renders discount line with negative sign', /-\s*₹15\.00/.test(text));
-  assert('renders tax total ₹40.00', text.includes('₹40.00'));
   assert('renders TOTAL with grand amount', text.includes('TOTAL') && text.includes('₹950.00'));
   assert('renders Cash payment', text.includes('Cash') && text.includes('₹500.00'));
   assert('renders UPI payment', text.includes('UPI') && text.includes('₹450.00'));
-  assert('renders tax registration number', text.includes('TAXID-0001'));
+  assert('renders business registration number', text.includes('TAXID-0001'));
   assert('no vendor branding on the receipt', !text.includes('Powered by BuonApp') && !text.includes('github.com/MrD0me/BuonApp'));
   assert('long product name is truncated to fit', !text.includes('Truncated By Formatter'));
   assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x00]));
@@ -418,14 +416,13 @@ console.log('\n✅ Test 3d: Trim decimals hides only trailing .00');
 
   const fractionalBill = {
     ...fixtureBill,
-    subtotal: 75,
-    tax_amount: 3.75,
+    subtotal: 78.75,
     discount_amount: 0,
     total: 78.75,
     payment_details: JSON.stringify([{ method: 'cash', amount: 78.75 }]),
   };
   const fractionalText = formatReceipt(fixtureOrder, fractionalBill, trimBusiness, 'compact', 36, true).toString('utf8');
-  assert('trim decimals keeps non-zero decimals', fractionalText.includes('₹78.75') && fractionalText.includes('₹3.75'));
+  assert('trim decimals keeps non-zero decimals', fractionalText.includes('₹78.75'));
 }
 
 console.log('\n✅ Test 4: Classic receipt template');
@@ -476,45 +473,6 @@ console.log('\n✅ Test 5bb: Custom footer is rendered by every backend template
     }, template, 48, true).toString('utf8');
     assert(`${template}: renders the configured footer message`, text.includes('Please visit us again'));
   }
-}
-
-console.log('\n✅ Test 5c: Built-in receipt resolves mixed legacy + categorized tax');
-{
-  const mixedOrder = {
-    ...fixtureOrder,
-    items: [
-      {
-        ...fixtureOrder.items[0],
-        tax_snapshot: JSON.stringify({
-          lines: [{
-            lineId: 'categorized',
-            components: [{ ruleId: 'thai-vat', label: 'VAT', rate: '7', amount: '17.50' }],
-          }],
-        }),
-        tax_breakdown: JSON.stringify([{ title: 'Legacy Tax', rate: 2.5, amount: 99 }]),
-      },
-      {
-        ...fixtureOrder.items[1],
-        tax_snapshot: null,
-        tax_breakdown: JSON.stringify([{ title: 'Local Levy', rate: 1, amount: 0.7 }]),
-      },
-    ],
-  };
-  const mixedBill = {
-    ...fixtureBill,
-    tax_snapshot: JSON.stringify([]),
-    tax_breakdown: JSON.stringify([
-      { title: 'VAT', rate: 7, amount: 17.5 },
-      { title: 'Local Levy', rate: 1, amount: 0.7 },
-    ]),
-  };
-  const thaiBusiness = { ...fixtureBusiness, country: 'TH', show_tax_breakdown: true };
-  const text = formatReceipt(mixedOrder, mixedBill, thaiBusiness, 'classic', 48, true).toString('utf8');
-
-  assert('renders categorized VAT component and rate', text.includes('VAT @7%'));
-  assert('renders legacy Local Levy component and rate', text.includes('Local Levy @1%'));
-  assert('does not render categorized item legacy copy', !text.includes('Legacy Tax'));
-  assert('uses country tax identifier label', text.includes('Tax ID: TAXID-0001'));
 }
 
 console.log('\n✅ Test 5d: Bill content toggles are optional and never block printing');
@@ -656,8 +614,12 @@ console.log('\n✅ Test 8: Edge cases');
   const emptyText = buf.toString('utf8');
   assert('handles empty item list without throwing', buf.length > 0);
   assert('renders zero total', emptyText.includes('₹0.00'));
-  assert('omits tax label when tax amount and breakdown are empty', !emptyText.split('\n').some((line) => line.trimStart().startsWith('Tax')));
-  assert('omits tax identifier when tax amount and breakdown are empty', !emptyText.includes('TAXID-0001'));
+  assert('never prints a tax line', !emptyText.split('\n').some((line) => line.trimStart().startsWith('Tax')));
+  // The registration number is business identity, not a tax figure: it prints
+  // because the owner turned it on, and disappears when they turn it off.
+  assert('prints the registration number when the owner enabled it', emptyText.includes('TAXID-0001'));
+  const hiddenIdText = formatReceipt(emptyOrder, emptyBill, { ...fixtureBusiness, show_tax_id: false }, 'compact', 48, true).toString('utf8');
+  assert('omits the registration number when the owner disabled it', !hiddenIdText.includes('TAXID-0001'));
 
   const noDiscountBill = { ...fixtureBill, discount_amount: 0 };
   const buf2 = formatReceipt(fixtureOrder, noDiscountBill, fixtureBusiness, 'compact', 48, true);
@@ -731,8 +693,6 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
       assert(`[backend IR ${template} unicode=${useUnicode}] preserves Subtotal amount`, text.includes('IRR100,000.00'));
       assert(`[backend IR ${template} unicode=${useUnicode}] preserves Discount line`, text.includes('Discount'));
       assert(`[backend IR ${template} unicode=${useUnicode}] preserves Discount amount`, text.includes('IRR10,000.00'));
-      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Tax line`, text.includes('Tax'));
-      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Tax amount`, text.includes('IRR9,000.00'));
       assert(`[backend IR ${template} unicode=${useUnicode}] preserves TOTAL line`, text.includes('TOTAL') || text.includes('GRAND TOTAL'));
       assert(`[backend IR ${template} unicode=${useUnicode}] preserves TOTAL amount`, text.includes('IRR99,000.00'));
       assert(`[backend IR ${template} unicode=${useUnicode}] preserves Payment line`, text.includes('Cash'));
@@ -805,9 +765,7 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   const {
     buildClassicReceiptBytes,
     buildCompactReceiptBytes,
-    buildDetailedReceiptBytes,
   } = frontendModules.receiptEncoder;
-  const { buildTaxBillBytes } = frontendModules.taxBillEncoder;
   const { normalizeCurrencyToAscii } = frontendModules.unicode;
   const { hasUnsupportedPrinterChars } = frontendModules.warnings;
   const { generateBillHtml } = frontendModules.webPrint;
@@ -824,32 +782,24 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     order: irOrder,
     subtotal: 100000,
     discount_amount: 10000,
-    tax_amount: 9000,
-    total: 99000,
-    payment_details: [{ method: 'Cash', amount: 99000 }],
+    total: 90000,
+    payment_details: [{ method: 'Cash', amount: 90000 }],
   };
 
   const encoders = [
     { name: 'compact', fn: (b: any, t: any, o: any, w: any) => buildCompactReceiptBytes(b, t, o, w) },
     { name: 'classic', fn: (b: any, t: any, o: any, w: any) => buildClassicReceiptBytes(b, t, o, w) },
-    { name: 'detailed', fn: (b: any, t: any, o: any, w: any) => buildDetailedReceiptBytes(b, t, o, w) },
-    { name: 'tax-bill', fn: (b: any, t: any, o: any, w: any) => buildTaxBillBytes(b, t, o, w) },
   ];
 
-  // These are the existing financial-line contracts of the four frontend
-  // templates. Compact intentionally omits Subtotal, while detailed uses a
-  // subtotal label but does not print a separate Discount line.
+  // The financial-line contract of the two frontend templates. Compact
+  // intentionally omits Subtotal.
   const expectedLabels: Record<string, string[]> = {
-    compact: ['Discount', 'Tax', 'TOTAL', 'Cash'],
-    classic: ['Subtotal', 'Discount', 'Tax', 'TOTAL', 'Cash'],
-    detailed: ['Subtotal (excl. tax)', 'Tax', 'TOTAL', 'Cash'],
-    'tax-bill': ['Subtotal', 'Discount', 'Total Tax', 'TOTAL', 'Cash'],
+    compact: ['Discount', 'TOTAL', 'Cash'],
+    classic: ['Subtotal', 'Discount', 'TOTAL', 'Cash'],
   };
   const expectedAmounts: Record<string, string[]> = {
-    compact: ['IRR100,000.00', 'IRR10,000.00', 'IRR9,000.00', 'IRR99,000.00'],
-    classic: ['IRR100,000.00', 'IRR10,000.00', 'IRR9,000.00', 'IRR99,000.00'],
-    detailed: ['IRR100,000.00', 'IRR9,000.00', 'IRR99,000.00'],
-    'tax-bill': ['IRR100,000.00', 'IRR10,000.00', 'IRR9,000.00', 'IRR99,000.00'],
+    compact: ['IRR100,000.00', 'IRR10,000.00', 'IRR90,000.00'],
+    classic: ['IRR100,000.00', 'IRR10,000.00', 'IRR90,000.00'],
   };
 
   for (const enc of encoders) {
@@ -899,11 +849,10 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     },
     subtotal: 1000000000,
     discount_amount: 0,
-    tax_amount: 0,
     total: 1000000000,
     payment_details: [{ method: 'Cash', amount: 1000000000 }],
   };
-  for (const build of [buildClassicReceiptBytes, buildDetailedReceiptBytes]) {
+  for (const build of [buildClassicReceiptBytes, buildCompactReceiptBytes]) {
     const wide = build(wideFrontendBill as any, frontendTenant, { paperWidth: 58 }, []);
     const wideLines = visibleRawPrinterLines(wide).filter((line) => line.includes('IRR') || line.includes('Espresso'));
     assert('frontend wide IRR rows stay within 42 columns', wideLines.every((line) => line.length <= 42));
@@ -922,13 +871,13 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     { trimDecimals: true },
   );
   assert('browser printing respects Toman currency display with trimDecimals', browserTomanHtml.includes('تومان') && !browserTomanHtml.includes('ریال'));
-  assert('browser printing converts Rial to Toman value', browserTomanHtml.includes('۹٬۹۰۰ تومان'));
+  assert('browser printing converts Rial to Toman value', browserTomanHtml.includes('۹٬۰۰۰ تومان'));
   const browserTomanShortHtml = generateBillHtml(
     frontendBill as any,
     { ...frontendTenant, currency_display: 'toman_short', number_digits: 'latin' },
     { trimDecimals: true },
   );
-  assert('browser printing respects Toman short with Latin digits and trimDecimals', browserTomanShortHtml.includes('9,900T'));
+  assert('browser printing respects Toman short with Latin digits and trimDecimals', browserTomanShortHtml.includes('9,000T'));
 
   // Unsupported free-form Persian text warning contract test (frontend)
   const persianTenant = { ...frontendTenant, business_name: 'کافه فلو تهران' };

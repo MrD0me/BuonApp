@@ -5,7 +5,7 @@
  * This single test covers: order creation, discount application, bill generation,
  * and payment processing — the core money flow.
  *
- * Bugs this catches: #3 (duplicate order numbers), #4 (discount tax recalc),
+ * Bugs this catches: #3 (duplicate order numbers), #4 (discount recalc),
  * #5 (discount not syncing to bill), #9 (amount:0 paying full bill)
  *
  * Usage: node tests/run-electron-node-test.cjs tests/integration-happy-path.test.ts
@@ -26,37 +26,23 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedCategory, seedProduct,
-  installAndActivateTestTaxPack,
   api, assert, assertEqual,
   getResults, closeDatabase,
 } = require('./helpers/test-setup');
 
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
-const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
-// Country/currency stay IN/INR (the default test business country) so
-// getActiveCountryPack() actually resolves this pack instead of falling
-// through to the generic no-tax default.
-const testTaxPack = { ...dualRatePackData, id: 'test-in-pack', country: 'IN', currency: 'INR', publisher: 'MrD0me' };
-
 async function main() {
   console.log('Integration Test: Happy Path');
   console.log('='.repeat(50));
 
   const db = initTestDb();
-  installAndActivateTestTaxPack(db, testTaxPack);
 
   // Seed: owner user, category, 2 products
   const { authHeader } = seedOwnerUser(db);
   seedCategory(db, 'cat-happy', 'Test Menu');
-  seedProduct(db, 'prod-a', 'cat-happy', 'Cappuccino', 500, {
-    tax_category_id: 'standard',
-    tax_behavior: 'exclusive',
-  });
-  seedProduct(db, 'prod-b', 'cat-happy', 'Sandwich', 300, {
-    tax_category_id: 'standard',
-    tax_behavior: 'exclusive',
-  });
+  seedProduct(db, 'prod-a', 'cat-happy', 'Cappuccino', 500);
+  seedProduct(db, 'prod-b', 'cat-happy', 'Sandwich', 300);
 
   // Create Express app with orders + bills routes
   const app = createApp({
@@ -84,11 +70,10 @@ async function main() {
     assert(orderId > 0, `order has valid id (${orderId})`);
 
     // Verify initial totals (500 + 300 = 800 subtotal)
-    // Test restaurant: 5% tax → 40 tax → total 840
     const orderSubtotal = createRes.data.order.subtotal;
     const orderTotal = createRes.data.order.total;
     assertEqual(orderSubtotal, 800, 'order subtotal = 800 (500 + 300)');
-    assertEqual(orderTotal, 840, 'order total = 840 (800 + 5% tax)');
+    assertEqual(orderTotal, 800, 'order total = 800 (menu prices are what the guest pays)');
     assertEqual(createRes.data.order.status, 'pending', 'order status is pending');
 
     // ── Step 2: Apply 10% discount ───────────────────────────────────
@@ -103,10 +88,9 @@ async function main() {
     assertEqual(discountRes.data.order.discount_value, 10, 'discount value is 10');
     assertEqual(discountRes.data.order.discount_amount, 80, 'discount amount = 80 (10% of 800)');
 
-    // Verify total is recalculated (subtotal - discount + tax)
-    // discounted subtotal = 720, tax = 5% of 720 = 36, total = 756
+    // Verify total is recalculated (subtotal - discount)
     const discountedTotal = discountRes.data.order.total;
-    assertEqual(discountedTotal, 756, 'discounted total = 756 (720 + 5% tax)');
+    assertEqual(discountedTotal, 720, 'discounted total = 720 (800 - 80)');
 
     // ── Step 3: Generate bill ────────────────────────────────────────
     console.log('\n3. Generate bill');

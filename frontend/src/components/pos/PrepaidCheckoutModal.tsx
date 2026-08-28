@@ -5,14 +5,13 @@ import { X, Sparkles, ArrowLeftRight, CheckCircle2, User, Percent, Wallet, Chevr
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
-import { useTaxPreview } from '@/hooks/use-tax-preview';
 import { useTranslations, type AppConfig } from 'use-intl';
-import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import toast from 'react-hot-toast';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { roundMoney } from '@/lib/utils';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -107,13 +106,6 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         : toStoredUnit(Math.max(0, rawValue)),
     };
   }, [discountType, discountValue, toStoredUnit]);
-  const { tax, loading: taxLoading } = useTaxPreview(
-    cart.items,
-    cart.customerId,
-    undefined,
-    previewDiscount,
-  );
-
   const [payments, setPayments] = useState<Payment[]>(
     PAYMENT_METHODS.map((method) => ({ method: method.key, amount: '' })),
   );
@@ -172,21 +164,26 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     }
   }, [customer?.id]);
 
-  // The backend preview is the settlement source of truth: it applies the same
-  // discount/tax rules and active-pack payable rounding used by bill generation.
+  // What the cart settles to, computed the same way the backend does when it
+  // writes the order: cart subtotal minus the discount about to be applied.
+  // Nothing sits between the two any more, so there is no round trip to wait on.
+  const cartSubtotal = cart.subtotal();
   const preview = useMemo(() => {
-    if (!tax) return null;
+    if (cart.items.length === 0) return null;
+    const subtotal = roundMoney(cartSubtotal);
+    const discountAmount = previewDiscount === null
+      ? 0
+      : roundMoney(previewDiscount.type === 'percentage'
+        ? subtotal * previewDiscount.value / 100
+        : Math.min(previewDiscount.value, subtotal));
+    const discountedSubtotal = Math.max(0, roundMoney(subtotal - discountAmount));
     return {
-      subtotal: tax.subtotal,
-      discountAmount: tax.discount_amount,
-      discountedSubtotal: tax.discounted_subtotal,
-      taxAmount: tax.tax_amount,
-      taxBreakdown: tax.tax_breakdown,
-      packagingCharge: tax.packaging_charge,
-      roundOff: tax.round_off,
-      total: tax.total,
+      subtotal,
+      discountAmount,
+      discountedSubtotal,
+      total: discountedSubtotal,
     };
-  }, [tax]);
+  }, [cart.items.length, cartSubtotal, previewDiscount]);
 
   const remaining = preview?.total ?? 0;
 
@@ -320,19 +317,15 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">
-                  {taxLoading ? t('subtotal') : t('totalDue')}
+                  {t('totalDue')}
                 </p>
-                {taxLoading || !preview ? (
-                  <div className="h-10 w-32 bg-white/10 rounded animate-pulse mt-1" />
-                ) : (
-                  <p className="text-4xl font-bold mt-1 tracking-tight">
-                    {currencyFmt(remaining)}
-                  </p>
-                )}
+                <p className="text-4xl font-bold mt-1 tracking-tight">
+                  {currencyFmt(remaining)}
+                </p>
                 <p className="text-xs text-slate-400 mt-1.5">
                   {t('itemCount', { count: cart.itemCount() })}
                 </p>
-                {!taxLoading && preview && (
+                {preview && (
                   <div className="mt-2 space-y-1">
                     <div className="flex justify-between text-xs text-slate-300">
                       <span>{t('subtotal')}</span>
@@ -342,19 +335,6 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                       <div className="flex justify-between text-xs text-emerald-400 font-medium">
                         <span>{t('discount')}</span>
                         <span>− {currencyFmt(preview.discountAmount)}</span>
-                      </div>
-                    )}
-                    <TaxBreakdown taxAmount={preview.taxAmount} taxBreakdown={preview.taxBreakdown} />
-                    {preview.packagingCharge > 0 && (
-                      <div className="flex justify-between text-xs text-slate-300">
-                        <span>{t('packaging')}</span>
-                        <span>{currencyFmt(preview.packagingCharge)}</span>
-                      </div>
-                    )}
-                    {preview.roundOff !== 0 && (
-                      <div className="flex justify-between text-xs text-slate-300">
-                        <span>{t('roundOff')}</span>
-                        <span>{preview.roundOff > 0 ? '+' : ''}{currencyFmt(preview.roundOff)}</span>
                       </div>
                     )}
                   </div>
@@ -564,11 +544,11 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         <div className="px-5 pb-6 pt-3 border-t border-gray-100">
           <Button
             onClick={handleConfirm}
-            disabled={processing || taxLoading || !preview || totalPayment < remaining - 0.01}
+            disabled={processing || !preview || totalPayment < remaining - 0.01}
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"
           >
-            {taxLoading ? t('calculatingTax') : processing ? t('processingPayment') : t('confirmPaymentAmount', { amount: currencyFmt(remaining) })}
+            {processing ? t('processingPayment') : t('confirmPaymentAmount', { amount: currencyFmt(remaining) })}
           </Button>
         </div>
       </div>

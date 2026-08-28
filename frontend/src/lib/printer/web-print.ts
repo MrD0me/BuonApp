@@ -20,7 +20,6 @@ import {
   formatNumberForTenant,
   formatDateForTenant,
 } from '@/lib/countries';
-import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { createTranslator } from 'use-intl/core';
 import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
@@ -59,7 +58,6 @@ export interface WebPrintOptions {
   footerNote?: string;
   businessName?: string;
   showBusinessName?: boolean;
-  showTaxBreakdown?: boolean;
   showCustomerName?: boolean;
   showCustomerPhone?: boolean;
   showTableNumber?: boolean;
@@ -112,25 +110,23 @@ function receiptLabels(lang: Language) {
     qty: t('receipt.qty'),
     rate: t('receipt.rate'),
     amount: t('receipt.amount'),
-    taxDetails: t('receipt.taxDetails'),
     subtotal: t('pos.subtotal'),
     discount: t('pos.discount'),
-    totalTax: t('receipt.totalTax'),
     serviceCharge: t('receipt.serviceCharge'),
     deliveryCharge: t('receipt.deliveryCharge'),
     grandTotal: t('receipt.grandTotal'),
     payments: t('receipt.payments'),
     thankYou: t('receipt.thankYou'),
-    taxIncluded: t('receipt.taxIncluded'),
     printBill: t('receipt.printBill'),
     reprint: t('receipt.reprint'),
   };
 }
 
 /**
- * Tax-id label printed on the receipt. Country-profile labels are acronyms or
- * proper nouns (GSTIN, CUIT, …) and stay as-is; Iran's "Economic Code" is
- * localized so a Persian receipt doesn't show an English phrase.
+ * Business registration-number label printed on the receipt. Country-profile
+ * labels are acronyms or proper nouns (P.IVA, GSTIN, CUIT, …) and stay as-is;
+ * Iran's "Economic Code" is localized so a Persian receipt doesn't show an
+ * English phrase.
  */
 function resolveTaxIdLabel(country: string | undefined, lang: Language): string {
   if (country?.toUpperCase() === 'IR') return getReceiptTranslator(lang)('receipt.economicCode');
@@ -272,7 +268,6 @@ export function generateBillHtml(
     footerNote,
     businessName,
     showBusinessName = true,
-    showTaxBreakdown = true,
     showCustomerName = true,
     showCustomerPhone = true,
     showTableNumber = true,
@@ -289,9 +284,6 @@ export function generateBillHtml(
   const order = bill.order;
 
   const styles = getPaperStyles(paperSize);
-  const taxComponents = resolveTaxComponents(bill);
-  const hasTax = Number(bill.tax_amount) !== 0
-    || taxComponents.some((component) => Number(component.amount) !== 0);
 
   const items = order?.items ?? [];
   const fmtAmount = (value: number | string) => formatAmount(value, tenant, trimDecimals);
@@ -364,25 +356,10 @@ export function generateBillHtml(
       </tbody>
     </table>
 
-    <!-- Tax Breakdown -->
-    ${showTaxBreakdown && taxComponents.length > 0 ? `
-    <table class="tax-table">
-      <thead>
-        <tr><th colspan="2">${escapeHtml(L.taxDetails)}</th></tr>
-      </thead>
-      <tbody>
-        ${taxComponents.map((component) => `
-          <tr><td>${escapeHtml(formatTaxComponentLabel(component))}</td><td class="text-end num">${fmtAmount(component.amount)}</td></tr>
-        `).join('')}
-      </tbody>
-    </table>
-    ` : ''}
-
     <!-- Totals -->
     <table class="totals-table">
       <tr><td>${escapeHtml(L.subtotal)}</td><td class="text-end num">${fmtAmount(bill.subtotal)}</td></tr>
       ${Number(bill.discount_amount) > 0 ? `<tr><td>${escapeHtml(L.discount)}</td><td class="text-end num">-${fmtAmount(bill.discount_amount)}</td></tr>` : ''}
-      ${Number(bill.tax_amount) > 0 ? `<tr><td>${escapeHtml(L.totalTax)}</td><td class="text-end num">${fmtAmount(bill.tax_amount)}</td></tr>` : ''}
       ${Number(bill.service_charge) > 0 ? `<tr><td>${escapeHtml(L.serviceCharge)}</td><td class="text-end num">${fmtAmount(bill.service_charge)}</td></tr>` : ''}
       ${Number(bill.delivery_charge) > 0 ? `<tr><td>${escapeHtml(L.deliveryCharge)}</td><td class="text-end num">${fmtAmount(bill.delivery_charge)}</td></tr>` : ''}
       <tr class="total-row"><td><strong>${escapeHtml(L.grandTotal)}</strong></td><td class="text-end num"><strong>${fmtAmount(bill.total)}</strong></td></tr>
@@ -405,7 +382,6 @@ export function generateBillHtml(
     <!-- Footer -->
     <div class="footer">
       ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : `<p>${escapeHtml(L.thankYou)}</p>`}
-      ${hasTax ? `<p>${escapeHtml(L.taxIncluded)}</p>` : ''}
     </div>
   </div>
 
@@ -434,9 +410,9 @@ function getPaperStyles(size: PaperSize): string {
     .items-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
     .items-table th, .items-table td { padding: 8px; border-bottom: 1px solid #eee; text-align: start; }
     .items-table th { background: #f5f5f5; font-weight: bold; }
-    .tax-table, .payments-table { width: 50%; margin-inline-start: 50%; border-collapse: collapse; margin-bottom: 15px; }
-    .tax-table th, .tax-table td, .payments-table th, .payments-table td { padding: 6px 8px; }
-    .tax-table th, .payments-table th { background: #f9f9f9; text-align: start; }
+    .payments-table { width: 50%; margin-inline-start: 50%; border-collapse: collapse; margin-bottom: 15px; }
+    .payments-table th, .payments-table td { padding: 6px 8px; }
+    .payments-table th { background: #f9f9f9; text-align: start; }
     .totals-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
     .totals-table td { padding: 6px 8px; }
     .total-row { border-top: 2px solid #333; font-size: 16px; }
@@ -453,7 +429,7 @@ function getPaperStyles(size: PaperSize): string {
       return baseStyles + `
         .bill-container { padding: 5px; max-width: 58mm; font-size: 10px; }
         .header h1 { font-size: 14px; }
-        .items-table th, .items-table td, .tax-table td, .totals-table td, .payments-table td { padding: 2px 4px; }
+        .items-table th, .items-table td, .totals-table td, .payments-table td { padding: 2px 4px; }
       `;
     case 'thermal80':
       return baseStyles + `

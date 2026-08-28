@@ -665,8 +665,7 @@ export default function POSPage() {
       const orderId = orderData.order.id;
 
       // Apply discount before bill generation so the bill uses the discounted
-      // totals (tax recalculated on the net payable amount). Repeating this SET
-      // operation is safe if its response was lost.
+      // totals. Repeating this SET operation is safe if its response was lost.
       const effectiveDiscount = attempt.discount;
       const discountForRequest = effectiveDiscount && currentDiscount
         && discountFingerprint(effectiveDiscount) === discountFingerprint(currentDiscount)
