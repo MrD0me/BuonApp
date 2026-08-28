@@ -46,7 +46,7 @@
   <releases>
     <release version="4.1.0" date="2026-08-28">
       <description>
-        <p>Removed the taxation module in full: the calculation engine, country tax packs and their catalog, per-product tax categories, split-check tax apportioning, the Tax Configuration screen, and the tax breakdown on receipts. This build issues no fiscal documents — the bill it prints is a preconto. Also removed the plugin receipt-template path, which could only be fed by a tax pack.</p>
+        <p>The taxation module is gone. This install never issued a fiscal document — the bill it prints is a preconto and the receipt comes from the till standing next to it — so an engine that resolved country rules, signed publisher packs, and apportioned tax evidence across split checks in integer minor units was weight carried for nothing. Roughly 16,000 lines lighter, with no printed total changed.</p>
       </description>
     </release>
     <release version="4.0.1" date="2026-08-27">

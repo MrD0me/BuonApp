@@ -17,8 +17,22 @@ const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const version = pkg.version;
 const date = new Date().toISOString().slice(0, 10);
 
-const notes = execFileSync(NOTES_HELPER, [version], { encoding: 'utf8' })
-  .trim()
+// Run the helper through bash rather than spawning the .sh directly: Windows
+// cannot execute a shell script as a program (EFTYPE), and Windows is the
+// platform this fork releases from. Keeping the extraction in one place — the
+// same script the release workflow uses — means the two cannot drift.
+const section = execFileSync('bash', [NOTES_HELPER, version], { encoding: 'utf8' }).trim();
+
+// AppStream shows this in a software centre's release list, beside entries
+// that run a few lines. A whole CHANGELOG section - the summary plus every
+// bullet - is an order of magnitude too long for that (3283 characters for
+// 4.1.0 against 348 for the 2.0.5 entry next to it), so keep only the
+// paragraph the section opens with. A section that dives straight into a
+// '### Added' heading has no such paragraph; those fall back to the full
+// text rather than shipping an empty <p>.
+const summary = section.split(/^###\s/m)[0].trim() || section;
+
+const notes = summary
   .replace(/[\r\n]+/g, ' ')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
