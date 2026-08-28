@@ -26,6 +26,12 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [google-drive-setup.md](google-drive-setup.md) | Maintainer setup for the optional Google Drive backup OAuth client. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
 
+### Active design
+
+| Document | Description | Scope |
+| --- | --- | --- |
+| [order-flow-and-navigation.md](order-flow-and-navigation.md) | Riorganizzazione dell'interfaccia prima del rifacimento grafico: navigazione a cinque voci, pannello ordine condiviso nella scheda del tavolo, giornata di servizio e archivio, prezzo di riga modificabile. | ACTIVE DESIGN |
+
 ### Historical records
 
 | Document | Description | Status |
