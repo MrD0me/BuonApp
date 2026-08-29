@@ -75,23 +75,11 @@ export default function TableCheckoutModal({
     api.get('/settings/split_checks_enabled').then((res) => setSplitChecksEnabled(res.data?.setting?.value === 'true')).catch(() => setSplitChecksEnabled(false));
   }, []);
 
-  const handleCheckout = async () => {
-    if (!order) return;
-    setGenerating(true);
-    try {
-      if (order.bill) {
-        onPayment(order.bill);
-        return;
-      }
-      const { data } = await api.post('/bills/generate', { order_id: order.id });
-      onPayment(data.bill);
-    } catch {
-      toast.error(t('generateBillFailed'));
-    } finally {
-      setGenerating(false);
-    }
-  };
-
+  /**
+   * Splitting a check is still only possible here — the order panel has no
+   * equivalent — so it stays behind its setting, off by default, while
+   * everything else about billing moved to the floor plan and the day.
+   */
   const handleSplitCheck = async () => {
     if (!order) return;
     setGenerating(true);
@@ -246,33 +234,26 @@ export default function TableCheckoutModal({
 
           {/* Show different buttons based on cart state */}
           {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}
+          {/* What this window is for: putting food on a table that is already
+              working. The bill and the payment live where the table lives —
+              the floor plan, or the day's orders — so that an order is only
+              ever closed from one place. */}
           {cartItemCount > 0 ? (
-            // Cart has items - show "Add items to order" option
-            <div className="space-y-2">
-              <Button 
-                onClick={handleAddCartToOrder} 
-                disabled={addingItems}
-                className="w-full"
-                size="lg"
-              >
-                <ShoppingCart size={16} className="me-2" />
-                {addingItems ? t('adding') : t('addToOrder', { count: cartItemCount })}
-              </Button>
-              <Button onClick={handleCheckout} variant="outline" className="w-full" disabled={generating}>
-                {generating ? t('generating') : t('checkoutInstead')}
-              </Button>
-            </div>
+            <Button
+              onClick={handleAddCartToOrder}
+              disabled={addingItems}
+              className="w-full"
+              size="lg"
+            >
+              <ShoppingCart size={16} className="me-2" />
+              {addingItems ? t('adding') : t('addToOrder', { count: cartItemCount })}
+            </Button>
           ) : splitBills.length === 0 ? (
-            // Cart empty - show both options
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" onClick={() => onAddItems(table, order)}>
-                {t('addItems')}
-              </Button>
-              <Button onClick={handleCheckout} disabled={generating}>
-                {generating ? t('generating') : t('checkout')}
-              </Button>
-            </div>
+            <Button variant="outline" className="w-full" onClick={() => onAddItems(table, order)}>
+              {t('addItems')}
+            </Button>
           ) : null}
+          <p className="text-xs text-gray-500 text-center">{t('billingLivesElsewhere')}</p>
         </div>
       </div>
     </div>

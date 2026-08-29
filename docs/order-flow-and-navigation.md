@@ -248,10 +248,13 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   POS al pannello ordine.
 - **Il ricalcolo dei totali dopo una modifica di riga** è ora condiviso fra sconto e prezzo, per lo
   stesso motivo.
-- **Il checkout della Cassa non usa ancora il pannello.** Il piano lo elencava fra i tre posti;
-  `components/pos/TableCheckoutModal` è rimasto com'era. Non duplica il pannello — fa un lavoro
-  più stretto (invia in cucina, chiudi il conto) — ma finché resta separato ci sono due schermate
-  che mostrano l'ordine di un tavolo. Da unificare quando si rifà il POS.
+- **Dalla Cassa non si incassa più un tavolo.** Il piano voleva il pannello anche dentro
+  `components/pos/TableCheckoutModal`; guardandola in uso, l'utente ha deciso meglio: quella
+  finestra serve ad attaccare a un tavolo aperto quello che si è battuto al banco, e basta. Il
+  conto e l'incasso si fanno dalla Sala o dalla Giornata — un ordine si chiude da un posto solo —
+  e per asporto e delivery dalla sola Giornata. I due pulsanti di incasso sono spariti da lì.
+  Resta la divisione del conto, che non ha equivalente nel pannello: è dietro la sua impostazione,
+  spenta di default, ed è l'unica azione di cassa rimasta in quella finestra.
 
 ## Fuori ambito
 
