@@ -4,11 +4,18 @@ import { useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChefHat, Pencil, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
+import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Percent, Banknote, Search, Plus, ChefHat, Pencil, MoreHorizontal, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { OrderItem, Product, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
@@ -341,6 +348,28 @@ export function OrderPanel({
     }
   };
 
+  /**
+   * The bill on paper. Generating one is not the same as cashing up: the floor
+   * takes it to the table long before anybody pays, and until now the only way
+   * to get one was to press Checkout, which opens the payment window.
+   */
+  const handlePrintBill = async () => {
+    if (order.bill?.id) {
+      setConfirmPrintBillId(order.bill.id);
+      return;
+    }
+    setGeneratingBill(order.id);
+    try {
+      const { data } = await api.post('/bills/generate', { order_id: order.id });
+      onChanged();
+      setConfirmPrintBillId(data.bill.id);
+    } catch {
+      toast.error(tOrders('generateBillFailed'));
+    } finally {
+      setGeneratingBill(null);
+    }
+  };
+
   const handlePaymentComplete = async () => {
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
@@ -372,15 +401,14 @@ export function OrderPanel({
   };
 
   const handlePrint = async (billId: number) => {
-    if (order.bill?.id !== billId) {
-      toast.error(tOrders('billNotFound'));
-      return;
-    }
+    // No guard on the panel's own copy of the order: a bill generated a moment
+    // ago to print a preconto is not in it yet, and the bill is re-read from
+    // the API below anyway.
     const isReprint = (printHistory[billId]?.length ?? 0) > 0;
     setPrintingBillId(billId);
     try {
       const { data } = await api.get(`/bills/${billId}`);
-      const latestBill = preferChildScopedBill(data.bill as Bill, order);
+      const latestBill = preferChildScopedBill(data.bill as Bill, order.bill?.id === billId ? order : undefined);
       // Actually attempt the print first — only log/report success if the printer accepted the job,
       // otherwise a disconnected printer would silently report "success" (it was only logging before).
       const printWarnings = await printBill(
@@ -1050,75 +1078,103 @@ export function OrderPanel({
           )}
         </div>
 
-        {/* Footer with actions */}
-        <div className="px-4 py-3 border-t border-gray-100 flex flex-wrap gap-2">
-            {showCheckout(order) && (
-              <Button
-                onClick={() => handleCheckout(order.id)}
-                disabled={generatingBill === order.id}
-                size="sm"
-                className="flex-1 justify-center"
-              >
-                <CreditCard size={14} className="me-1.5" />
-                {generatingBill === order.id ? tOrders('generating') : tOrders('checkout')}
-              </Button>
-            )}
-            {!['completed', 'cancelled'].includes(order.status) && (
-              <Button
-                variant="outline"
-                onClick={() => openAddItemsModal(order)}
-                size="sm"
-                className="flex-1 justify-center border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
-              >
-                <Plus size={14} className="me-1.5" />
-                {tOrders('addItem')}
-              </Button>
-            )}
-            {pendingKotItems.length > 0 && kotPrintingEnabled && !['completed', 'cancelled'].includes(order.status) && (
-              <Button
-                variant="outline"
-                onClick={handleSendToKitchen}
-                disabled={sendingToKitchen}
-                size="sm"
-                className="flex-1 justify-center border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-              >
-                <ChefHat size={14} className="me-1.5" />
-                {sendingToKitchen ? tPos('kotSending') : tPos('sendToKitchen', { count: pendingKotItems.length })}
-              </Button>
-            )}
-            {order.type === 'dine_in' && takeawayEnabled && !['completed', 'cancelled'].includes(order.status) && (
-              <Button
-                variant="outline"
-                onClick={() => handleConvertToTakeaway(order)}
-                disabled={convertingOrderId === order.id}
-                size="sm"
-                className="flex-1 justify-center border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-              >
-                <ShoppingBag size={14} className="me-1.5" />
-                {convertingOrderId === order.id ? tOrders('converting') : tOrders('convertToTakeaway')}
-              </Button>
-            )}
-            {!['completed', 'cancelled'].includes(order.status) && (
-              <Button
-                variant="outline"
-                onClick={() => setCancelModal({ order, reason: '', freeTable: true, overridePin: '' })}
-                disabled={cancellingOrderId === order.id}
-                size="sm"
-                className={`flex-1 justify-center ${
-                  order.status === 'pending'
-                    ? 'border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700'
-                    : 'border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700'
-                }`}
-              >
-                {order.status === 'pending' ? (
-                  <XCircle size={14} className="me-1.5" />
-                ) : (
-                  <Lock size={14} className="me-1.5" />
+        {/* Footer with actions
+            Four things the floor does, then everything else behind "more":
+            voiding, discounting the whole check, converting and cancelling are
+            manager business, and putting them in the same row as "add a dish"
+            is how a footer becomes a wall of buttons. */}
+        <div className="px-4 py-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
+          {!['completed', 'cancelled'].includes(order.status) && (
+            <Button
+              variant="outline"
+              onClick={() => openAddItemsModal(order)}
+              size="sm"
+              className="flex-1 justify-center border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
+            >
+              <Plus size={14} className="me-1.5" />
+              {tOrders('addItem')}
+            </Button>
+          )}
+          {pendingKotItems.length > 0 && kotPrintingEnabled && !['completed', 'cancelled'].includes(order.status) && (
+            <Button
+              variant="outline"
+              onClick={handleSendToKitchen}
+              disabled={sendingToKitchen}
+              size="sm"
+              className="flex-1 justify-center border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+            >
+              <ChefHat size={14} className="me-1.5" />
+              {sendingToKitchen ? tPos('kotSending') : tPos('sendToKitchen', { count: pendingKotItems.length })}
+            </Button>
+          )}
+          {/* The bill on paper, which in this fork is what goes to the table.
+              It used to appear only after checkout had opened the payment
+              window, so printing one meant going through cashing up first. */}
+          {order.status !== 'cancelled' && (
+            <Button
+              variant="outline"
+              onClick={handlePrintBill}
+              disabled={generatingBill === order.id || printingBillId === order.bill?.id}
+              size="sm"
+              className="flex-1 justify-center"
+            >
+              <Printer size={14} className="me-1.5" />
+              {tOrders('printBillAction')}
+            </Button>
+          )}
+          {showCheckout(order) && (
+            <Button
+              onClick={() => handleCheckout(order.id)}
+              disabled={generatingBill === order.id}
+              size="sm"
+              className="flex-1 justify-center"
+            >
+              <CreditCard size={14} className="me-1.5" />
+              {generatingBill === order.id ? tOrders('generating') : tOrders('checkout')}
+            </Button>
+          )}
+
+          {!['completed', 'cancelled'].includes(order.status) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="justify-center px-2" title={tCommon('more')}>
+                  <MoreHorizontal size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {isOwnerOrManager && !paid && (
+                  <DropdownMenuItem onClick={() => setDiscountModal({
+                    order,
+                    type: defaultDiscountTypeForMode(discountMode),
+                    value: 0,
+                    reason: '',
+                  })}>
+                    <Percent size={14} className="me-2" />
+                    {tOrders('orderDiscountAction')}
+                  </DropdownMenuItem>
                 )}
-                {cancellingOrderId === order.id ? tOrders('cancelling') : tCommon('cancel')}
-              </Button>
-            )}
-          </div>
+                {order.type === 'dine_in' && takeawayEnabled && (
+                  <DropdownMenuItem
+                    onClick={() => handleConvertToTakeaway(order)}
+                    disabled={convertingOrderId === order.id}
+                  >
+                    <ShoppingBag size={14} className="me-2" />
+                    {convertingOrderId === order.id ? tOrders('converting') : tOrders('convertToTakeaway')}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setCancelModal({ order, reason: '', freeTable: true, overridePin: '' })}
+                  disabled={cancellingOrderId === order.id}
+                  variant="destructive"
+                >
+                  <XCircle size={14} className="me-2" />
+                  {cancellingOrderId === order.id ? tOrders('cancelling') : tOrders('cancelOrderAction')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
 
       {/* Payment Modal */}
