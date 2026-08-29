@@ -1,6 +1,8 @@
 # Flusso ordini e navigazione
 
-**Stato:** ACTIVE DESIGN. Decisioni approvate il 2026-08-28. Nessuna riga di codice ancora scritta.
+**Stato:** CURRENT. Decisioni approvate il 2026-08-28, tutti e sette i passi implementati il
+2026-08-29 sul branch `riorganizzazione-interfaccia`. Restano fuori le cose elencate in
+[Fuori ambito](#fuori-ambito), che non sono state fatte per scelta.
 
 Questo documento fissa la riorganizzazione dell'interfaccia decisa con l'utente, da fare **prima**
 del rifacimento grafico vero e proprio. Il problema dichiarato è che l'interfaccia è confusionaria;
@@ -219,6 +221,29 @@ dell'ordine prima di scrivere, e ricalcola i totali da sé.
 
 Il riordino della sidebar sta in fondo apposta: spostare le pagine mentre le si riscrive è lavoro
 fatto due volte.
+
+## Emendamenti raccolti durante il lavoro
+
+Cose decise mentre si implementava, che il piano non prevedeva:
+
+- **La voce Clienti resta nella barra.** Il piano elencava cinque voci e non diceva nulla di
+  Clienti; toglierla sarebbe stata una decisione a parte. Continua a sparire quando il libro
+  clienti è spento.
+- **Le prenotazioni si raggiungono dalla Sala** con un pulsante, invece di fondere le due pagine:
+  la fusione è lavoro di interfaccia che il rifacimento grafico farà meglio.
+- **Lo schermo della cucina ha un link** dalla scheda KDS delle impostazioni. Era la domanda
+  lasciata aperta al punto 1: la risposta è che un punto d'ingresso serve, perché prima non ne
+  aveva nessuno.
+- **`/staff` sopravvive come rotta** e mostra la stessa schermata della scheda impostazioni, così
+  un collegamento salvato non finisce nel vuoto.
+- **L'invio in cucina è diventato un hook condiviso** (`useSendKot`) invece di essere copiato dal
+  POS al pannello ordine.
+- **Il ricalcolo dei totali dopo una modifica di riga** è ora condiviso fra sconto e prezzo, per lo
+  stesso motivo.
+- **Il checkout della Cassa non usa ancora il pannello.** Il piano lo elencava fra i tre posti;
+  `components/pos/TableCheckoutModal` è rimasto com'era. Non duplica il pannello — fa un lavoro
+  più stretto (invia in cucina, chiudi il conto) — ma finché resta separato ci sono due schermate
+  che mostrano l'ordine di un tavolo. Da unificare quando si rifà il POS.
 
 ## Fuori ambito
 
