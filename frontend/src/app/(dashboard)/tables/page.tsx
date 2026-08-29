@@ -15,6 +15,7 @@ import { RoomFormModal, DeleteRoomModal } from '@/components/tables/RoomFormModa
 import { TableDetailModal } from '@/components/tables/TableDetailModal';
 import { MergeTablesModal } from '@/components/tables/MergeTablesModal';
 import { LayoutsModal } from '@/components/tables/LayoutsModal';
+import { normalizeDiscountMode, type DiscountMode } from '@/lib/discount-settings';
 
 /**
  * The dining room as a map (phase 2 of docs/table-management.md).
@@ -45,6 +46,10 @@ export default function TablesPage() {
   const [mergingTable, setMergingTable] = useState<Table | null>(null);
   const [showLayouts, setShowLayouts] = useState(false);
   const [unassigned, setUnassigned] = useState<Reservation[]>([]);
+  // The order panel in the table card offers discounts, and those follow the
+  // tenant's rules: read them once here rather than per opened table.
+  const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
+  const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   // A booking picked up from the strip, waiting for a table to be tapped.
   const [armedBooking, setArmedBooking] = useState<Reservation | null>(null);
 
@@ -100,6 +105,15 @@ export default function TablesPage() {
     const interval = setInterval(() => { loadMap(); loadOrders(); loadUnassigned(); }, 10000);
     return () => clearInterval(interval);
   }, [loadMap, loadOrders, loadUnassigned]);
+
+  useEffect(() => {
+    api.get('/settings/discount')
+      .then((res) => {
+        setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
+        setDiscountRequiresApproval(!!res.data.discount_requires_approval);
+      })
+      .catch(() => { /* the panel falls back to percentage-only */ });
+  }, []);
 
   // Derived rather than synced: no effect has to chase the room list.
   const activeRoom = rooms.find((room) => room.id === selectedRoomId) ?? rooms[0] ?? null;
@@ -292,6 +306,8 @@ export default function TablesPage() {
           order={ordersByTable.get(detailTable.id) ?? null}
           onClose={() => setDetailTable(null)}
           onChanged={reload}
+          discountMode={discountMode}
+          discountRequiresApproval={discountRequiresApproval}
           groupMembers={allTables.filter((row) => row.merged_into === detailTable.id)}
           onEdit={() => { setTableForm({ table: detailTable }); setDetailTable(null); }}
           onReserve={() => { setReservingTable(detailTable); setDetailTable(null); }}

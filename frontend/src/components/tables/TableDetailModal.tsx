@@ -5,29 +5,22 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { X, Pencil, CalendarCheck, Link2, Unlink } from 'lucide-react';
-import type { Room, Table, Order, OrderItem } from '@/lib/types';
-import { useTranslations, type AppConfig } from 'use-intl';
-import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import type { Room, Table, Order } from '@/lib/types';
+import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
-import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS, TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { OrderPanel } from '@/components/orders/OrderPanel';
+import type { DiscountMode } from '@/lib/discount-settings';
 
 /**
- * What a table is doing right now, opened by tapping it on the map in service
- * mode: its order, what the kitchen has done with each course, and the two
- * actions the floor actually takes — freeing a table and reserving one.
+ * What a table is doing right now, opened by tapping it on the map.
+ *
+ * It used to show the table's order and nothing else — you could see that a
+ * course had not reached the kitchen and had no way to send it, and every
+ * other action meant walking over to another screen. It now carries the order
+ * panel itself, so the table is where its order is worked; a side panel rather
+ * than a small dialog, because the room stays visible beside it.
  */
-
-type OrdersKey = keyof AppConfig['Messages']['orders'];
-
-const itemStatusLabelKey = (status: OrderItem['status']): OrdersKey =>
-  ITEM_STATUS_LABEL_KEYS[status] ?? 'itemStatusPending';
-
-const itemStatusColors: Record<string, { bg: string; text: string; dot: string }> = {
-  pending: { bg: 'bg-yellow-50', text: 'text-yellow-700', dot: 'bg-yellow-500' },
-  preparing: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500' },
-  ready: { bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500' },
-  served: { bg: 'bg-gray-50', text: 'text-gray-600', dot: 'bg-gray-400' },
-};
 
 interface TableDetailModalProps {
   table: Table;
@@ -35,6 +28,8 @@ interface TableDetailModalProps {
   order: Order | null;
   /** Tables folded into this one, if it leads a group. */
   groupMembers: Table[];
+  discountMode: DiscountMode;
+  discountRequiresApproval: boolean;
   onClose: () => void;
   onChanged: () => void;
   onEdit: () => void;
@@ -43,12 +38,11 @@ interface TableDetailModalProps {
 }
 
 export function TableDetailModal({
-  table, room, order, groupMembers, onClose, onChanged, onEdit, onReserve, onMerge,
+  table, room, order, groupMembers, discountMode, discountRequiresApproval,
+  onClose, onChanged, onEdit, onReserve, onMerge,
 }: TableDetailModalProps) {
   const tTables = useTranslations('tables');
-  const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
-  const formatCurrency = useFormatCurrency();
   const [saving, setSaving] = useState(false);
 
   const booking = table.reservation ?? null;
@@ -93,11 +87,16 @@ export function TableDetailModal({
     }
   };
 
-  const items = (order?.items || []).filter((item) => item.status !== 'cancelled');
-
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex">
+      {/* The room stays visible and clickable-to-close beside the panel. */}
+      <button
+        type="button"
+        aria-label={tCommon('close')}
+        onClick={onClose}
+        className="flex-1 bg-black/50"
+      />
+      <div className="w-full max-w-xl bg-gray-50 h-full overflow-y-auto shadow-xl p-5">
         <div className="flex justify-between items-start mb-4">
           <div>
             <h2 className="text-lg font-bold text-gray-900">{table.name}</h2>
@@ -118,42 +117,13 @@ export function TableDetailModal({
         )}
 
         {order ? (
-          <div className="bg-gray-50 rounded-xl p-3 mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold text-gray-800">#<Ltr>{order.order_number}</Ltr></span>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${
-                order.status === 'pending' ? 'bg-yellow-100 text-yellow-700'
-                  : order.status === 'preparing' ? 'bg-blue-100 text-blue-700'
-                    : order.status === 'ready' ? 'bg-green-100 text-green-700'
-                      : order.status === 'served' ? 'bg-purple-100 text-purple-700'
-                        : 'bg-gray-100 text-gray-600'
-              }`}>
-                {tOrders(ORDER_STATUS_LABEL_KEYS[order.status])}
-              </span>
-            </div>
-            {order.customer?.name && <p className="text-xs text-gray-500 mb-2">{order.customer.name}</p>}
-
-            <div className="space-y-1">
-              {items.map((item) => {
-                const colors = itemStatusColors[item.status] || itemStatusColors.pending;
-                return (
-                  <div key={item.id} className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${colors.bg}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full ${colors.dot} flex-shrink-0`} />
-                    <span className="flex-1 truncate text-gray-700">{item.product_name}</span>
-                    {item.kot_batch == null && (
-                      <span className="text-orange-600 font-medium">{tTables('kotPendingShort')}</span>
-                    )}
-                    <span className="text-gray-500">×{item.quantity}</span>
-                    <span className={`font-medium ${colors.text}`}>{tOrders(itemStatusLabelKey(item.status))}</span>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-200">
-              <span className="text-sm text-gray-600">{tCommon('total')}</span>
-              <span className="font-bold text-gray-900"><Ltr>{formatCurrency(order.total || 0)}</Ltr></span>
-            </div>
+          <div className="mb-4">
+            <OrderPanel
+              order={order}
+              onChanged={onChanged}
+              discountMode={discountMode}
+              discountRequiresApproval={discountRequiresApproval}
+            />
           </div>
         ) : booking ? (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
@@ -174,6 +144,7 @@ export function TableDetailModal({
           <p className="text-center text-sm text-gray-400 py-6">{tTables('noActiveOrders')}</p>
         )}
 
+        {/* What happens to the table itself, as opposed to its order. */}
         <div className="flex flex-wrap gap-2">
           {/* Only offered when the status has drifted: a table that is genuinely
               working or being held has its own actions below. */}

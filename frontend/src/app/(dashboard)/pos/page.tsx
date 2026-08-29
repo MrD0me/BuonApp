@@ -26,6 +26,7 @@ import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from 
 import PosTopbar from '@/components/pos/PosTopbar';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
+import { useSendKot } from '@/hooks/useSendKot';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -74,7 +75,7 @@ export default function POSPage() {
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
-  const { customerMandatory, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, customersEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
+  const { customerMandatory, autoPrintBill, billingType, tablesRequired, customersEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const currencyFmt = useFormatCurrency();
@@ -241,7 +242,7 @@ export default function POSPage() {
     : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
-  const { printBill, printKot } = usePrinterStore();
+  const { printBill } = usePrinterStore();
   const billingIsPrepaid = billingType === 'prepaid';
   const shouldTakePaymentNow = billingIsPrepaid;
 
@@ -250,43 +251,10 @@ export default function POSPage() {
    * which those are and stamps them with a round number, so calling this after
    * an append prints the new dishes only — never the whole check again.
    *
-   * Placing or extending an order IS the act of firing the ticket, the same as
-   * on a handheld, so this is not gated on a preference: a send that silently
-   * does nothing leaves the kitchen unaware of food the floor believes it
-   * ordered. `kot_printing_enabled` remains the one switch, for businesses
-   * that print no kitchen tickets at all (issue #133).
-   *
-   * `auto` only decides how talkative the result is: calls that fire on their
-   * own after an order write stay quiet on success, while the explicit "send
-   * to kitchen" button confirms what it did.
+   * Shared with the order panel, so the floor map sends a round the same way
+   * the till does; the POS passes its support banner in.
    */
-  const sendKotToKitchen = async (order: Order, { auto }: { auto: boolean }) => {
-    if (!kotPrintingEnabled) return;
-
-    try {
-      const result = await printKot(order);
-      showPrintWarningsToast(result.warnings);
-      if (!result.printed) {
-        // Nothing pending is a normal outcome (double tap, or every dish has
-        // already gone out) — say so instead of implying a ticket printed.
-        if (!auto) toast(t('kotNothingPending'), { icon: 'ℹ️' });
-        return;
-      }
-      if (!auto) {
-        toast.success(result.batch ? t('kotSentBatch', { batch: result.batch }) : t('kotSent'));
-      }
-    } catch (err) {
-      console.error('[POS] KOT print failed:', err);
-      const msg = err instanceof Error ? err.message : 'print failed';
-      const code = `print.kot.${msg.toLowerCase().includes('spool') ? 'spooler_timeout' : 'failed'}`;
-      setSupportError({
-        code,
-        message: t('kotPrintFailed'),
-        payload: { event_code: code, message: msg, category: 'printer', diagnostics: { order_id: order.id, stage: 'kot_print' } },
-      });
-      toast.error(t('kotPrintFailed'));
-    }
-  };
+  const sendKotToKitchen = useSendKot(setSupportError);
 
   const printKotIfEnabled = async (order: Order) => sendKotToKitchen(order, { auto: true });
 

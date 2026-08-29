@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
+import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChefHat, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
@@ -24,6 +24,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
+import { useSendKot } from '@/hooks/useSendKot';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -130,9 +131,10 @@ export function OrderPanel({
   const { printBill } = usePrinterStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { autoPrintBill, printerUseUnicode, customersEnabled, orderTypes: enabledOrderTypes } = usePosSettingsStore();
+  const { autoPrintBill, printerUseUnicode, customersEnabled, kotPrintingEnabled, orderTypes: enabledOrderTypes } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
+  const tPos = useTranslations('pos');
   const tWhatsappSend = useTranslations('whatsapp.send');
   const { confirm, ConfirmDialog } = useConfirm();
   const isWhatsAppReady = useWhatsAppReady();
@@ -187,6 +189,7 @@ export function OrderPanel({
   const [productSearch, setProductSearch] = useState('');
   const [selectedItems, setSelectedItems] = useState<{ product_id: string; product_name: string; quantity: number; special_instructions: string }[]>([]);
   const [addingItems, setAddingItems] = useState(false);
+  const [sendingToKitchen, setSendingToKitchen] = useState(false);
 
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
   const activeUserId = user?.id == null ? null : String(user.id);
@@ -202,6 +205,12 @@ export function OrderPanel({
   const fmt = useFormatCurrency();
   const isOwnerOrManager = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
   const takeawayEnabled = (enabledOrderTypes as readonly string[]).includes('takeaway');
+  const sendKotToKitchen = useSendKot();
+  // Rows the kitchen has never seen. The floor map used to show this as a
+  // badge with no way to act on it: the button belongs beside the count.
+  const pendingKotItems = (order.items || []).filter(
+    (item) => item.kot_batch == null && item.status !== 'cancelled',
+  );
 
   // The bill's print history, so the button can say "reprint" rather than
   // "print" the second time round.
@@ -635,6 +644,17 @@ export function OrderPanel({
     }
   };
 
+  const handleSendToKitchen = async () => {
+    setSendingToKitchen(true);
+    try {
+      await sendKotToKitchen(order, { auto: false });
+      // Re-read the order so the rows just sent stop counting as pending.
+      onChanged();
+    } finally {
+      setSendingToKitchen(false);
+    }
+  };
+
   const handleCancelOrder = async () => {
     if (!cancelModal) return;
 
@@ -968,6 +988,18 @@ export function OrderPanel({
               >
                 <Plus size={14} className="me-1.5" />
                 {tOrders('addItem')}
+              </Button>
+            )}
+            {pendingKotItems.length > 0 && kotPrintingEnabled && !['completed', 'cancelled'].includes(order.status) && (
+              <Button
+                variant="outline"
+                onClick={handleSendToKitchen}
+                disabled={sendingToKitchen}
+                size="sm"
+                className="flex-1 justify-center border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+              >
+                <ChefHat size={14} className="me-1.5" />
+                {sendingToKitchen ? tPos('kotSending') : tPos('sendToKitchen', { count: pendingKotItems.length })}
               </Button>
             )}
             {order.type === 'dine_in' && takeawayEnabled && !['completed', 'cancelled'].includes(order.status) && (
