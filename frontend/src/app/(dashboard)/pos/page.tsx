@@ -511,6 +511,13 @@ export default function POSPage() {
       await refreshTables();
 
       await printKotIfEnabled(orderForKot);
+
+      // An order on a table goes on being worked where the table is: the floor
+      // plan is where it gets sent again, priced, printed and closed. Staying
+      // here would leave the screen on an empty cart with nothing to do.
+      if (orderForKot.type === 'dine_in' && orderForKot.table_id && tablesRequired) {
+        router.push('/tables');
+      }
     } catch {
       toast.error(t('placeOrderFailed'));
     } finally {

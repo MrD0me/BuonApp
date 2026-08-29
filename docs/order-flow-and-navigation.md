@@ -246,6 +246,9 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   dentro il pannello. Quel selettore non sapeva gestire gli aggiuntivi: una pizza con le acciughe
   extra da lì non si poteva ordinare. Ora c'è un solo posto dove si compone un ordine, ed è quello
   che servirà anche per il menu fisso.
+- **Dopo l'invio di un ordine al tavolo si torna in Sala.** Un ordine su un tavolo continua a
+  lavorarsi dove il tavolo sta; restare in Ordina lascerebbe la schermata su un carrello vuoto.
+  Vale per gli ordini al tavolo, non per asporto e delivery, che vivono in Giornata.
 - **Le prenotazioni si raggiungono dalla Sala** con un pulsante, invece di fondere le due pagine:
   la fusione è lavoro di interfaccia che il rifacimento grafico farà meglio.
 - **Lo schermo della cucina ha un link** dalla scheda KDS delle impostazioni. Era la domanda
