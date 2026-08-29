@@ -24,6 +24,7 @@ import {
 import {
   clearAppendAttempt,
   getAppendAttemptStorage,
+  isPermanentAppendRefusal,
   readAppendAttempt,
   type AppendAttempt,
 } from '@/lib/append-attempt';
@@ -119,7 +120,13 @@ export default function OrdersPage() {
       addItemsAttemptRef.current = null;
       toast.success(tOrders('itemsAdded', { count: pendingAttempt!.items.length }));
       fetchOrders();
-    }).catch(() => {
+    }).catch((error: unknown) => {
+      if (isPermanentAppendRefusal(error)) {
+        clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!);
+        addItemsAttemptRef.current = null;
+        toast.error(tOrders('appendAttemptDropped'));
+        return;
+      }
       toast.error(tOrders('addItemsFailed'));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps

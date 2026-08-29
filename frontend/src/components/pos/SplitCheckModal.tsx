@@ -37,6 +37,46 @@ export function SplitCheckModal({ bill, order, onClose, onSplit }: { bill: Bill;
     setCount(next);
   };
 
+  /**
+   * Moves units of one line between guests, keeping the line adding up to what
+   * was actually ordered.
+   *
+   * Typing a bigger number for one guest takes the difference off the others,
+   * heaviest first; typing a smaller one hands the remainder to the next guest
+   * along. Without this every change left the grid invalid until the other
+   * cell was corrected by hand, and the modal refused to submit in between.
+   */
+  const setAllocation = (item: OrderItem, index: number, raw: string) => {
+    const value = Math.min(item.quantity, Math.max(0, Number(raw) || 0));
+    setAllocations((old) => {
+      const slots = Array.from({ length: count }, (_, i) => old[item.id]?.[i] || 0);
+      slots[index] = value;
+
+      let excess = slots.reduce((sum, qty) => sum + qty, 0) - item.quantity;
+      while (excess > 0) {
+        let heaviest = -1;
+        for (let i = 0; i < slots.length; i++) {
+          if (i === index || slots[i] <= 0) continue;
+          if (heaviest === -1 || slots[i] > slots[heaviest]) heaviest = i;
+        }
+        if (heaviest === -1) break;
+        const taken = Math.min(slots[heaviest], excess);
+        slots[heaviest] -= taken;
+        excess -= taken;
+      }
+
+      let missing = item.quantity - slots.reduce((sum, qty) => sum + qty, 0);
+      for (let step = 1; missing > 0 && step <= slots.length; step++) {
+        const target = (index + step) % slots.length;
+        if (target === index) continue;
+        slots[target] += missing;
+        missing = 0;
+      }
+
+      return { ...old, [item.id]: slots };
+    });
+  };
+
   const totals = useMemo(() => Array.from({ length: count }, (_, checkIndex) => items.reduce((sum, item) => sum + Number(item.total) * (allocations[item.id]?.[checkIndex] || 0) / item.quantity, 0)), [allocations, count, items]);
 
   const submit = async () => {
@@ -62,7 +102,7 @@ export function SplitCheckModal({ bill, order, onClose, onSplit }: { bill: Bill;
   return <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4"><div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
     <div className="p-5 border-b flex items-center justify-between"><div><h2 className="text-lg font-bold">{t('splitCheck')}</h2><p className="text-sm text-gray-500">{t('splitCheckHint')}</p></div><button onClick={onClose}><X size={20} /></button></div>
     <div className="p-5 border-b flex items-center gap-3"><span className="text-sm text-gray-600">{t('numberOfChecks')}</span><button onClick={() => resize(count - 1)} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Minus size={13} /></button><strong>{count}</strong><button onClick={() => resize(count + 1)} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Plus size={13} /></button></div>
-    <div className="overflow-auto p-5"><table className="w-full text-sm"><thead><tr><th className="text-start p-2 sticky start-0 bg-white">{t('items')}</th>{Array.from({ length: count }, (_, i) => <th key={i} className="p-2 min-w-28"><input value={labels[i]} onChange={(e) => setLabels((old) => old.map((label, n) => n === i ? e.target.value.slice(0, 40) : label))} className="w-full text-center border rounded px-2 py-1" /></th>)}</tr></thead><tbody>{items.map((item: OrderItem) => <tr key={item.id} className="border-t"><td className="p-2 sticky start-0 bg-white"><div className="font-medium">{item.product_name}</div><div className="text-xs text-gray-400">{item.quantity} × {fmt(Number(item.total) / item.quantity)}</div></td>{Array.from({ length: count }, (_, i) => <td key={i} className="p-2"><input type="number" min="0" max={item.quantity} value={allocations[item.id]?.[i] || 0} onChange={(e) => { const value = Math.min(item.quantity, Math.max(0, Number(e.target.value) || 0)); setAllocations((old) => ({ ...old, [item.id]: old[item.id].map((qty, n) => n === i ? value : qty) })); }} className="w-full text-center border rounded px-2 py-1" /></td>)}</tr>)}</tbody><tfoot><tr className="border-t font-semibold"><td className="p-2">{t('estimatedItemsTotal')}</td>{totals.map((total, i) => <td key={i} className="p-2 text-center">{fmt(total)}</td>)}</tr></tfoot></table></div>
+    <div className="overflow-auto p-5"><table className="w-full text-sm"><thead><tr><th className="text-start p-2 sticky start-0 bg-white">{t('items')}</th>{Array.from({ length: count }, (_, i) => <th key={i} className="p-2 min-w-28"><input value={labels[i]} onChange={(e) => setLabels((old) => old.map((label, n) => n === i ? e.target.value.slice(0, 40) : label))} className="w-full text-center border rounded px-2 py-1" /></th>)}</tr></thead><tbody>{items.map((item: OrderItem) => <tr key={item.id} className="border-t"><td className="p-2 sticky start-0 bg-white"><div className="font-medium">{item.product_name}</div><div className="text-xs text-gray-400">{item.quantity} × {fmt(Number(item.total) / item.quantity)}</div></td>{Array.from({ length: count }, (_, i) => <td key={i} className="p-2"><input type="number" min="0" max={item.quantity} value={allocations[item.id]?.[i] || 0} onChange={(e) => setAllocation(item, i, e.target.value)} className="w-full text-center border rounded px-2 py-1" /></td>)}</tr>)}</tbody><tfoot><tr className="border-t font-semibold"><td className="p-2">{t('estimatedItemsTotal')}</td>{totals.map((total, i) => <td key={i} className="p-2 text-center">{fmt(total)}</td>)}</tr></tfoot></table></div>
     <div className="p-5 border-t flex justify-end gap-2"><Button variant="outline" onClick={onClose}>{tCommon('cancel')}</Button><Button onClick={submit} disabled={saving}>{saving ? tCommon('saving') : t('createChecks')}</Button></div>
   </div></div>;
 }

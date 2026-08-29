@@ -41,6 +41,7 @@ import {
   LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY,
   getPostpaidOrderAttemptStorageKey,
   migrateLegacyAppendAttempt,
+  isPermanentAppendRefusal,
   readAppendAttempt,
   type AppendAttempt,
   type AppendAttemptStorage,
@@ -324,7 +325,15 @@ export default function POSPage() {
       // recovery was in flight. A reload starts empty; any current UI is newer.
       toast.success(t('itemsAddedToOrder', { number: pendingAttempt!.orderNumber || pendingAttempt!.orderId }));
       refreshTables();
-    }).catch(() => {
+    }).catch((error: unknown) => {
+      if (isPermanentAppendRefusal(error)) {
+        // Refused for good: drop the retry instead of raising it again on every
+        // load, which is what made the order look impossible to add to.
+        clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!);
+        addItemsAttemptRef.current = null;
+        toast.error(t('appendAttemptDropped'));
+        return;
+      }
       toast.error(t('addItemsFailed'));
     });
   // The recovery runs once per authenticated renderer and intentionally uses
@@ -518,8 +527,18 @@ export default function POSPage() {
       if (orderForKot.type === 'dine_in' && orderForKot.table_id && tablesRequired) {
         router.push('/tables');
       }
-    } catch {
-      toast.error(t('placeOrderFailed'));
+    } catch (error: unknown) {
+      // Same reasoning as the recovery above: a refusal that will never turn
+      // into an acceptance must not be left in the retry store.
+      if (pendingOrder && isPermanentAppendRefusal(error)) {
+        const attempt = addItemsAttemptRef.current;
+        if (attempt) clearAppendAttempt(getAppendAttemptStorage(), attempt);
+        addItemsAttemptRef.current = null;
+        setPendingOrder(null);
+        toast.error(t('appendAttemptDropped'));
+      } else {
+        toast.error(t('placeOrderFailed'));
+      }
     } finally {
       setSubmitting(false);
     }

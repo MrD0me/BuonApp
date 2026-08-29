@@ -809,3 +809,16 @@ export function getAppendAttemptStorage(): AppendAttemptStorage {
   sharedAppendAttemptStorage = createSafeAppendAttemptStorage(browserStorage, sessionStorage);
   return sharedAppendAttemptStorage;
 }
+
+/**
+ * Whether a refused append is refused for good.
+ *
+ * The order was closed, or its check was split, and no amount of retrying will
+ * change that. A stored retry that can never succeed nags on every load and,
+ * worse, makes the floor believe the order will not take items at all — which
+ * is how a table ends up looking stuck.
+ */
+export function isPermanentAppendRefusal(error: unknown): boolean {
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  return typeof status === 'number' && status >= 400 && status < 500;
+}

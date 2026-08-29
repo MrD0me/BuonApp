@@ -4226,6 +4226,38 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       if (settled > 0) console.log(`[MIGRATION v85] ${settled} zero-value split check(s) settled`);
     },
   },
+  {
+    version: 86,
+    name: 'close_orders_left_paid_but_open',
+    up: () => {
+      // The other half of the same accident. An order completes when its last
+      // bill is paid; the share that could never be paid meant that moment
+      // never came, so the order stayed open and its table stayed occupied —
+      // and no button on the floor will free a table that is still serving.
+      // v85 settled the shares; this closes what they were holding open.
+      const closed = db.prepare(`
+        UPDATE orders SET status = 'completed', completed_at = COALESCE(completed_at, ?), updated_at = ?
+        WHERE status NOT IN ('completed', 'cancelled')
+          AND EXISTS (SELECT 1 FROM bills WHERE bills.order_id = orders.id)
+          AND NOT EXISTS (SELECT 1 FROM bills WHERE bills.order_id = orders.id AND bills.payment_status != 'paid')
+      `).run(now(), now()).changes;
+
+      // A table is occupied because something is on it. With every order on it
+      // closed, it is just a table nobody cleared on the screen.
+      const freed = db.prepare(`
+        UPDATE tables SET status = 'available', updated_at = ?
+        WHERE status = 'occupied'
+          AND NOT EXISTS (
+            SELECT 1 FROM orders
+            WHERE orders.table_id = tables.id AND orders.status NOT IN ('completed', 'cancelled')
+          )
+      `).run(now()).changes;
+
+      if (closed > 0 || freed > 0) {
+        console.log(`[MIGRATION v86] ${closed} paid order(s) closed, ${freed} table(s) freed`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
