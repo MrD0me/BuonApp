@@ -781,3 +781,31 @@ export function clearAppendAttempt(
     return false;
   }
 }
+
+/**
+ * The browser storage pair append retries are kept in, built once per tab.
+ *
+ * Both the order panel (which writes an attempt before appending) and the
+ * day's list (which retries a leftover one on load) need the same storage, and
+ * two independently built wrappers would each carry their own in-memory
+ * fallback — an attempt written through one would be invisible to the other.
+ */
+let sharedAppendAttemptStorage: AppendAttemptStorage | null = null;
+
+export function getAppendAttemptStorage(): AppendAttemptStorage {
+  if (sharedAppendAttemptStorage) return sharedAppendAttemptStorage;
+  let browserStorage: AppendAttemptStorage | null = null;
+  let sessionStorage: AppendAttemptStorage | null = null;
+  try {
+    if (typeof window !== 'undefined') browserStorage = window.localStorage;
+  } catch {
+    browserStorage = null;
+  }
+  try {
+    if (typeof window !== 'undefined') sessionStorage = window.sessionStorage;
+  } catch {
+    sessionStorage = null;
+  }
+  sharedAppendAttemptStorage = createSafeAppendAttemptStorage(browserStorage, sessionStorage);
+  return sharedAppendAttemptStorage;
+}
