@@ -530,6 +530,7 @@
     "paid": "Pago",
     "pax": "Pessoas",
     "pay": "Pagar",
+    "payAllWith": "Pagar tudo com {method}",
     "payment": "Pagamento",
     "paymentAboveBalance": "Pagamentos não monetários e da carteira de fidelidade não podem exceder o saldo",
     "paymentBelowBalance": "O valor do pagamento é menor que o saldo",

@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Percent, Banknote, Plus, ChefHat, Pencil, MoreHorizontal, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
+import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Percent, Banknote, Plus, ChefHat, Pencil, MoreHorizontal, Users, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
+import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
@@ -139,7 +140,7 @@ export function OrderPanel({
   const { printBill } = usePrinterStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { autoPrintBill, printerUseUnicode, customersEnabled, kotPrintingEnabled, orderTypes: enabledOrderTypes } = usePosSettingsStore();
+  const { autoPrintBill, printerUseUnicode, customersEnabled, kotPrintingEnabled, splitChecksEnabled, orderTypes: enabledOrderTypes } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
@@ -173,6 +174,7 @@ export function OrderPanel({
 
   const [previewingBillId, setPreviewingBillId] = useState<number | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
+  const [splitBill, setSplitBill] = useState<Bill | null>(null);
 
   const [cancelModal, setCancelModal] = useState<CancelModal | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState<number | null>(null);
@@ -216,6 +218,10 @@ export function OrderPanel({
   const awaitsPrice = (item: OrderItem) =>
     Boolean(item.price_required) && Number(item.unit_price) === 0 && item.status !== 'cancelled';
   const unpricedItems = (order.items || []).filter(awaitsPrice);
+  // Checks split between guests. Splitting is the one billing action with no
+  // other home, so it lives here with the rest of them rather than in the
+  // ordering screen, where it used to be the last thing taking money.
+  const splitBills = (order.bills || []).filter((entry) => Boolean(entry.split_group_id));
   const pendingKotItems = (order.items || []).filter(
     (item) => item.kot_batch == null && item.status !== 'cancelled',
   );
@@ -669,6 +675,18 @@ export function OrderPanel({
     }
   };
 
+  const handleSplitCheck = async () => {
+    setGeneratingBill(order.id);
+    try {
+      const bill = order.bill || (await api.post('/bills/generate', { order_id: order.id })).data.bill;
+      setSplitBill(bill);
+    } catch {
+      toast.error(tOrders('generateBillFailed'));
+    } finally {
+      setGeneratingBill(null);
+    }
+  };
+
   const handleSendToKitchen = async () => {
     setSendingToKitchen(true);
     try {
@@ -955,6 +973,25 @@ export function OrderPanel({
             )}
           </div>
 
+          {splitBills.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {splitBills.map((entry) => (
+                <div key={entry.id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{entry.split_label}</p>
+                    <p className="text-xs text-gray-500">
+                      <Ltr>{fmt(Number(entry.total))}</Ltr>
+                      {' · '}{tOrders(paymentStatusBadge[entry.payment_status === 'paid' ? 'paid' : 'unpaid'].labelKey)}
+                    </p>
+                  </div>
+                  {entry.payment_status !== 'paid' && (
+                    <Button size="sm" onClick={() => setPaymentBill(entry)}>{tOrders('checkout')}</Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Cancelled items */}
           {cancelledItems.length > 0 && isOwnerOrManager && (
             <div className="mt-2 pt-2 border-t border-gray-50">
@@ -1078,6 +1115,12 @@ export function OrderPanel({
                   })}>
                     <Percent size={14} className="me-2" />
                     {tOrders('orderDiscountAction')}
+                  </DropdownMenuItem>
+                )}
+                {splitChecksEnabled && order.type === 'dine_in' && !paid && splitBills.length === 0 && (
+                  <DropdownMenuItem onClick={handleSplitCheck} disabled={generatingBill === order.id}>
+                    <Users size={14} className="me-2" />
+                    {tPos('splitCheck')}
                   </DropdownMenuItem>
                 )}
                 {order.type === 'dine_in' && takeawayEnabled && (
@@ -1513,6 +1556,15 @@ placeholder={tOrders('managerPin')}
             )}
           </div>
         </div>
+      )}
+
+      {splitBill && (
+        <SplitCheckModal
+          bill={splitBill}
+          order={order}
+          onClose={() => setSplitBill(null)}
+          onSplit={() => { setSplitBill(null); onChanged(); }}
+        />
       )}
 
       {ConfirmDialog}

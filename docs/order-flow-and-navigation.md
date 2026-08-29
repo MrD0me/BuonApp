@@ -269,8 +269,15 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   finestra serve ad attaccare a un tavolo aperto quello che si è battuto al banco, e basta. Il
   conto e l'incasso si fanno dalla Sala o dalla Giornata — un ordine si chiude da un posto solo —
   e per asporto e delivery dalla sola Giornata. I due pulsanti di incasso sono spariti da lì.
-  Resta la divisione del conto, che non ha equivalente nel pannello: è dietro la sua impostazione,
-  spenta di default, ed è l'unica azione di cassa rimasta in quella finestra.
+  Anche la divisione del conto è poi passata nel pannello (2026-08-29), dietro il menu "Altro" e
+  sempre dietro `split_checks_enabled`: i sotto-conti si elencano accanto ai totali e si incassano da
+  lì. Ordina non ha più nessuna azione di cassa.
+- **La finestra di pagamento ha perso lo sconto e ha guadagnato i pulsanti.** Lo sconto si fa prima,
+  sull'ordine o sulla riga, così compare sul preconto che va al tavolo: scontarlo dopo la stampa
+  vorrebbe dire che la carta in mano al cliente non dice quello che paga. E il metodo di pagamento
+  era già un pulsante che riempiva l'importo da solo, solo che sembrava un'etichetta incollata a una
+  casella — l'utente ha scritto a mano importi che gli venivano riempiti da un tocco. Ora si vede
+  che è un pulsante; la casella resta per il resto in contanti e per i pagamenti misti.
 
 ## Fuori ambito
 

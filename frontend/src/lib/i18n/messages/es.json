@@ -530,6 +530,7 @@
     "paid": "Pagado",
     "pax": "Comensales",
     "pay": "Cobrar",
+    "payAllWith": "Pagar todo con {method}",
     "payment": "Pago",
     "paymentAboveBalance": "Los pagos no en efectivo y de la billetera de fidelidad no pueden superar el saldo",
     "paymentBelowBalance": "El monto del pago es menor que el saldo",

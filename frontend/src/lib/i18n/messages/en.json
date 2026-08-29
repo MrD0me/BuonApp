@@ -530,6 +530,7 @@
     "paid": "Paid",
     "pax": "Pax",
     "pay": "Pay",
+    "payAllWith": "Pay it all with {method}",
     "payment": "Payment",
     "paymentAboveBalance": "Non-cash and loyalty wallet payments cannot exceed the balance",
     "paymentBelowBalance": "Payment amount is less than balance",

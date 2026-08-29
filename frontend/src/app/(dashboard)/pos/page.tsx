@@ -1059,7 +1059,6 @@ export default function POSPage() {
           cartItemCount={cart.itemCount()}
           onClose={() => setCheckoutTable(null)}
           onAddItems={(table, order) => startAppendToOrder(order, table)}
-          onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
           onAddCartToOrder={handleAddCartToOrder}
           onSendToKitchen={(order) => sendKotToKitchen(order, { auto: false })}
         />

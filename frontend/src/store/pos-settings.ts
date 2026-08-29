@@ -60,6 +60,9 @@ export interface PosSettingsState {
   // bookings carry their own name and phone, so they are unaffected. Synced
   // from the backend on auth load (see Sidebar.tsx).
   customersEnabled: boolean;
+  // Whether a check can be split between guests. Off unless the owner turns
+  // it on; it is the one billing action that lives nowhere else.
+  splitChecksEnabled: boolean;
   // Whether the WhatsApp integration is enabled on this tenant. Synced from
   // the backend on auth load so the sidebar can hide the nav entry when the
   // feature is off, and updated by the WhatsApp page after the user toggles.
@@ -95,6 +98,7 @@ export interface PosSettingsState {
   setKdsEnabled: (v: boolean) => void;
   setKotPrintingEnabled: (v: boolean) => void;
   setCustomersEnabled: (v: boolean) => void;
+  setSplitChecksEnabled: (v: boolean) => void;
   setWhatsappEnabled: (v: boolean) => void;
 }
 
@@ -134,6 +138,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       kdsEnabled: true,
       kotPrintingEnabled: true,
       customersEnabled: true,
+      splitChecksEnabled: false,
       // Default false so the sidebar hides the WhatsApp nav entry until the
       // tenant actually enables the integration. Synced from /api/whatsapp/status
       // on auth load (see Sidebar.tsx) and updated by the WhatsApp page after
@@ -170,6 +175,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setKdsEnabled: (v) => set({ kdsEnabled: v }),
       setKotPrintingEnabled: (v) => set({ kotPrintingEnabled: v }),
       setCustomersEnabled: (v) => set({ customersEnabled: v }),
+      setSplitChecksEnabled: (v) => set({ splitChecksEnabled: v }),
       setWhatsappEnabled: (v: boolean) => set({ whatsappEnabled: v }),
     }),
     {

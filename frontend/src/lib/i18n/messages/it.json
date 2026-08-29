@@ -530,6 +530,7 @@
     "paid": "Pagato",
     "pax": "Coperti",
     "pay": "Paga",
+    "payAllWith": "Paga tutto con {method}",
     "payment": "Pagamento",
     "paymentAboveBalance": "I pagamenti non in contanti e con portafoglio fedeltà non possono superare il saldo",
     "paymentBelowBalance": "L'importo del pagamento è inferiore al saldo",
