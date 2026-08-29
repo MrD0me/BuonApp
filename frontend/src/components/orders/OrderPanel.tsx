@@ -188,6 +188,8 @@ export function OrderPanel({
   const [printingBillId, setPrintingBillId] = useState<number | null>(null);
   const [sendingWaOrderId, setSendingWaOrderId] = useState<number | null>(null);
   const [confirmPrintBillId, setConfirmPrintBillId] = useState<number | null>(null);
+  // Whether the print being confirmed is the whole check or one share of it.
+  const [printWholeOrder, setPrintWholeOrder] = useState(false);
 
   const [printHistoryExpanded, setPrintHistoryExpanded] = useState<Record<number, boolean>>({});
   const [printHistory, setPrintHistory] = useState<Record<number, { id: number; print_type: string; user_name: string; printed_at: string }[]>>({});
@@ -344,6 +346,10 @@ export function OrderPanel({
    * to get one was to press Checkout, which opens the payment window.
    */
   const handlePrintBill = async () => {
+    // Always the whole check: this is the bill that goes to the table. With a
+    // split in place there is no bill that stands for all of it — the original
+    // became the first share — so the print route is asked to add them back up.
+    setPrintWholeOrder(splitBills.length > 0);
     if (order.bill?.id) {
       setConfirmPrintBillId(order.bill.id);
       return;
@@ -390,7 +396,12 @@ export function OrderPanel({
     }
   };
 
-  const handlePrint = async (billId: number) => {
+  /**
+   * `wholeOrder` is what the main print button asks for once a check has been
+   * split: the original bill became the first share, so without it the floor
+   * gets one guest's items when it wanted the whole table's.
+   */
+  const handlePrint = async (billId: number, wholeOrder = false) => {
     // No guard on the panel's own copy of the order: a bill generated a moment
     // ago to print a preconto is not in it yet, and the bill is re-read from
     // the API below anyway.
@@ -412,7 +423,7 @@ export function OrderPanel({
           number_digits: currentTenant?.number_digits,
           calendar: currentTenant?.calendar,
         },
-        { isReprint }
+        { isReprint, wholeOrder }
       );
       await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
       toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
@@ -981,9 +992,19 @@ export function OrderPanel({
                       {' · '}{tOrders(paymentStatusBadge[entry.payment_status === 'paid' ? 'paid' : 'unpaid'].labelKey)}
                     </p>
                   </div>
-                  {entry.payment_status !== 'paid' && (
-                    <Button size="sm" onClick={() => setPaymentBill(entry)}>{tOrders('checkout')}</Button>
-                  )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => { setPrintWholeOrder(false); setConfirmPrintBillId(entry.id); }}
+                      className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+                      title={tOrders('printBillAction')}
+                    >
+                      <Printer size={14} />
+                    </button>
+                    {entry.payment_status !== 'paid' && (
+                      <Button size="sm" onClick={() => setPaymentBill(entry)}>{tOrders('checkout')}</Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1203,7 +1224,7 @@ export function OrderPanel({
               </Button>
               <Button
                 size="sm"
-                onClick={() => handlePrint(confirmPrintBillId)}
+                onClick={() => handlePrint(confirmPrintBillId, printWholeOrder)}
                 disabled={printingBillId === confirmPrintBillId}
               >
                 <Printer size={14} className="me-1.5" />

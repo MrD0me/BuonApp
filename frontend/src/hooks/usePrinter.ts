@@ -68,7 +68,12 @@ interface PrinterState {
   refreshHardwarePrinter: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
-  printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
+  /**
+   * `wholeOrder` asks the backend for the whole check rather than the share
+   * this bill represents — see the print route. It only means anything for a
+   * bill that belongs to a split group.
+   */
+  printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions & { wholeOrder?: boolean }) => Promise<PrintWarning[]>;
   printKot: (order: Order, opts?: KotOptions) => Promise<KotSendResult>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;
@@ -156,7 +161,7 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-bill', { billId: bill.id, useUnicode: printerUseUnicode, isReprint });
+              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-bill', { billId: bill.id, useUnicode: printerUseUnicode, isReprint, wholeOrder: opts?.wholeOrder === true });
               return response.data.warnings || [];
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string } }; message?: string };

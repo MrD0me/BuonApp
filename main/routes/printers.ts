@@ -398,7 +398,7 @@ router.post('/:id/test', requireRole('owner', 'manager'), asyncHandler(async (re
 // POST /api/printers/print-bill — print bill via backend (desktop app)
 router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { billId, orderId, useUnicode = false, isReprint = false, preview = false } = req.body;
+    const { billId, orderId, useUnicode = false, isReprint = false, preview = false, wholeOrder = false } = req.body;
     console.log('[Print Bill] Request received', { useUnicode, isReprint, preview });
     
     if (!billId && !orderId) {
@@ -443,8 +443,27 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Fetch order items
-    order.items = getOrderWithItems(db, Number(bill.order_id), Number(bill.id))?.items || [];
+    // Fetch order items. A split check normally prints only the share it was
+    // allocated — that is the point of splitting. `wholeOrder` asks for the
+    // whole thing instead: the floor that divides a check only to record who
+    // paid what still takes one bill to the table, and after a split there is
+    // no bill left that represents all of it (the original became share one).
+    const printingWholeOrder = wholeOrder === true && Boolean(bill.split_group_id);
+    order.items = getOrderWithItems(db, Number(bill.order_id), printingWholeOrder ? undefined : Number(bill.id))?.items || [];
+    if (printingWholeOrder) {
+      const shares = db.prepare('SELECT * FROM bills WHERE split_group_id = ?').all(bill.split_group_id) as any[];
+      const sum = (field: string) => shares.reduce((total, share) => total + Number(share[field] || 0), 0);
+      bill = {
+        ...bill,
+        split_group_id: null,
+        split_label: null,
+        subtotal: Number(order.subtotal || sum('subtotal')),
+        discount_amount: Number(order.discount_amount || sum('discount_amount')),
+        total: Number(order.total || sum('total')),
+        paid_amount: sum('paid_amount'),
+        balance: Math.max(0, Number(order.total || sum('total')) - sum('paid_amount')),
+      };
+    }
 
     // Fetch table info. Falls back to the label the order captured when it was
     // placed, so reprinting a bill still names the table after the room has been
