@@ -215,8 +215,12 @@ export function OrderPanel({
   // badge with no way to act on it: the button belongs beside the count.
   // A row of an off-menu product that nobody has priced yet. Zero on its own
   // does not mean this: in a place that offers the coffee, zero means free.
+  // Waiting on a price is about nobody having decided yet, not about the
+  // number being zero: a dish given away at zero is a decision, and the price
+  // a placeholder happens to carry in the menu means nothing. Saving a price
+  // through the pencil — any price — is what settles it.
   const awaitsPrice = (item: OrderItem) =>
-    Boolean(item.price_required) && Number(item.unit_price) === 0 && item.status !== 'cancelled';
+    Boolean(item.price_required) && !item.price_confirmed && item.status !== 'cancelled';
   const unpricedItems = (order.items || []).filter(awaitsPrice);
   // Checks split between guests. Splitting is the one billing action with no
   // other home, so it lives here with the rest of them rather than in the
@@ -1515,6 +1519,11 @@ placeholder={tOrders('managerPin')}
               {tOrders('rowCurrentPrice')} <Ltr>{fmt(Number(rowEdit.item.unit_price))}</Ltr>
               {' × '}{rowEdit.item.quantity}
             </p>
+            {awaitsPrice(rowEdit.item) && (
+              <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-4">
+                {tOrders('rowPriceAwaitingHint')}
+              </p>
+            )}
 
             <label className="block text-sm font-medium text-gray-700 mb-1">{tOrders('rowNewPrice')}</label>
             <div className="flex gap-2 mb-5">
@@ -1528,7 +1537,7 @@ placeholder={tOrders('managerPin')}
                 autoFocus
               />
               <Button type="button" onClick={saveRowPrice} disabled={savingRow}>
-                {tOrders('rowSavePrice')}
+                {awaitsPrice(rowEdit.item) ? tOrders('rowConfirmPrice') : tOrders('rowSavePrice')}
               </Button>
             </div>
 

@@ -75,7 +75,7 @@ function TableTile({
   // A row of an off-menu dish that nobody has priced yet. Worth the same glance
   // as an unsent course: the bill cannot be closed honestly until it is filled.
   const unpriced = (order?.items || []).some(
-    (item) => Boolean(item.price_required) && Number(item.unit_price) === 0 && item.status !== 'cancelled',
+    (item) => Boolean(item.price_required) && !item.price_confirmed && item.status !== 'cancelled',
   );
   const compact = height < 100 || width < 120;
   // A table being held shows who it is being held for; that is the whole point

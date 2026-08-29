@@ -1434,9 +1434,11 @@ router.patch('/:id/items/:itemId/price', orderWriteRateLimit, requireRole('owner
     const newSubtotal = Math.max(0, itemBaseTotal - discountAmount);
 
     const updatedItem = withTxn(() => {
+      // Saving a price settles the row, whatever the number: a dish given away
+      // at zero has been decided on, and must stop asking to be priced.
       db.prepare(`
         UPDATE order_items SET unit_price = ?, discount_amount = ?,
-          subtotal = ?, total = ?, updated_at = ? WHERE id = ?
+          subtotal = ?, total = ?, price_confirmed = 1, updated_at = ? WHERE id = ?
       `).run(newUnitPrice, discountAmount, newSubtotal, newSubtotal, now(), req.params.itemId);
 
       recomputeOrderAfterItemChange(db, String(req.params.id), order);

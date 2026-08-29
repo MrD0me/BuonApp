@@ -4258,6 +4258,21 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 87,
+    name: 'add_order_item_price_confirmed',
+    up: () => {
+      if (!getColumns(db, 'order_items').includes('price_confirmed')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN price_confirmed INTEGER DEFAULT 0`);
+      }
+      // Rows already carrying a price nobody is going to revisit: an existing
+      // order should not light up orange the day this ships.
+      db.exec(`
+        UPDATE order_items SET price_confirmed = 1
+        WHERE COALESCE(price_confirmed, 0) = 0 AND COALESCE(unit_price, 0) > 0
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4640,6 +4655,11 @@ function createSchema(): void {
       -- Sequential kitchen-ticket batch. NULL = not yet sent to the kitchen;
       -- 1 = first ticket for this order, 2 = the next round, and so on.
       kot_batch INTEGER,
+      -- Someone has settled what this row costs. Only meaningful on a row whose
+      -- product is priced when ordered: until it is set, the row is flagged as
+      -- waiting. Saving a price is the confirmation — zero included, because a
+      -- dish given away is a decision, not an omission.
+      price_confirmed INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id)

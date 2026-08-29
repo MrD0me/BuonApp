@@ -273,6 +273,8 @@ export interface OrderItem {
   kot_batch?: number | null;
   /** Its product is one whose price is only settled once ordered. */
   price_required?: boolean | number;
+  /** Someone has settled what this row costs — saving a price, zero included. */
+  price_confirmed?: boolean | number;
 }
 
 export interface Bill {

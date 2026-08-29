@@ -97,6 +97,13 @@ async function main() {
 
     const afterPricing = await readOrder(order.id);
     assertEqual(Number(afterPricing.total), 3600, 'the order total follows the row');
+    assert(Number(priced.data.item.price_confirmed) === 1, 'saving a price settles the row');
+
+    // Zero is a decision too — the coffee the house offers — so confirming it
+    // has to count, or the row would ask to be priced for the rest of service.
+    const givenAway = await setPrice(order.id, itemId, { unit_price: 0 });
+    assertEqual(givenAway.status, 200, 'a row can be settled at nothing');
+    assert(Number(givenAway.data.item.price_confirmed) === 1, 'and zero still counts as settled');
 
     // ── Upwards, unlike a discount ────────────────────────────────────────
     console.log('\n2. The price can go up as well as down');
