@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, Map as MapIcon, PenLine, LayoutGrid } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Pencil, Trash2, Map as MapIcon, PenLine, LayoutGrid, CalendarCheck } from 'lucide-react';
 import type { Room, Table, Order, Reservation } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { useTranslations } from 'use-intl';
@@ -27,6 +28,7 @@ import { normalizeDiscountMode, type DiscountMode } from '@/lib/discount-setting
  */
 export default function TablesPage() {
   const tTables = useTranslations('tables');
+  const tNav = useTranslations('nav');
   const role = useAuthStore((state) => state.currentTenant?.role) || 'cashier';
   const canEdit = role === 'owner' || role === 'manager';
 
@@ -183,6 +185,13 @@ export default function TablesPage() {
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <h1 className="text-2xl font-bold text-gray-900">{tTables('title')}</h1>
         <div className="flex items-center gap-2">
+          {/* Bookings belong to the room, so they are reached from it rather
+              than from a bar entry of their own. */}
+          <Button variant="outline" asChild>
+            <Link href="/reservations">
+              <CalendarCheck size={16} className="me-1" /> {tNav('reservations')}
+            </Link>
+          </Button>
           {canEdit && (
             <Button variant={editing ? 'default' : 'outline'} onClick={() => setEditing((value) => !value)}>
               {editing ? <><MapIcon size={16} className="me-1" /> {tTables('serviceMode')}</>

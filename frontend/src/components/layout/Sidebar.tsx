@@ -7,17 +7,13 @@ import {
   ShoppingCart,
   ClipboardList,
   CalendarClock,
-  CalendarCheck,
   Package,
   Grid3X3,
   Users,
-  UserCog,
   Settings,
   LogOut,
   PanelLeft,
-  ChefHat,
   UserCircle,
-  MessageCircle,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -53,25 +49,30 @@ interface NavItem {
   businessTypes: string[] | null;
 }
 
-// null = show for all business types
+/**
+ * Five places, one question each: where people are sitting, what I am ringing
+ * up, what is open right now, what I sell, what I took. Everything that is
+ * configuration rather than work lives behind Settings at the bottom — the
+ * bar used to carry eleven entries, one of which (KDS) opened a settings tab
+ * rather than the kitchen screen it named.
+ *
+ * null businessTypes = show for all business types.
+ */
 const ALL_NAV_ITEMS: NavItem[] = [
+  { href: '/tables', labelKey: 'tables', icon: Grid3X3, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
   { href: '/pos', labelKey: 'pos', icon: ShoppingCart, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/orders', labelKey: 'orders', icon: ClipboardList, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
-  { href: '/service-days', labelKey: 'serviceDays', icon: CalendarClock, roles: ['owner', 'manager'], businessTypes: null },
-  { href: '/whatsapp', labelKey: 'whatsapp', icon: MessageCircle, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/products', labelKey: 'products', icon: Package, roles: ['owner', 'manager'], businessTypes: null },
-  { href: '/tables', labelKey: 'tables', icon: Grid3X3, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
-  { href: '/reservations', labelKey: 'reservations', icon: CalendarCheck, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
-  { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
+  { href: '/service-days', labelKey: 'serviceDays', icon: CalendarClock, roles: ['owner', 'manager'], businessTypes: null },
   { href: '/customers', labelKey: 'customers', icon: Users, roles: ['owner', 'manager'], businessTypes: null },
-  { href: '/staff', labelKey: 'staff', icon: UserCog, roles: ['owner', 'manager'], businessTypes: null },
-  { href: '/settings', labelKey: 'settings', icon: Settings, roles: ['owner', 'manager'], businessTypes: null },
 ];
 
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, currentTenant, logout } = useAuthStore();
-  const { tablesRequired, kdsEnabled, whatsappEnabled, customersEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes } = usePosSettingsStore();
+  // The flags are still read here for the whole app: other screens act on
+  // them even though the bar itself only filters on two.
+  const { tablesRequired, customersEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes } = usePosSettingsStore();
   const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
@@ -82,10 +83,6 @@ export default function AppSidebar() {
   const businessType = currentTenant?.business_type || 'restaurant';
   const navItems = ALL_NAV_ITEMS.filter((item) => {
     if (item.href === '/tables' && !tablesRequired) return false;
-    // KDS disabled → hide the nav entry entirely (issue #133).
-    if (item.href === '/settings?tab=kds' && !kdsEnabled) return false;
-    // WhatsApp integration not enabled on this tenant → hide the nav entry.
-    if (item.href === '/whatsapp' && !whatsappEnabled) return false;
     // No customer book on this business → the page has nothing to show.
     if (item.href === '/customers' && !customersEnabled) return false;
     return item.roles.includes(role)
@@ -165,6 +162,19 @@ export default function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
+          {(role === 'owner' || role === 'manager') && (
+            <SidebarMenuItem>
+              {/* Configuration sits with logging out, not among the places
+                  people work: staff, the kitchen display and WhatsApp all live
+                  inside it. */}
+              <SidebarMenuButton asChild isActive={pathname?.startsWith('/settings')} tooltip={t('settings')}>
+                <Link href="/settings" onClick={closeMobile}>
+                  <Settings className="size-4 shrink-0" />
+                  <span>{t('settings')}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
           <SidebarMenuItem>
             <SidebarMenuButton onClick={toggleSidebar} tooltip={t('toggleSidebar')}>
               <PanelLeft />

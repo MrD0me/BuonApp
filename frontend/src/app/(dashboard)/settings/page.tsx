@@ -8,6 +8,7 @@ import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/
 import { LANGUAGES, type Language } from '@/lib/i18n';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, CloudOff, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown, ShoppingBag } from 'lucide-react';
+import { StaffSettings } from '@/components/settings/StaffSettings';
 import {
   ORDER_TYPES_SETTING_KEY,
   parseOrderTypes,
@@ -268,6 +269,7 @@ export default function SettingsPage() {
   const sortedCountries = sortCountriesByLocalizedName(COUNTRIES, locale);
   const tRestore = useTranslations('restore');
   const tPos = useTranslations('pos');
+  const tNav = useTranslations('nav');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const language = posSettings.language;
   const setLanguage = posSettings.setLanguage;
@@ -1868,6 +1870,7 @@ export default function SettingsPage() {
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupAccount')}</p>
             </div>
+            <SettingsNavItem label={tNav('staff')} value="staff" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabUpdates')} value="updates" active={activeTab} onClick={handleSettingsTabChange} />
 
@@ -2489,6 +2492,20 @@ export default function SettingsPage() {
                   </p>
                 </div>
               )}
+              {/* The kitchen screen itself. The nav used to carry an entry
+                  called KDS that opened this settings tab instead — the screen
+                  had no link anywhere. */}
+              {kdsEnabledSetting && (
+                <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900">{t('openKdsScreen')}</p>
+                    <p className="text-sm text-gray-500">{t('openKdsScreenHint')}</p>
+                  </div>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/kds">{t('openKdsScreenAction')}</Link>
+                  </Button>
+                </div>
+              )}
             </div>
 
             {!kdsEnabledSetting && (
@@ -3028,6 +3045,12 @@ export default function SettingsPage() {
 
               </div>
             </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="staff">
+          <div className="pb-6">
+            <StaffSettings />
           </div>
         </TabsContent>
 

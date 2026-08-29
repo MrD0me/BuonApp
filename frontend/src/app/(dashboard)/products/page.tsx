@@ -77,6 +77,7 @@ export default function ProductsPage() {
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [globalCashbackPercent, setGlobalCashbackPercent] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -281,6 +282,25 @@ export default function ProductsPage() {
       fetchData();
     } catch {
       toast.error(t('failedToSave'));
+    }
+  };
+
+  /**
+   * Takes a dish off the menu, or puts it back, from the list itself. Running
+   * out of amatriciana happens mid-service; opening the edit form to untick a
+   * box at the bottom is three clicks too many for something that urgent.
+   * Rows already ordered are unaffected — they carry their own name and price.
+   */
+  const toggleActive = async (product: Product) => {
+    setTogglingId(product.id);
+    try {
+      await api.put(`/products/${product.id}`, { is_active: !product.is_active });
+      toast.success(!product.is_active ? t('activated') : t('deactivated'));
+      fetchData();
+    } catch {
+      toast.error(tCommon('failedToSave'));
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -552,11 +572,19 @@ export default function ProductsPage() {
                   )}
                 </td>
                 <td className="p-4 text-center">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    product.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                  }`}>
+                  <button
+                    type="button"
+                    onClick={() => isOwnerOrManager && toggleActive(product)}
+                    disabled={!isOwnerOrManager || togglingId === product.id}
+                    title={isOwnerOrManager ? (product.is_active ? t('deactivate') : t('activate')) : undefined}
+                    className={`px-2 py-1 rounded-full text-xs font-medium transition-colors disabled:opacity-60 ${
+                      product.is_active
+                        ? 'bg-green-100 text-green-800 enabled:hover:bg-green-200'
+                        : 'bg-gray-100 text-gray-600 enabled:hover:bg-gray-200'
+                    }`}
+                  >
                     {product.is_active ? tCommon('active') : tCommon('inactive')}
-                  </span>
+                  </button>
                   {product.is_active && isCategoryInactive && (
                     <span className="text-[10px] text-amber-600 font-medium block mt-1">{t('hiddenOnPos')}</span>
                   )}
