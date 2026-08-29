@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Percent, Banknote, Search, Plus, ChefHat, Pencil, MoreHorizontal, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
+import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Percent, Banknote, Plus, ChefHat, Pencil, MoreHorizontal, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { OrderItem, Product, Customer } from '@/lib/types';
+import type { OrderItem, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -38,13 +38,6 @@ import {
   type DiscountMode,
   type DiscountType,
 } from '@/lib/discount-settings';
-import {
-  buildAppendItemsFingerprint,
-  clearAppendAttempt,
-  getAppendAttemptStorage,
-  getOrCreateAppendAttempt,
-  type AppendAttempt,
-} from '@/lib/append-attempt';
 import { preferChildScopedBill } from '@/lib/printer/bill-scope';
 
 /**
@@ -142,7 +135,7 @@ interface OrderPanelProps {
 export function OrderPanel({
   order, onChanged, discountMode, discountRequiresApproval, nowMs,
 }: OrderPanelProps) {
-  const { currentTenant, user } = useAuthStore();
+  const { currentTenant } = useAuthStore();
   const { printBill } = usePrinterStore();
   const router = useRouter();
   const cartStore = useCartStore();
@@ -196,20 +189,13 @@ export function OrderPanel({
   const [sendingWaOrderId, setSendingWaOrderId] = useState<number | null>(null);
   const [confirmPrintBillId, setConfirmPrintBillId] = useState<number | null>(null);
 
-  const [addItemsOrder, setAddItemsOrder] = useState<Order | null>(null);
   const [printHistoryExpanded, setPrintHistoryExpanded] = useState<Record<number, boolean>>({});
   const [printHistory, setPrintHistory] = useState<Record<number, { id: number; print_type: string; user_name: string; printed_at: string }[]>>({});
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [productSearch, setProductSearch] = useState('');
-  const [selectedItems, setSelectedItems] = useState<{ product_id: string; product_name: string; quantity: number; special_instructions: string }[]>([]);
-  const [addingItems, setAddingItems] = useState(false);
   const [sendingToKitchen, setSendingToKitchen] = useState(false);
   const [rowEdit, setRowEdit] = useState<RowEdit | null>(null);
   const [savingRow, setSavingRow] = useState(false);
 
-  const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
-  const activeUserId = user?.id == null ? null : String(user.id);
 
   // Link Customer states
   const [linkCustomerOrderId, setLinkCustomerOrderId] = useState<number | null>(null);
@@ -614,77 +600,18 @@ export function OrderPanel({
     }
   };
 
-  const openAddItemsModal = (order: Order | null) => {
-    setSelectedItems([]);
-    setProductSearch('');
-    setAddItemsOrder(order);
-  };
-
-  useEffect(() => {
-    if (!addItemsOrder) return;
-    api.get('/products', { params: { per_page: 200 } })
-      .then(({ data }) => setProducts(data.products || []))
-      .catch(() => toast.error(tOrders('menuLoadFailed')));
-  }, [addItemsOrder, tOrders]);
-
-  const handleAddItemToSelection = (product: Product) => {
-    setSelectedItems(prev => {
-      const existing = prev.find(i => i.product_id === product.id);
-      if (existing) {
-        return prev.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      }
-      return [...prev, { product_id: product.id, product_name: product.name, quantity: 1, special_instructions: '' }];
-    });
-  };
-
-  const handleRemoveFromSelection = (productId: string) => {
-    setSelectedItems(prev => prev.filter(i => i.product_id !== productId));
-  };
-
-  const handleUpdateSelectionQty = (productId: string, quantity: number) => {
-    if (quantity < 1) return;
-    setSelectedItems(prev => prev.map(i => i.product_id === productId ? { ...i, quantity } : i));
-  };
-
-  const handleUpdateSelectionNotes = (productId: string, notes: string) => {
-    setSelectedItems(prev => prev.map(i => i.product_id === productId ? { ...i, special_instructions: notes } : i));
-  };
-
-  const handleSubmitAddItems = async () => {
-    if (!addItemsOrder || selectedItems.length === 0) return;
-    setAddingItems(true);
-    try {
-      const items = selectedItems.map(i => ({
-        product_id: i.product_id,
-        quantity: i.quantity,
-        special_instructions: i.special_instructions || undefined,
-      }));
-      const fingerprint = buildAppendItemsFingerprint(addItemsOrder.id, items);
-      const storage = getAppendAttemptStorage();
-      const attempt = getOrCreateAppendAttempt(storage, {
-        userId: activeUserId || '',
-        orderId: addItemsOrder.id,
-        fingerprint,
-        createKey: () => typeof globalThis.crypto?.randomUUID === 'function'
-          ? globalThis.crypto.randomUUID()
-          : `items-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        items,
-        orderNumber: addItemsOrder.order_number,
-      });
-      addItemsAttemptRef.current = attempt;
-      await api.post(`/orders/${addItemsOrder.id}/items`, {
-        items,
-      }, { headers: { 'Idempotency-Key': attempt.idempotencyKey } });
-      if (!clearAppendAttempt(storage, attempt)) throw new Error('Unable to clear append retry state');
-      addItemsAttemptRef.current = null;
-      toast.success(tOrders('itemsAdded', { count: selectedItems.length }));
-      openAddItemsModal(null);
-      fetchOrders();
-    } catch {
-      toast.error(tOrders('addItemsFailed'));
-    } finally {
-      setAddingItems(false);
+  /**
+   * Hands the order to the ordering screen, which is the only place with the
+   * catalogue and the add-on choices — the picker that used to live here could
+   * not order a pizza with extra anchovies.
+   */
+  const handleAddItems = async () => {
+    if (cartStore.items.length > 0) {
+      const proceed = await confirm(tOrders('addItemsCartClearConfirm'));
+      if (!proceed) return;
+      cartStore.clearCart();
     }
+    router.push(`/pos?append=${order.id}`);
   };
 
   const openRowEdit = (item: OrderItem) => setRowEdit({
@@ -1087,7 +1014,7 @@ export function OrderPanel({
           {!['completed', 'cancelled'].includes(order.status) && (
             <Button
               variant="outline"
-              onClick={() => openAddItemsModal(order)}
+              onClick={handleAddItems}
               size="sm"
               className="flex-1 justify-center border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
             >
@@ -1505,110 +1432,6 @@ placeholder={tOrders('managerPin')}
         </div>
       )}
 
-      {/* Add Item Modal */}
-      {addItemsOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">{tOrders('addItems')} #<Ltr>{addItemsOrder.order_number}</Ltr></h2>
-
-            {/* Search */}
-            <div className="relative mb-3">
-              <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder={tOrders('searchMenu')}
-                value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-                className="w-full ps-9 pe-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Product list */}
-            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg mb-3 max-h-48">
-              {products
-                .filter(p => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase()))
-                .map((product: Product) => (
-                  <button
-                    key={product.id}
-                    onClick={() => handleAddItemToSelection(product)}
-                    className="w-full flex items-center justify-between px-3 py-2 hover:bg-green-50 text-start border-b border-gray-50 last:border-0 transition-colors"
-                  >
-                    <div>
-                      <span className="text-sm font-medium text-gray-900">{product.name}</span>
-                      {product.price && (
-                        <span className="text-xs text-gray-500 ms-2">{fmt(Number(product.price))}</span>
-                      )}
-                    </div>
-                    <Plus size={14} className="text-green-500" />
-                  </button>
-                ))
-              }
-              {products.filter(p => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase())).length === 0 && (
-                <div className="px-3 py-4 text-sm text-gray-400 text-center">{tOrders('noItemsFound')}</div>
-              )}
-            </div>
-
-            {/* Selected items */}
-            {selectedItems.length > 0 && (
-              <div className="space-y-2 mb-3">
-                <p className="text-xs font-medium text-gray-500 uppercase">{tOrders('selectedItems')}</p>
-                {selectedItems.map(item => (
-                  <div key={item.product_id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium text-gray-900 truncate block">{item.product_name}</span>
-                      <input
-                        type="text"
-                        placeholder={tOrders('notesOptional')}
-                        value={item.special_instructions}
-                        maxLength={100}
-                        onChange={(e) => handleUpdateSelectionNotes(item.product_id, e.target.value.slice(0, 100))}
-                        className="w-full text-xs text-gray-500 bg-transparent border-0 p-0 focus:outline-none placeholder:text-gray-300"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleUpdateSelectionQty(item.product_id, item.quantity - 1)}
-                        className="w-6 h-6 rounded bg-gray-200 text-gray-600 text-xs hover:bg-gray-300"
-                      >-</button>
-                      <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
-                      <button
-                        onClick={() => handleUpdateSelectionQty(item.product_id, item.quantity + 1)}
-                        className="w-6 h-6 rounded bg-gray-200 text-gray-600 text-xs hover:bg-gray-300"
-                      >+</button>
-                    </div>
-                    <button
-                      onClick={() => handleRemoveFromSelection(item.product_id)}
-                      className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openAddItemsModal(null)}
-              >
-                {tCommon('cancel')}
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleSubmitAddItems}
-                disabled={selectedItems.length === 0 || addingItems}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                <Plus size={14} className="me-1.5" />
-                {addingItems ? tOrders('adding') : tOrders('addItemsCount', { count: selectedItems.length })}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* One row, up close: what it costs and what comes off it. The price can
           go up as well as down — a dish agreed at the table has no list price
           to discount from. */}

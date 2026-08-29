@@ -10,6 +10,7 @@ import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
 import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
   Drawer, DrawerContent, DrawerTrigger,
@@ -789,10 +790,24 @@ export default function POSPage() {
     }
   };
 
-  const handleAddItemsToOrder = (table: Table, order: Order) => {
+  /**
+   * Points the cart at an order that already exists: whatever is sent next is
+   * appended to it instead of opening a new one.
+   *
+   * The table only sets the context — the append itself goes by order id — so
+   * a takeaway order, which has no table, works the same way. This is where
+   * the floor plan and the day's list land when they say "add items": there is
+   * one screen where an order is composed, and it is this one, because it is
+   * the only one with the catalogue and the add-on choices.
+   */
+  const startAppendToOrder = (order: Order, table?: Table | null) => {
     setCheckoutTable(null);
-    cart.setTableId(table.id);
-    cart.setOrderType('dine_in');
+    const orderType = order.type === 'takeaway' || order.type === 'delivery' ? order.type : 'dine_in';
+    cart.setOrderType(orderType);
+    if (orderType === 'dine_in') {
+      const tableId = table?.id ?? (order.table_id != null ? String(order.table_id) : null);
+      if (tableId) cart.setTableId(tableId);
+    }
     cart.setGuestCount(order.guest_count || 1);
     cart.setOrderNotes(order.special_instructions || '');
     setPendingOrder(order);
@@ -800,6 +815,29 @@ export default function POSPage() {
   };
 
   // Add cart items directly to existing order
+  /**
+   * `?append=<orderId>` is how the floor plan and the day's list hand an order
+   * over: they know which order, this screen knows how to compose for it. The
+   * parameter is cleared as soon as it is read — carrying "append to order 123"
+   * in the saved cart instead would leave it stuck there for days.
+   */
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const appendOrderId = searchParams?.get('append') ?? null;
+  useEffect(() => {
+    if (!appendOrderId) return;
+    let cancelled = false;
+    api.get(`/orders/${appendOrderId}`)
+      .then(({ data }) => {
+        if (cancelled || !data?.order) return;
+        startAppendToOrder(data.order as Order);
+      })
+      .catch(() => toast.error(t('loadOrderFailed')))
+      .finally(() => { if (!cancelled) router.replace('/pos'); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appendOrderId]);
+
   const handleAddCartToOrder = async (table: Table, order: Order) => {
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
@@ -983,7 +1021,7 @@ export default function POSPage() {
           currency={currency}
           cartItemCount={cart.itemCount()}
           onClose={() => setCheckoutTable(null)}
-          onAddItems={handleAddItemsToOrder}
+          onAddItems={(table, order) => startAppendToOrder(order, table)}
           onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
           onAddCartToOrder={handleAddCartToOrder}
           onSendToKitchen={(order) => sendKotToKitchen(order, { auto: false })}

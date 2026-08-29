@@ -54,7 +54,7 @@ ridipingere due volte.
 | Voce | Contenuto |
 | --- | --- |
 | **Sala** | mappa delle stanze e prenotazioni |
-| **Cassa** | presa ordini (l'attuale POS) |
+| **Ordina** | composizione e invio degli ordini (l'ex POS); non incassa |
 | **Giornata** | ordini della giornata di servizio in corso, incasso e chiusura |
 | **Menu** | prodotti, categorie, gruppi extra |
 | **Archivio** | le giornate passate |
@@ -82,7 +82,7 @@ Nella scheda del tavolo il pannello si apre come **pannello laterale**, non come
 
 Gerarchia delle azioni, dal servizio in giù:
 
-- **Prima fila:** aggiungi righe (apre la Cassa col tavolo già scelto), invia in cucina, stampa
+- **Prima fila:** aggiungi righe (apre Ordina con l'ordine già agganciato), invia in cucina, stampa
   preconto, incassa e libera.
 - **Dietro un "altro":** storno con PIN, sconto, modifica prezzo, converti in asporto, annulla
   ordine. Sono azioni da responsabile, non da servizio.
@@ -106,7 +106,7 @@ espande** e mostra le sue righe: i dati arrivano già dall'API, è solo la pagin
 ### 5. Asporto e delivery opzionali
 
 Una **sola** voce di impostazione con le spunte dei tipi ordine attivi, non due interruttori
-separati. Quando un tipo è spento sparisce del tutto: dal selettore della Cassa e dal filtro della
+separati. Quando un tipo è spento sparisce del tutto: dal selettore di Ordina e dal filtro della
 Giornata.
 
 Se resta il solo servizio al tavolo, il selettore **non deve restare con un bottone solo**: sparisce.
@@ -237,6 +237,15 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   alla comitiva deve comparire sul preconto, che si stampa prima della cassa: sta nel menu "Altro".
 - **La fila di azioni si è divisa in due**, come prevedeva il punto 2: davanti le quattro cose che
   fa la sala, dietro "Altro" quelle da responsabile.
+- **La Cassa si chiama Ordina, e non incassa.** Deciso il 2026-08-29, dopo che l'utente ha trovato
+  in quella schermata un percorso di incasso che non aveva mai notato in mesi d'uso. Il motivo non è
+  di interfaccia: in questo locale il registratore di cassa è una macchina fisica separata, il
+  programma stampa il preconto e registra come è stato saldato. Chiamare "Cassa" la schermata che
+  compone gli ordini era una bugia sul mondo fisico. Ordina compone e invia, e basta.
+- **"Aggiungi righe" porta in Ordina** (`/pos?append=<orderId>`) invece di aprire un selettore
+  dentro il pannello. Quel selettore non sapeva gestire gli aggiuntivi: una pizza con le acciughe
+  extra da lì non si poteva ordinare. Ora c'è un solo posto dove si compone un ordine, ed è quello
+  che servirà anche per il menu fisso.
 - **Le prenotazioni si raggiungono dalla Sala** con un pulsante, invece di fondere le due pagine:
   la fusione è lavoro di interfaccia che il rifacimento grafico farà meglio.
 - **Lo schermo della cucina ha un link** dalla scheda KDS delle impostazioni. Era la domanda
