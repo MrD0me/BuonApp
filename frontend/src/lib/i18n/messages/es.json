@@ -1795,6 +1795,7 @@
     "tableUpdated": "Mesa actualizada",
     "tablesMerged": "{count} mesas unidas a {name}",
     "tablesSplit": "Mesas separadas",
+    "takeOrder": "Tomar pedido",
     "title": "Mesas",
     "unassignedBookings": "{count} reservas por sentar — toca una y luego una mesa",
     "unassignedTables": "{count} mesas no están en ningún salón. Abre una para asignarla.",

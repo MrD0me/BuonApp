@@ -4,12 +4,15 @@ import { useState } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { X, Pencil, CalendarCheck, Link2, Unlink } from 'lucide-react';
+import { X, Pencil, CalendarCheck, Link2, Unlink, Plus } from 'lucide-react';
 import type { Room, Table, Order } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 import { OrderPanel } from '@/components/orders/OrderPanel';
+import { useRouter } from 'next/navigation';
+import { useCartStore } from '@/store/cart';
+import { useConfirm } from '@/hooks/use-confirm';
 import type { DiscountMode } from '@/lib/discount-settings';
 
 /**
@@ -43,10 +46,28 @@ export function TableDetailModal({
 }: TableDetailModalProps) {
   const tTables = useTranslations('tables');
   const tCommon = useTranslations('common');
+  const tOrders = useTranslations('orders');
+  const router = useRouter();
+  const cartStore = useCartStore();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [saving, setSaving] = useState(false);
 
   const booking = table.reservation ?? null;
   const groupSeats = table.capacity + groupMembers.reduce((sum, member) => sum + member.capacity, 0);
+
+  /**
+   * Opens a first order on this table. The composing happens on the ordering
+   * screen, which is the only one with the catalogue and the add-on choices —
+   * this side just says which table it is for.
+   */
+  const takeOrder = async () => {
+    if (cartStore.items.length > 0) {
+      const proceed = await confirm(tOrders('cartClearConfirm'));
+      if (!proceed) return;
+      cartStore.clearCart();
+    }
+    router.push(`/pos?table=${table.id}`);
+  };
 
   const splitGroup = async () => {
     setSaving(true);
@@ -146,6 +167,14 @@ export function TableDetailModal({
 
         {/* What happens to the table itself, as opposed to its order. */}
         <div className="flex flex-wrap gap-2">
+          {/* A table with nobody's order on it: the one thing the floor wants
+              from it is to start one. A table folded into a group is not
+              seated on its own, so its party goes on the leader. */}
+          {!order && !table.merged_into && (
+            <Button type="button" onClick={takeOrder} disabled={saving}>
+              <Plus size={14} className="me-1" /> {tTables('takeOrder')}
+            </Button>
+          )}
           {/* Only offered when the status has drifted: a table that is genuinely
               working or being held has its own actions below. */}
           {table.status !== 'available' && !order && !booking && (
@@ -183,6 +212,7 @@ export function TableDetailModal({
           </Button>
         </div>
       </div>
+      {ConfirmDialog}
     </div>
   );
 }

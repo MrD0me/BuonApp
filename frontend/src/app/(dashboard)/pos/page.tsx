@@ -831,6 +831,7 @@ export default function POSPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const appendOrderId = searchParams?.get('append') ?? null;
+  const takeOrderTableId = searchParams?.get('table') ?? null;
   useEffect(() => {
     if (!appendOrderId) return;
     let cancelled = false;
@@ -844,6 +845,35 @@ export default function POSPage() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appendOrderId]);
+
+  /**
+   * `?table=<id>` is the floor plan asking for a first order on a free table.
+   *
+   * It checks first: a handheld may have opened one in the seconds since the
+   * panel was drawn, and two open orders on the same table means two bills for
+   * one party. If there is already an order, this becomes an append to it.
+   */
+  useEffect(() => {
+    if (!takeOrderTableId) return;
+    let cancelled = false;
+    api.get('/orders', {
+      params: { table_id: takeOrderTableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
+    })
+      .then(({ data }) => {
+        if (cancelled) return;
+        const existing = (data?.orders || [])[0] as Order | undefined;
+        if (existing) {
+          startAppendToOrder(existing);
+          return;
+        }
+        cart.setOrderType('dine_in');
+        cart.setTableId(takeOrderTableId);
+      })
+      .catch(() => toast.error(t('loadOrderFailed')))
+      .finally(() => { if (!cancelled) router.replace('/pos'); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [takeOrderTableId]);
 
   const handleAddCartToOrder = async (table: Table, order: Order) => {
     if (cart.items.length === 0) {

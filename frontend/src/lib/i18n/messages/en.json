@@ -1795,6 +1795,7 @@
     "tableUpdated": "Table updated",
     "tablesMerged": "{count} tables joined to {name}",
     "tablesSplit": "Tables split apart",
+    "takeOrder": "Take order",
     "title": "Tables",
     "unassignedBookings": "{count} bookings still to seat — tap one, then tap a table",
     "unassignedTables": "{count} tables are not in any room. Open one to assign it.",

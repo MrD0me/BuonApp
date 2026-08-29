@@ -249,6 +249,10 @@ Cose decise mentre si implementava, che il piano non prevedeva:
 - **Dopo l'invio di un ordine al tavolo si torna in Sala.** Un ordine su un tavolo continua a
   lavorarsi dove il tavolo sta; restare in Ordina lascerebbe la schermata su un carrello vuoto.
   Vale per gli ordini al tavolo, non per asporto e delivery, che vivono in Giornata.
+- **"Prendi ordine" chiude il giro dalla parte opposta** (`/pos?table=<id>`): dal tavolo libero si
+  apre il primo ordine senza passare dal selettore di Ordina. Prima di aprirlo controlla che nessun
+  altro sia arrivato per primo — un palmare può averlo fatto nei secondi in cui il pannello era
+  aperto — e in quel caso aggiunge a quell'ordine invece di aprirne un secondo sullo stesso tavolo.
 - **Le prenotazioni si raggiungono dalla Sala** con un pulsante, invece di fondere le due pagine:
   la fusione è lavoro di interfaccia che il rifacimento grafico farà meglio.
 - **Lo schermo della cucina ha un link** dalla scheda KDS delle impostazioni. Era la domanda

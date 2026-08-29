@@ -1795,6 +1795,7 @@
     "tableUpdated": "Tavolo aggiornato",
     "tablesMerged": "{count} tavoli uniti a {name}",
     "tablesSplit": "Tavoli separati",
+    "takeOrder": "Prendi ordine",
     "title": "Tavoli",
     "unassignedBookings": "{count} prenotazioni da sistemare — tocca una, poi tocca un tavolo",
     "unassignedTables": "{count} tavoli non stanno in nessuna sala. Aprine uno per assegnarlo.",

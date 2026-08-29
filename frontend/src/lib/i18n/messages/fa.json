@@ -1795,6 +1795,7 @@
     "tableUpdated": "میز به‌روزرسانی شد",
     "tablesMerged": "{count} میز به {name} ادغام شد",
     "tablesSplit": "میزها جدا شدند",
+    "takeOrder": "ثبت سفارش",
     "title": "میزها",
     "unassignedBookings": "{count} رزرو بدون میز — یکی را بزنید، سپس یک میز",
     "unassignedTables": "{count} میز در هیچ سالنی نیستند. یکی را باز کنید تا تخصیص دهید.",
