@@ -97,8 +97,6 @@ interface VoidItemModal {
 interface RowEdit {
   item: OrderItem;
   unitPrice: string;
-  discountType: DiscountType;
-  discountValue: string;
   overridePin: string;
 }
 
@@ -588,6 +586,10 @@ export function OrderPanel({
 
 
   const showCheckout = (order: Order) => {
+    // With the check split there is no single thing to cash: each share is
+    // settled on its own, and one button that looks like "take the money"
+    // would take only the first share's.
+    if (splitBills.length > 0) return false;
     return !isOrderPaid(order) && !['completed', 'cancelled'].includes(order.status);
   };
 
@@ -623,8 +625,6 @@ export function OrderPanel({
   const openRowEdit = (item: OrderItem) => setRowEdit({
     item,
     unitPrice: String(Number(item.unit_price) || 0),
-    discountType: defaultDiscountTypeForMode(discountMode),
-    discountValue: '',
     overridePin: '',
   });
 
@@ -651,27 +651,24 @@ export function OrderPanel({
     }
   };
 
-  const saveRowDiscount = async () => {
-    if (!rowEdit) return;
-    const parsed = Number(rowEdit.discountValue.replace(',', '.'));
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      toast.error(tOrders('rowDiscountInvalid'));
-      return;
-    }
-    setSavingRow(true);
+  /**
+   * Puts a split check back together, when the party changes its mind about
+   * dividing it. Refused by the API once any share has taken money.
+   */
+  const handleUnsplit = async () => {
+    const [first] = splitBills;
+    if (!first) return;
+    if (!await confirm(tOrders('unsplitConfirm'))) return;
+    setGeneratingBill(order.id);
     try {
-      await api.patch(`/orders/${order.id}/items/${rowEdit.item.id}/discount`, {
-        discount_type: rowEdit.discountType,
-        discount_value: parsed,
-        override_pin: discountRequiresApproval && rowEdit.overridePin ? rowEdit.overridePin : undefined,
-      });
-      toast.success(tOrders('rowDiscountSaved'));
-      setRowEdit(null);
-      fetchOrders();
-    } catch {
-      toast.error(tOrders('rowDiscountFailed'));
+      await api.post(`/bills/${first.id}/unsplit`);
+      toast.success(tOrders('unsplitDone'));
+      onChanged();
+    } catch (error: unknown) {
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      toast.error(code === 'split_already_paid' ? tOrders('unsplitBlocked') : tOrders('unsplitFailed'));
     } finally {
-      setSavingRow(false);
+      setGeneratingBill(null);
     }
   };
 
@@ -1117,6 +1114,12 @@ export function OrderPanel({
                     {tOrders('orderDiscountAction')}
                   </DropdownMenuItem>
                 )}
+                {splitBills.length > 0 && !splitBills.some((entry) => Number(entry.paid_amount || 0) > 0) && (
+                  <DropdownMenuItem onClick={handleUnsplit} disabled={generatingBill === order.id}>
+                    <Users size={14} className="me-2" />
+                    {tOrders('unsplitCheck')}
+                  </DropdownMenuItem>
+                )}
                 {splitChecksEnabled && order.type === 'dine_in' && !paid && splitBills.length === 0 && (
                   <DropdownMenuItem onClick={handleSplitCheck} disabled={generatingBill === order.id}>
                     <Users size={14} className="me-2" />
@@ -1505,40 +1508,6 @@ placeholder={tOrders('managerPin')}
               />
               <Button type="button" onClick={saveRowPrice} disabled={savingRow}>
                 {tOrders('rowSavePrice')}
-              </Button>
-            </div>
-
-            <label className="block text-sm font-medium text-gray-700 mb-1">{tOrders('rowDiscountLabel')}</label>
-            <div className="flex gap-2 mb-2">
-              {isDiscountTypeAllowed(discountMode, 'percentage') && (
-                <button
-                  type="button"
-                  onClick={() => setRowEdit({ ...rowEdit, discountType: 'percentage' })}
-                  className={`px-3 py-2 rounded-lg text-sm border ${rowEdit.discountType === 'percentage' ? 'border-brand text-brand' : 'border-gray-200 text-gray-500'}`}
-                >
-                  <Percent size={14} />
-                </button>
-              )}
-              {isDiscountTypeAllowed(discountMode, 'amount') && (
-                <button
-                  type="button"
-                  onClick={() => setRowEdit({ ...rowEdit, discountType: 'amount' })}
-                  className={`px-3 py-2 rounded-lg text-sm border ${rowEdit.discountType === 'amount' ? 'border-brand text-brand' : 'border-gray-200 text-gray-500'}`}
-                >
-                  <Banknote size={14} />
-                </button>
-              )}
-              <input
-                type="text"
-                inputMode="decimal"
-                value={rowEdit.discountValue}
-                onChange={(e) => setRowEdit({ ...rowEdit, discountValue: e.target.value })}
-                placeholder={rowEdit.discountType === 'percentage' ? '%' : currency}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                dir="ltr"
-              />
-              <Button type="button" variant="outline" onClick={saveRowDiscount} disabled={savingRow}>
-                {tOrders('rowApplyDiscount')}
               </Button>
             </div>
 

@@ -551,12 +551,17 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
       txnNormalized.forEach((check, index) => {
         let billId: number;
         if (index === 0) {
-          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?`)
-            .run(groupId, check.label, allocations.subtotal[index], allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.total[index], allocations.total[index], now(), txnSource.id);
+          // A share that comes to nothing — the guest who only had the coffee
+          // the house offered — is settled the moment it is made. Nothing is
+          // owed on it, and the payment route refuses a zero balance, so
+          // leaving it open would strand the whole order as unpaid forever.
+          const settledNow = allocations.total[index] <= 0 ? 'paid' : 'unpaid';
+          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, total = ?, balance = ?, payment_status = ?, paid_at = ?, updated_at = ? WHERE id = ?`)
+            .run(groupId, check.label, allocations.subtotal[index], allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.total[index], allocations.total[index], settledNow, settledNow === 'paid' ? now() : null, now(), txnSource.id);
           billId = Number(txnSource.id);
         } else {
-          const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)`)
-            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
+          const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`)
+            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.total[index], allocations.total[index], allocations.total[index] <= 0 ? 'paid' : 'unpaid', groupId, check.label, now(), now());
           billId = Number(inserted.lastInsertRowid);
         }
         billIds.push(billId);
@@ -1181,6 +1186,62 @@ router.get('/:id/print-history', requireRole('owner', 'manager', 'cashier'), (re
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * Puts a split check back together.
+ *
+ * Parties change their mind: they ask to divide the bill, then decide one of
+ * them is paying after all. Without this the table is stuck with shares that
+ * have to be settled one by one, and the whole-order button pays only the
+ * first of them while looking like it paid everything.
+ *
+ * Only while no money has been taken. A share settled at zero — the guest who
+ * had the coffee the house offered — does not count as money and does not
+ * block the merge.
+ */
+router.post('/:id/unsplit', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const source = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
+    if (!source) return res.status(404).json({ error: 'Bill not found' });
+    if (!source.split_group_id) return res.status(400).json({ error: 'This check is not split' });
+
+    const group = db.prepare('SELECT * FROM bills WHERE split_group_id = ? ORDER BY id').all(source.split_group_id) as any[];
+    if (group.some((bill) => Number(bill.paid_amount || 0) > 0)) {
+      return res.status(409).json({ error: 'A check that has taken money cannot be merged back', code: 'split_already_paid' });
+    }
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(source.order_id) as any;
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const merged = withTxn(() => {
+      // The oldest of the group is the check the others were carved out of.
+      const [keep, ...rest] = group;
+      for (const bill of rest) {
+        db.prepare('DELETE FROM bill_items WHERE bill_id = ?').run(bill.id);
+        db.prepare('DELETE FROM bills WHERE id = ?').run(bill.id);
+      }
+      db.prepare('DELETE FROM bill_items WHERE bill_id = ?').run(keep.id);
+      db.prepare(`
+        UPDATE bills SET split_group_id = NULL, split_label = NULL,
+          subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?,
+          total = ?, paid_amount = 0, balance = ?, payment_status = 'unpaid',
+          payment_details = NULL, paid_at = NULL, updated_at = ?
+        WHERE id = ?
+      `).run(
+        order.subtotal, order.discount_amount, order.delivery_charge || 0, order.packaging_charge || 0,
+        order.total, order.total, now(), keep.id,
+      );
+      return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(keep.id));
+    });
+
+    notifyOrderUpdated();
+    res.json({ bill: merged });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Unable to merge the checks' });
   }
 });
 

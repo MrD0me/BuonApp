@@ -138,12 +138,20 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
   };
 
+  /**
+   * "Pay it all with this." The other methods are cleared, so tapping cash and
+   * then changing your mind to card does not leave the card at nothing with
+   * the cash still filled in — which meant deleting a figure by hand to pick
+   * the other one. A bill settled with two methods is still built by typing
+   * the amounts into the boxes.
+   */
   const allocateRemainingTo = (idx: number) => {
-    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt);
-    const dueStored = Math.max(0, remaining - allocatedElsewhere);
+    const dueStored = Math.max(0, remaining - walletAmt);
     const dueDisplay = toDisplayUnit(dueStored);
     setPaymentsTouched(true);
-    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' } : payment));
+    setPayments(payments.map((payment, index) => index === idx
+      ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' }
+      : { ...payment, amount: '' }));
   };
 
   const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
@@ -278,7 +286,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-white w-full sm:max-w-xl rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">

@@ -233,6 +233,52 @@ async function main() {
     assertEqual(concStatuses[1], 409, 'concurrent HTTP request: duplicate request returns 409');
     const concSplitGroups = db.prepare("SELECT COUNT(DISTINCT split_group_id) AS n FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL").get(concOrderRes.data.order.id) as any;
     assertEqual(concSplitGroups.n, 1, 'concurrent HTTP request: exactly one split group exists in database');
+
+    // ── A share worth nothing, and putting the checks back together ────────
+    // The house offers the coffee, so a guest's whole share can come to zero.
+    // The payment route refuses a zero balance, so such a share used to sit
+    // unpaid forever and kept its order open — paid in the till, unpaid on the
+    // screen. It is now settled the moment it is created.
+    seedProduct(db, 'split-free', 'split-cat', 'Amaro offerto', 0);
+    const freeOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 1 }, { product_id: 'split-free', quantity: 1 }] }, headers: authHeader });
+    assertEqual(freeOrderRes.status, 201, 'order with an offered item created');
+    const freeOrder = freeOrderRes.data.order;
+    const paidItem = freeOrder.items.find((item: any) => item.product_id === 'split-coffee');
+    const freeItem = freeOrder.items.find((item: any) => item.product_id === 'split-free');
+    const freeBill = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: freeOrder.id }, headers: authHeader });
+    const freeSplit = await api(baseUrl, `/api/bills/${freeBill.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: paidItem.id, quantity: 1 }] },
+      { label: 'Guest 2', items: [{ order_item_id: freeItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(freeSplit.status, 201, 'check split with one share worth nothing');
+    const zeroShare = freeSplit.data.bills.find((bill: any) => Number(bill.total) === 0);
+    assert(zeroShare, 'one share comes to zero');
+    assertEqual(zeroShare.payment_status, 'paid', 'a share worth nothing is settled as it is created');
+
+    const mergedBack = await api(baseUrl, `/api/bills/${freeSplit.data.bills[0].id}/unsplit`, { method: 'POST', headers: authHeader });
+    assertEqual(mergedBack.status, 200, 'checks merged back into one');
+    assertEqual(Number(mergedBack.data.bill.total), Number(freeBill.data.bill.total), 'the merged bill is worth what the order is worth');
+    assertEqual(mergedBack.data.bill.split_group_id, null, 'the merged bill is no longer part of a group');
+    assertEqual(mergedBack.data.bill.payment_status, 'unpaid', 'and it is owed again');
+    assertEqual(
+      (db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(freeOrder.id) as any).n,
+      1,
+      'the extra shares are gone, not left orphaned',
+    );
+
+    const paidSplitOrder = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }] }, headers: authHeader });
+    const paidSplitItem = paidSplitOrder.data.order.items[0];
+    const paidSplitBill = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: paidSplitOrder.data.order.id }, headers: authHeader });
+    const paidSplit = await api(baseUrl, `/api/bills/${paidSplitBill.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: paidSplitItem.id, quantity: 1 }] },
+      { label: 'Guest 2', items: [{ order_item_id: paidSplitItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(paidSplit.status, 201, 'second check split for the paid-share case');
+    await api(baseUrl, `/api/bills/${paidSplit.data.bills[0].id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: paidSplit.data.bills[0].total }] }, headers: authHeader });
+    const blocked = await api(baseUrl, `/api/bills/${paidSplit.data.bills[1].id}/unsplit`, { method: 'POST', headers: authHeader });
+    assertEqual(blocked.status, 409, 'a group that has taken money cannot be merged back');
+    assertEqual(blocked.data.code, 'split_already_paid', 'and it says why');
+
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     closeDatabase();

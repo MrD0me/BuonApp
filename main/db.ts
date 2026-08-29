@@ -4210,6 +4210,22 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 85,
+    name: 'settle_zero_value_split_checks',
+    up: () => {
+      // A split share worth nothing could never be closed: the payment route
+      // refuses a zero balance, so the share stayed unpaid and dragged its
+      // whole order along with it — paid in the till, unpaid on the screen.
+      // New ones are settled as they are created; these are already stranded.
+      const settled = db.prepare(`
+        UPDATE bills SET payment_status = 'paid', balance = 0, paid_at = COALESCE(paid_at, ?), updated_at = ?
+        WHERE split_group_id IS NOT NULL AND payment_status = 'unpaid'
+          AND COALESCE(total, 0) <= 0 AND COALESCE(paid_amount, 0) <= 0
+      `).run(now(), now()).changes;
+      if (settled > 0) console.log(`[MIGRATION v85] ${settled} zero-value split check(s) settled`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
