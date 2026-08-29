@@ -90,7 +90,7 @@ export default function ProductsPage() {
   const [form, setForm] = useState({
     name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
     description: '',
-    track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
+    track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true, price_required: false,
     tags: [] as string[],
     customTag: '',
     addon_group_ids: [] as string[],
@@ -197,7 +197,7 @@ export default function ProductsPage() {
     setForm({
       name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
       description: '',
-      track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
+      track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true, price_required: false,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
     });
     setImageTouched(false);
@@ -222,6 +222,7 @@ export default function ProductsPage() {
       barcode: product.barcode || '',
       description: product.description || '',
       track_inventory: product.track_inventory,
+      price_required: Boolean(product.price_required),
       stock_quantity: String(product.stock_quantity || '0'),
       low_stock_threshold: String(product.low_stock_threshold ?? '5'),
       is_active: product.is_active,
@@ -255,6 +256,7 @@ export default function ProductsPage() {
         barcode: form.barcode || null,
         description: form.description || null,
         track_inventory: form.track_inventory,
+        price_required: form.price_required,
         stock_quantity: Number(form.stock_quantity),
         low_stock_threshold: Number(form.low_stock_threshold),
         is_active: form.is_active,
@@ -774,6 +776,17 @@ export default function ProductsPage() {
                   <span className="text-sm text-gray-700">{t('fieldActive')}</span>
                 </label>
               </div>
+              {/* The off-menu placeholder. Its rows stay flagged until someone
+                  prices them — a price of zero cannot be that signal, because
+                  in a place that offers the coffee zero means "on the house". */}
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={form.price_required} onChange={(e) => setForm({ ...form, price_required: e.target.checked })}
+                  className="mt-0.5 rounded border-gray-300 text-brand focus:ring-brand" />
+                <span>
+                  <span className="block text-sm text-gray-700">{t('priceRequired')}</span>
+                  <span className="block text-xs text-gray-500">{t('priceRequiredHint')}</span>
+                </span>
+              </label>
               {!!form.track_inventory && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>

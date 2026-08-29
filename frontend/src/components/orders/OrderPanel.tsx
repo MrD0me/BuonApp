@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChefHat, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
+import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChefHat, Pencil, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
@@ -90,6 +90,14 @@ interface VoidItemModal {
   orderId: number;
   itemId: number;
   productName: string;
+  overridePin: string;
+}
+
+interface RowEdit {
+  item: OrderItem;
+  unitPrice: string;
+  discountType: DiscountType;
+  discountValue: string;
   overridePin: string;
 }
 
@@ -190,6 +198,8 @@ export function OrderPanel({
   const [selectedItems, setSelectedItems] = useState<{ product_id: string; product_name: string; quantity: number; special_instructions: string }[]>([]);
   const [addingItems, setAddingItems] = useState(false);
   const [sendingToKitchen, setSendingToKitchen] = useState(false);
+  const [rowEdit, setRowEdit] = useState<RowEdit | null>(null);
+  const [savingRow, setSavingRow] = useState(false);
 
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
   const activeUserId = user?.id == null ? null : String(user.id);
@@ -208,6 +218,11 @@ export function OrderPanel({
   const sendKotToKitchen = useSendKot();
   // Rows the kitchen has never seen. The floor map used to show this as a
   // badge with no way to act on it: the button belongs beside the count.
+  // A row of an off-menu product that nobody has priced yet. Zero on its own
+  // does not mean this: in a place that offers the coffee, zero means free.
+  const awaitsPrice = (item: OrderItem) =>
+    Boolean(item.price_required) && Number(item.unit_price) === 0 && item.status !== 'cancelled';
+  const unpricedItems = (order.items || []).filter(awaitsPrice);
   const pendingKotItems = (order.items || []).filter(
     (item) => item.kot_batch == null && item.status !== 'cancelled',
   );
@@ -644,6 +659,61 @@ export function OrderPanel({
     }
   };
 
+  const openRowEdit = (item: OrderItem) => setRowEdit({
+    item,
+    unitPrice: String(Number(item.unit_price) || 0),
+    discountType: defaultDiscountTypeForMode(discountMode),
+    discountValue: '',
+    overridePin: '',
+  });
+
+  const saveRowPrice = async () => {
+    if (!rowEdit) return;
+    const parsed = Number(rowEdit.unitPrice.replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      toast.error(tOrders('rowPriceInvalid'));
+      return;
+    }
+    setSavingRow(true);
+    try {
+      await api.patch(`/orders/${order.id}/items/${rowEdit.item.id}/price`, {
+        unit_price: parsed,
+        override_pin: discountRequiresApproval && rowEdit.overridePin ? rowEdit.overridePin : undefined,
+      });
+      toast.success(tOrders('rowPriceSaved'));
+      setRowEdit(null);
+      fetchOrders();
+    } catch {
+      toast.error(tOrders('rowPriceFailed'));
+    } finally {
+      setSavingRow(false);
+    }
+  };
+
+  const saveRowDiscount = async () => {
+    if (!rowEdit) return;
+    const parsed = Number(rowEdit.discountValue.replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      toast.error(tOrders('rowDiscountInvalid'));
+      return;
+    }
+    setSavingRow(true);
+    try {
+      await api.patch(`/orders/${order.id}/items/${rowEdit.item.id}/discount`, {
+        discount_type: rowEdit.discountType,
+        discount_value: parsed,
+        override_pin: discountRequiresApproval && rowEdit.overridePin ? rowEdit.overridePin : undefined,
+      });
+      toast.success(tOrders('rowDiscountSaved'));
+      setRowEdit(null);
+      fetchOrders();
+    } catch {
+      toast.error(tOrders('rowDiscountFailed'));
+    } finally {
+      setSavingRow(false);
+    }
+  };
+
   const handleSendToKitchen = async () => {
     setSendingToKitchen(true);
     try {
@@ -852,6 +922,11 @@ export function OrderPanel({
                         {item.quantity}x
                       </span>
                       <span className="text-sm text-gray-900 truncate">{item.product_name}</span>
+                      {awaitsPrice(item) && (
+                        <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[11px] font-medium">
+                          {tOrders('rowPriceMissing')}
+                        </span>
+                      )}
                       {item.special_instructions && (
                         <span className="text-xs text-red-500 italic break-words">&quot;{item.special_instructions}&quot;</span>
                       )}
@@ -865,6 +940,15 @@ export function OrderPanel({
                           title={tCommon('removeItem')}
                         >
                           <Trash2 size={14} />
+                        </button>
+                      )}
+                      {isOwnerOrManager && !paid && !['completed', 'cancelled'].includes(order.status) && (
+                        <button
+                          onClick={() => openRowEdit(item)}
+                          className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+                          title={tOrders('editRow')}
+                        >
+                          <Pencil size={14} />
                         </button>
                       )}
                       {(item.status === 'preparing' || item.status === 'ready') && isOwnerOrManager && !paid && (
@@ -1055,12 +1139,19 @@ export function OrderPanel({
             <h2 className="text-lg font-bold text-gray-900 mb-2">
               {(printHistory[confirmPrintBillId]?.length ?? 0) > 0 ? tOrders('reprintReceiptTitle') : tOrders('printReceiptTitle')}
             </h2>
-            <p className="text-sm text-gray-600 mb-6">
+            <p className="text-sm text-gray-600 mb-4">
               {(printHistory[confirmPrintBillId]?.length ?? 0) > 0
                 ? tOrders('reprintReceiptWarning')
                 : tOrders('printReceiptConfirm')}
             </p>
-            <div className="flex justify-end gap-2">
+            {/* Warned rather than blocked: a genuinely free row exists, and a
+                block would push the floor into inventing a workaround. */}
+            {unpricedItems.length > 0 && (
+              <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-4">
+                {tOrders('unpricedRowsWarning', { count: unpricedItems.length })}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 mt-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -1462,6 +1553,89 @@ placeholder={tOrders('managerPin')}
           </div>
         </div>
       )}
+      {/* One row, up close: what it costs and what comes off it. The price can
+          go up as well as down — a dish agreed at the table has no list price
+          to discount from. */}
+      {rowEdit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-start mb-1">
+              <h3 className="font-bold text-gray-900">{rowEdit.item.product_name}</h3>
+              <button onClick={() => setRowEdit(null)} className="text-gray-400 hover:text-gray-600">
+                <XCircle size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              {tOrders('rowCurrentPrice')} <Ltr>{fmt(Number(rowEdit.item.unit_price))}</Ltr>
+              {' × '}{rowEdit.item.quantity}
+            </p>
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">{tOrders('rowNewPrice')}</label>
+            <div className="flex gap-2 mb-5">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={rowEdit.unitPrice}
+                onChange={(e) => setRowEdit({ ...rowEdit, unitPrice: e.target.value })}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                dir="ltr"
+                autoFocus
+              />
+              <Button type="button" onClick={saveRowPrice} disabled={savingRow}>
+                {tOrders('rowSavePrice')}
+              </Button>
+            </div>
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">{tOrders('rowDiscountLabel')}</label>
+            <div className="flex gap-2 mb-2">
+              {isDiscountTypeAllowed(discountMode, 'percentage') && (
+                <button
+                  type="button"
+                  onClick={() => setRowEdit({ ...rowEdit, discountType: 'percentage' })}
+                  className={`px-3 py-2 rounded-lg text-sm border ${rowEdit.discountType === 'percentage' ? 'border-brand text-brand' : 'border-gray-200 text-gray-500'}`}
+                >
+                  <Percent size={14} />
+                </button>
+              )}
+              {isDiscountTypeAllowed(discountMode, 'amount') && (
+                <button
+                  type="button"
+                  onClick={() => setRowEdit({ ...rowEdit, discountType: 'amount' })}
+                  className={`px-3 py-2 rounded-lg text-sm border ${rowEdit.discountType === 'amount' ? 'border-brand text-brand' : 'border-gray-200 text-gray-500'}`}
+                >
+                  <Banknote size={14} />
+                </button>
+              )}
+              <input
+                type="text"
+                inputMode="decimal"
+                value={rowEdit.discountValue}
+                onChange={(e) => setRowEdit({ ...rowEdit, discountValue: e.target.value })}
+                placeholder={rowEdit.discountType === 'percentage' ? '%' : currency}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                dir="ltr"
+              />
+              <Button type="button" variant="outline" onClick={saveRowDiscount} disabled={savingRow}>
+                {tOrders('rowApplyDiscount')}
+              </Button>
+            </div>
+
+            {discountRequiresApproval && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">{tOrders('managerPin')}</label>
+                <input
+                  type="password"
+                  value={rowEdit.overridePin}
+                  onChange={(e) => setRowEdit({ ...rowEdit, overridePin: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  dir="ltr"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {ConfirmDialog}
     </>
   );

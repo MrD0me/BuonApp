@@ -67,6 +67,8 @@ export interface Product {
   cost_price: number | null;
   cb_percent?: number | null;
   track_inventory: boolean;
+  /** Priced only once ordered — the off-menu dish agreed at the table. */
+  price_required?: boolean;
   stock_quantity: number;
   low_stock_threshold: number | null;
   is_active: boolean;
@@ -269,6 +271,8 @@ export interface OrderItem {
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided' | 'void_adjustment';
   /** Kitchen-ticket round this row went out on. null = still waiting to be sent. */
   kot_batch?: number | null;
+  /** Its product is one whose price is only settled once ordered. */
+  price_required?: boolean | number;
 }
 
 export interface Bill {

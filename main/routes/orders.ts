@@ -302,7 +302,13 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   const customerIds = Array.from(new Set(parsedOrders.map((o: any) => o.customer_id).filter(Boolean)));
 
   const orderIdsCsv = `(${ids.map(() => '?').join(',')})`;
-  const itemsRows = db.prepare(`SELECT * FROM order_items WHERE order_id IN ${orderIdsCsv} ORDER BY order_id, id`).all(...ids).map(parseItemJson);
+  // price_required rides along so a screen can tell a row nobody has priced
+  // yet from one that is genuinely free.
+  const itemsRows = db.prepare(`
+    SELECT oi.*, COALESCE(p.price_required, 0) AS price_required
+    FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+    WHERE oi.order_id IN ${orderIdsCsv} ORDER BY oi.order_id, oi.id
+  `).all(...ids).map(parseItemJson);
   // #208: a single call to attachEffectiveAddons batches all addons across
   // all items into one IN() query against order_item_addons. Re-group the
   // result back by order_id for the per-order payload below.
