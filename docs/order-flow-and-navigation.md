@@ -226,9 +226,17 @@ fatto due volte.
 
 Cose decise mentre si implementava, che il piano non prevedeva:
 
-- **La voce Clienti resta nella barra.** Il piano elencava cinque voci e non diceva nulla di
-  Clienti; toglierla sarebbe stata una decisione a parte. Continua a sparire quando il libro
-  clienti è spento.
+- **La voce Clienti resta nella barra**, deciso dall'utente il 2026-08-29: il piano elencava cinque
+  voci e non diceva nulla di Clienti. Continua a sparire quando il libro clienti è spento.
+- **Il preconto ha un pulsante suo.** Il piano lo dava per scontato nella prima fila di azioni, ma
+  non esisteva: la stampante compariva solo dopo che un conto esisteva, e un conto nasceva solo
+  premendo Incassa, che apre la finestra di pagamento. Ora "Stampa preconto" genera il conto se
+  serve e va dritto alla stampa.
+- **Lo sconto sull'intero conto è stato collegato, non cancellato.** La finestra esisteva già
+  scritta per intero e nessun pulsante l'apriva, da prima di questo lavoro. Serve perché lo sconto
+  alla comitiva deve comparire sul preconto, che si stampa prima della cassa: sta nel menu "Altro".
+- **La fila di azioni si è divisa in due**, come prevedeva il punto 2: davanti le quattro cose che
+  fa la sala, dietro "Altro" quelle da responsabile.
 - **Le prenotazioni si raggiungono dalla Sala** con un pulsante, invece di fondere le due pagine:
   la fusione è lavoro di interfaccia che il rifacimento grafico farà meglio.
 - **Lo schermo della cucina ha un link** dalla scheda KDS delle impostazioni. Era la domanda
