@@ -304,6 +304,28 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('formatReceipt with arabicShaping prints Persian notes', receipt.toString('utf8').includes('بدون قند'));
   assert('formatReceipt with arabicShaping emits no unsupported warning', receiptWarnings.length === 0);
 
+  // A comped row prints as such. In a place that offers the coffee and the
+  // amaro a zero row is the norm, and "0,00" on the guest's bill reads like an
+  // omission; a row still waiting for a price keeps its zero, so a forgotten
+  // price stays visible instead of passing for a gift.
+  const compedOrder = {
+    order_number: 'ORD-COMPED-1',
+    created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
+    items: [
+      { product_name: 'Espresso', quantity: 1, unit_price: 0, total: 0 },
+      { product_name: 'Generico', quantity: 1, unit_price: 0, total: 0, price_required: 1 },
+      { product_name: 'Tagliata', quantity: 1, unit_price: 1800, total: 1800 },
+    ],
+  };
+  const compedBill = { bill_number: 'INV-COMPED-1', subtotal: 1800, discount_amount: 0, total: 1800 };
+  const compedReceipt = escPosToText(formatReceipt(compedOrder, compedBill, { ...persianBiz, name: 'Trattoria' }, 'compact', 48, true, false, 'full', [], false, 'it'));
+  const compedLines = compedReceipt.split(String.fromCharCode(10)).map((line: string) => line.trim());
+  const espressoLine = compedLines.find((line: string) => line.includes('Espresso')) || '';
+  const genericoLine = compedLines.find((line: string) => line.includes('Generico')) || '';
+  assert('a zero row prints as offered', espressoLine.includes('Offerto'));
+  assert('a row still waiting for a price does not', !genericoLine.includes('Offerto'));
+  assert('a priced row is untouched', compedLines.some((line: string) => line.includes('Tagliata') && !line.includes('Offerto')));
+
   // KOT without capability flag: skips Persian station and items with precise warnings
   const defaultKotWarnings: Array<{ field: string; text: string; message: string }> = [];
   const defaultKot = formatKOT(persianReceiptOrder, persianReceiptOrder.items, 'آشپزخانه مرکزی', 48, true, 'full', 'en-US', undefined, defaultKotWarnings, false);

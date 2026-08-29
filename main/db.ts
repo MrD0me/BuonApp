@@ -4201,6 +4201,15 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSettingIfMissing(ORDER_TYPES_SETTING_KEY, DEFAULT_ORDER_TYPES);
     },
   },
+  {
+    version: 84,
+    name: 'add_product_price_required',
+    up: () => {
+      if (!getColumns(db, 'products').includes('price_required')) {
+        db.exec(`ALTER TABLE products ADD COLUMN price_required INTEGER DEFAULT 0`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4374,6 +4383,11 @@ function createSchema(): void {
       -- The tri-state does not depend on the default: every insert path passes
       -- cb_percent explicitly, and NULL is written as NULL.
       cb_percent REAL DEFAULT 0,
+      -- Set on a product whose price is only known once it is ordered — the
+      -- off-menu dish agreed at the table. Its rows are flagged until someone
+      -- puts a price on them. Zero is NOT that signal: in a place that offers
+      -- the coffee and the amaro, zero means 'on the house'.
+      price_required INTEGER DEFAULT 0,
       tags TEXT,
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,

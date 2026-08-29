@@ -1210,6 +1210,46 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
   }
 });
 
+/**
+ * Re-adds an order up after one of its rows changed, and follows the change
+ * through to a bill that has not been paid yet.
+ *
+ * Shared by the two row-level edits — the discount and the price — so the two
+ * cannot drift apart on how a total is reached.
+ */
+function recomputeOrderAfterItemChange(db: ReturnType<typeof getDatabase>, orderId: string, order: any): void {
+  // status != 'cancelled' — a cancelled item must not re-enter the order total
+  // here, the same filter every other recompute site in this file uses.
+  const allItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(orderId) as any[];
+  let orderSubtotal = 0;
+  for (const i of allItems) {
+    orderSubtotal += i.subtotal;
+  }
+
+  // An order-level discount was agreed against the old subtotal, so it moves
+  // with it rather than staying a fixed number of euros.
+  const existingDiscountAmount = order.discount_amount || 0;
+  let newOrderDiscount = existingDiscountAmount;
+  if (existingDiscountAmount > 0 && order.subtotal > 0) {
+    newOrderDiscount = Math.round(existingDiscountAmount * (orderSubtotal / order.subtotal) * 100) / 100;
+  }
+
+  const discountedSubtotal = Math.max(0, orderSubtotal - newOrderDiscount);
+  const orderTotal = roundMoney(discountedSubtotal
+    + (order.packaging_charge || 0) + (order.delivery_charge || 0));
+
+  db.prepare(`
+    UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
+  `).run(orderSubtotal, newOrderDiscount, orderTotal, now(), orderId);
+
+  const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
+  if (existingBill) {
+    const newBillBalance = Math.max(0, orderTotal - (existingBill.paid_amount || 0));
+    db.prepare('UPDATE bills SET total = ?, balance = ?, discount_amount = ?, updated_at = ? WHERE id = ?')
+      .run(orderTotal, newBillBalance, newOrderDiscount, now(), existingBill.id);
+  }
+}
+
 router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -1307,42 +1347,98 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole('ow
           subtotal = ?, total = ?, updated_at = ? WHERE id = ?
       `).run(discountAmount, newSubtotal, newSubtotal, now(), req.params.itemId);
 
-      // Update order totals (preserve existing order-level discount)
-      // Note: status != 'cancelled' — a cancelled item must not re-enter the
-      // order total here, same filter every other recompute site in this file
-      // already uses (BUG #3 FIX above, index.ts cancel/restore below).
-      const allItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(req.params.id) as any[];
-      let orderSubtotal = 0;
-      for (const i of allItems) {
-        orderSubtotal += i.subtotal;
-      }
-
-      // Recalculate order-level discount proportionally on new subtotal
-      const existingDiscountAmount = order.discount_amount || 0;
-      let newOrderDiscount = existingDiscountAmount;
-      if (existingDiscountAmount > 0 && order.subtotal > 0) {
-        // Scale discount proportionally to new subtotal
-        newOrderDiscount = Math.round(existingDiscountAmount * (orderSubtotal / order.subtotal) * 100) / 100;
-      }
-
-      const discountedSubtotal = Math.max(0, orderSubtotal - newOrderDiscount);
-      const orderTotal = roundMoney(discountedSubtotal
-        + (order.packaging_charge || 0) + (order.delivery_charge || 0));
-
-      db.prepare(`
-        UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
-      `).run(orderSubtotal, newOrderDiscount, orderTotal, now(), req.params.id);
-
-      // BUG #15 FIX: Sync item-level discount to bill
-      const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
-      if (existingBill) {
-        const newBillBalance = Math.max(0, orderTotal - (existingBill.paid_amount || 0));
-        db.prepare('UPDATE bills SET total = ?, balance = ?, discount_amount = ?, updated_at = ? WHERE id = ?')
-          .run(orderTotal, newBillBalance, newOrderDiscount, now(), existingBill.id);
-      }
+      recomputeOrderAfterItemChange(db, String(req.params.id), order);
 
       return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.itemId) as any;
     });
+
+    res.json({ item: updatedItem });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+  }
+});
+
+
+/**
+ * Sets what a row actually costs.
+ *
+ * A dish agreed at the table has no price in the menu, and at the moment the
+ * waiter writes it down nobody knows what it is: the price arrives later, from
+ * whoever does know, and it can go up as well as down — which is why this is
+ * not a discount. Same guards as the row discount, because it moves the same
+ * money: owner or manager, the manager PIN when discounts ask for one, and
+ * never on an order that is finished or a check that has been split.
+ */
+router.patch('/:id/items/:itemId/price', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
+      return res.status(409).json({ error: 'Prices cannot be changed after a check has been split' });
+    }
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({ error: 'Cannot change a price on a completed or cancelled order' });
+    }
+
+    const item = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(req.params.itemId, req.params.id) as any;
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    const { unit_price } = req.body || {};
+    if (typeof unit_price !== 'number' || !Number.isFinite(unit_price) || unit_price < 0) {
+      return res.status(400).json({ error: 'unit_price must be a non-negative number' });
+    }
+    // A mistyped price is the likeliest way this goes wrong, so an absurd one
+    // is refused rather than printed on a guest's bill.
+    if (unit_price > 1_000_000) {
+      return res.status(400).json({ error: 'unit_price is out of range' });
+    }
+
+    const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
+    if (requiresApproval) {
+      const { override_pin } = req.body;
+      if (!override_pin) {
+        return res.status(403).json({ error: 'Manager PIN required to change a price', requiresApproval: true });
+      }
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+      const rateLimitKey = `pin:${clientIp}:item-price`;
+      if (!checkPinRateLimit(rateLimitKey)) {
+        return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+      }
+      const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+        .all()
+        .find((u: any) => verifyPin(u.pin_hash, override_pin));
+      if (!user) {
+        return res.status(403).json({ error: 'Invalid manager PIN' });
+      }
+    }
+
+    const newUnitPrice = roundMoney(unit_price);
+    const addonRows = db.prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?').all(item.id) as { price: number; quantity?: number }[];
+    const addonTotal = addonRows.reduce((sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * item.quantity, 0);
+    const itemBaseTotal = newUnitPrice * item.quantity + addonTotal;
+    // A discount agreed on the old price cannot exceed the new one, or the row
+    // would go negative and quietly pay the guest.
+    const discountAmount = Math.min(item.discount_amount || 0, itemBaseTotal);
+    const newSubtotal = Math.max(0, itemBaseTotal - discountAmount);
+
+    const updatedItem = withTxn(() => {
+      db.prepare(`
+        UPDATE order_items SET unit_price = ?, discount_amount = ?,
+          subtotal = ?, total = ?, updated_at = ? WHERE id = ?
+      `).run(newUnitPrice, discountAmount, newSubtotal, newSubtotal, now(), req.params.itemId);
+
+      recomputeOrderAfterItemChange(db, String(req.params.id), order);
+
+      return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.itemId) as any;
+    });
+
+    notifyOrderUpdated();
 
     res.json({ item: updatedItem });
   } catch (error: any) {

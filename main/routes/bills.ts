@@ -63,7 +63,13 @@ export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: n
   const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId));
   if (!order) return order;
   const allocations = billId === undefined ? [] : db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ?').all(billId) as any[];
-  const itemRows = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[];
+  // price_required rides along so the printed bill can tell an intentional
+  // freebie from a row nobody has priced yet: both are zero.
+  const itemRows = db.prepare(`
+    SELECT oi.*, COALESCE(p.price_required, 0) AS price_required
+    FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+    WHERE oi.order_id = ?
+  `).all(orderId) as any[];
   return {
     ...order,
     items: attachEffectiveAddons(db, projectOrderItems(order, itemRows, allocations).map(parseItemJson)),

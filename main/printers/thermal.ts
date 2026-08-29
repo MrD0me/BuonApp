@@ -851,7 +851,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
+      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals, L.offered));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
@@ -932,7 +932,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
+      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals, L.offered));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
@@ -1039,12 +1039,16 @@ function itemAmountWidth(
   return Math.min(width, Math.max(1, cols - 5));
 }
 
-function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
+function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, offeredLabel?: string): string[] {
   const qtyW = 4;
   const name = truncate(item.product_name, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
-  const amount = formatCurrency(item.total, prefix, locale, trimDecimals);
+  // A row worth nothing was given away — say so, rather than printing a 0,00
+  // the guest has to interpret. A row whose price is simply not set yet is a
+  // different thing and keeps its zero, so the omission stays visible.
+  const offered = offeredLabel && Number(item.total) === 0 && !item.price_required;
+  const amount = offered ? offeredLabel : formatCurrency(item.total, prefix, locale, trimDecimals);
   const inlineWidth = Math.max(1, cols - label.length - 1);
   if (amount.length <= inlineWidth) return [label + rightAlign(amount, cols - label.length)];
   return [label.trimEnd(), ...wrapValue(amount, cols)];
@@ -1172,6 +1176,7 @@ interface ReceiptLabels {
   qtyCol: string;
   amountCol: string;
   note: string;
+  offered: string;
   pointsRedeemed: string;
   pointsEarned: string;
   pointsBalance: string;
@@ -1196,6 +1201,7 @@ const RECEIPT_LABELS: Record<string, ReceiptLabels> = {
     qtyCol: 'Qty',
     amountCol: 'Amount',
     note: 'Note: ',
+    offered: 'On the house',
     pointsRedeemed: 'Points Redeemed',
     pointsEarned: 'Points Earned',
     pointsBalance: 'Points Balance',
@@ -1218,6 +1224,7 @@ const RECEIPT_LABELS: Record<string, ReceiptLabels> = {
     qtyCol: 'Qta',
     amountCol: 'Importo',
     note: 'Nota: ',
+    offered: 'Offerto',
     pointsRedeemed: 'Punti usati',
     pointsEarned: 'Punti accumulati',
     pointsBalance: 'Saldo punti',

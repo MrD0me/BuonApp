@@ -307,6 +307,7 @@ function serializeProduct(product: any): any {
     ...product,
     is_active: toBoolean(product.is_active),
     track_inventory: toBoolean(product.track_inventory),
+    price_required: toBoolean(product.price_required),
     has_image: toBoolean(product.has_image),
     category: serializeCategory(product.category),
     addon_groups: Array.isArray(product.addon_groups) ? product.addon_groups.map(serializeAddonGroup) : product.addon_groups,
@@ -411,7 +412,7 @@ router.get('/', (req: Request, res: Response) => {
     const db = getDatabase();
     let query = `SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
       p.is_active, p.sort_order, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
-      p.cb_percent, p.tags, p.deleted_at, p.created_at, p.updated_at,
+      p.cb_percent, p.tags, p.price_required, p.deleted_at, p.created_at, p.updated_at,
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
       FROM products p 
       LEFT JOIN categories c ON p.category_id = c.id
@@ -686,7 +687,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const {
       category_id, name, sku, barcode, description, price, cost_price,
       track_inventory, stock_quantity,
-      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
+      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, price_required, addon_group_ids
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
     const productName = normalizeRequiredName(name);
@@ -739,13 +740,14 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       db.prepare(`
         INSERT INTO products (id, category_id, name, sku, barcode, description, price, cost,
           track_inventory, stock_quantity, low_stock_threshold,
-          is_active, image_url, sort_order, cb_percent, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          is_active, image_url, sort_order, cb_percent, tags, price_required, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, normalizeNullableString(category_id), productName, normalizeNullableString(sku), normalizedBarcode, normalizeNullableString(description), price, cost_price || 0,
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, normalizeNullableString(image_url),
         sort_order || 0, cb_percent !== undefined ? cb_percent : null, JSON.stringify(tags || []),
+        price_required ? 1 : 0,
         now(), now()
       );
 
@@ -777,7 +779,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const {
       category_id, name, sku, barcode, description, price, cost_price,
       track_inventory, stock_quantity,
-      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
+      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, price_required, addon_group_ids
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
     const hasName = hasOwn(req.body, 'name');
@@ -854,6 +856,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
           sort_order = COALESCE(@sort_order, sort_order),
           cb_percent = CASE WHEN @has_cb_percent = 1 THEN @cb_percent ELSE cb_percent END,
           tags = CASE WHEN @has_tags = 1 THEN @tags ELSE tags END,
+          price_required = COALESCE(@price_required, price_required),
           updated_at = @updated_at
         WHERE id = @id
       `).run({
@@ -879,6 +882,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         sort_order: sort_order ?? null,
         has_cb_percent: hasCbPercent ? 1 : 0,
         cb_percent: hasCbPercent ? cb_percent : null,
+        price_required: price_required !== undefined ? (price_required ? 1 : 0) : null,
         has_tags: hasTags ? 1 : 0,
         tags: hasTags ? JSON.stringify(tags || []) : null,
         updated_at: now(),
