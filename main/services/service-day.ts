@@ -438,7 +438,11 @@ export function getServiceDayTotals(db: Db, days: ServiceDayRow[]): Map<string, 
   return totals;
 }
 
-/** The day's orders, newest first, with items attached for review. */
+/**
+ * The day's orders, newest first, with items attached for review. The note
+ * comes along because it is often the only thing that says what was actually
+ * served — an off-menu dish is a generic line plus whatever the waiter wrote.
+ */
 export function getServiceDayOrders(db: Db, serviceDayId: string) {
   const orders = db.prepare(`
     SELECT * FROM orders WHERE service_day_id = ? ORDER BY created_at DESC, id DESC
@@ -447,7 +451,7 @@ export function getServiceDayOrders(db: Db, serviceDayId: string) {
 
   const placeholders = orders.map(() => '?').join(',');
   const items = db.prepare(`
-    SELECT order_id, product_name, quantity, total, status
+    SELECT order_id, product_name, quantity, total, status, special_instructions
     FROM order_items WHERE order_id IN (${placeholders}) ORDER BY order_id, id
   `).all(...orders.map((order) => order.id)) as any[];
 

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { X, Unlock, Printer } from 'lucide-react';
+import { X, Unlock, Printer, ChevronDown, ChevronRight } from 'lucide-react';
 import type { ServiceDay, ServiceDaySummary, Order } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -31,6 +31,13 @@ function DayDetailModal({ dayId, onClose, onChanged }: DayDetailModalProps) {
   const [loading, setLoading] = useState(true);
   const [reopening, setReopening] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [expandedOrders, setExpandedOrders] = useState<Set<number>>(new Set());
+
+  const toggleOrder = (orderId: number) => setExpandedOrders((prev) => {
+    const next = new Set(prev);
+    if (!next.delete(orderId)) next.add(orderId);
+    return next;
+  });
 
   useEffect(() => {
     api.get(`/service-days/${dayId}`)
@@ -135,14 +142,46 @@ function DayDetailModal({ dayId, onClose, onChanged }: DayDetailModalProps) {
               <p className="text-sm text-gray-400 py-4 text-center">{t('noOrders')}</p>
             ) : (
               <div className="space-y-1">
-                {orders.map((order) => (
-                  <div key={order.id} className="flex items-center justify-between gap-3 text-sm px-3 py-2 bg-gray-50 rounded-lg">
-                    <span className="font-medium text-gray-800">#<Ltr>{order.order_number}</Ltr></span>
-                    <span className="text-gray-500 truncate flex-1">{order.table_label || '—'}</span>
-                    <span className="text-xs text-gray-400">{fmt.time(order.created_at)}</span>
-                    <span className="font-medium text-gray-900">{formatCurrency(order.total || 0)}</span>
-                  </div>
-                ))}
+                {orders.map((order) => {
+                  const isExpanded = expandedOrders.has(order.id);
+                  return (
+                    <div key={order.id} className="bg-gray-50 rounded-lg overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => toggleOrder(order.id)}
+                        aria-expanded={isExpanded}
+                        className="w-full flex items-center gap-3 text-sm px-3 py-2 hover:bg-gray-100 transition-colors"
+                      >
+                        {isExpanded
+                          ? <ChevronDown size={14} className="text-gray-400 shrink-0" />
+                          : <ChevronRight size={14} className="text-gray-400 shrink-0 rtl-flip" />}
+                        <span className="font-medium text-gray-800">#<Ltr>{order.order_number}</Ltr></span>
+                        <span className="text-gray-500 truncate flex-1 text-start">{order.table_label || '—'}</span>
+                        <span className="text-xs text-gray-400">{fmt.time(order.created_at)}</span>
+                        <span className="font-medium text-gray-900">{formatCurrency(order.total || 0)}</span>
+                      </button>
+
+                      {/* What was actually served. The note rides along because
+                          an off-menu dish is a generic line plus the waiter's
+                          handwriting — without it the archive says nothing. */}
+                      {isExpanded && (
+                        <div className="border-t border-gray-200 px-3 py-2 ps-9 space-y-1">
+                          {(order.items || []).map((item, index) => (
+                            <div key={item.id ?? index} className="flex justify-between gap-3 text-xs">
+                              <span className={item.status === 'cancelled' ? 'text-gray-400 line-through' : 'text-gray-700'}>
+                                <Ltr>{item.quantity}×</Ltr> {item.product_name}
+                                {item.special_instructions && (
+                                  <span className="text-gray-400 italic"> · {item.special_instructions}</span>
+                                )}
+                              </span>
+                              <span className="text-gray-500 shrink-0">{formatCurrency(item.total || 0)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

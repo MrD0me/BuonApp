@@ -216,6 +216,13 @@ async function main() {
     assertEqual(frozenRes.status, 200, 'closed day readable');
     assertEqual(frozenRes.data.summary.takings.total, 40, 'closed day reports the frozen total, not the edited rows');
     assertEqual(frozenRes.data.orders.length, 2, 'closed day lists its orders');
+    // The archive opens each order to show what was served, so the rows have to
+    // carry their items — and the note with them, since an off-menu dish is a
+    // generic line plus whatever the waiter wrote.
+    const archivedItems = frozenRes.data.orders[0].items;
+    assert(Array.isArray(archivedItems) && archivedItems.length > 0, 'archived orders carry their items');
+    assert('product_name' in archivedItems[0], 'each item says what it was');
+    assert('special_instructions' in archivedItems[0], 'each item carries its note');
     assert(frozenRes.data.day.layout_snapshot, 'layout snapshot captured');
     assertEqual(JSON.parse(frozenRes.data.day.layout_snapshot).tables.length, 1, 'snapshot holds the room as it was');
     db.prepare("UPDATE bills SET paid_amount = 20 WHERE bill_number = 'BILL-D-1'").run();
