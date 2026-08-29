@@ -8,6 +8,7 @@ import { requireRole } from '../middleware/security';
 import { resolveOrderTable } from './tables';
 import { tableLabelSource, tableGroupLeader } from '../services/tables';
 import { getOrOpenServiceDay } from '../services/service-day';
+import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
 import { seatReservationForTable } from '../services/reservations';
 import expressRateLimit from 'express-rate-limit';
 
@@ -386,6 +387,12 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
     if (!type || !['dine_in', 'takeaway', 'delivery', 'online'].includes(type)) {
       return res.status(400).json({ error: 'Valid type is required (dine_in, takeaway, delivery, online)' });
+    }
+    // The POS hides the types the owner switched off, but hiding a button is
+    // not enforcement: a handheld running an older screen must not be able to
+    // file a takeaway order in a place that does not do takeaway.
+    if (!isOrderTypeAllowed(getSettingValue(ORDER_TYPES_SETTING_KEY), type)) {
+      return res.status(400).json({ error: `Order type ${type} is disabled`, code: 'order_type_disabled' });
     }
     if (table_id) {
       // A table folded into a group is not seated on its own: the party is on
@@ -1007,6 +1014,9 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole('owner
       }
       if (order.type !== 'dine_in') {
         throw Object.assign(new Error('Only dine-in orders can be converted to takeaway'), { statusCode: 400 });
+      }
+      if (!isOrderTypeAllowed(getSettingValue(ORDER_TYPES_SETTING_KEY), 'takeaway')) {
+        throw Object.assign(new Error('Takeaway is disabled'), { statusCode: 400 });
       }
       if (['completed', 'cancelled'].includes(order.status)) {
         throw Object.assign(new Error('Cannot convert a completed or cancelled order'), { statusCode: 400 });

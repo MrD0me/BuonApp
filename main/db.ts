@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, defaultTableSize, createGridPlacer } from './lib/table-geometry';
+import { DEFAULT_ORDER_TYPES, ORDER_TYPES_SETTING_KEY } from './lib/order-types';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -4190,6 +4191,16 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[MIGRATION v82] plugin print templates removed; ${reset} template selection(s) reset`);
     },
   },
+  {
+    version: 83,
+    name: 'add_order_types_setting',
+    up: () => {
+      // Existing installs have been offering all three types all along, so the
+      // upgrade leaves them on; a restaurant that only serves at the table
+      // switches the other two off in settings.
+      insertSettingIfMissing(ORDER_TYPES_SETTING_KEY, DEFAULT_ORDER_TYPES);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4733,6 +4744,7 @@ function seedInstallDefaults(): void {
   insert('setup_profile', '');
   insert('kds_enabled', 'true');
   insert('customers_enabled', 'true');
+  insert(ORDER_TYPES_SETTING_KEY, DEFAULT_ORDER_TYPES);
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
   insert('printer_trim_decimals', 'false');

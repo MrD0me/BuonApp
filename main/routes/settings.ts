@@ -9,6 +9,12 @@ import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { isCoreBillTemplate } from '../services/print-templates';
+import {
+  DEFAULT_ORDER_TYPES,
+  ORDER_TYPES_SETTING_KEY,
+  serializeOrderTypes,
+  validateOrderTypes,
+} from '../lib/order-types';
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -51,6 +57,9 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   bill_footer_message: '',
   printer_trim_decimals: 'false',
   split_checks_enabled: 'false',
+  // Unset means every type, so a database from before the setting existed
+  // keeps offering the same three buttons it always did.
+  [ORDER_TYPES_SETTING_KEY]: DEFAULT_ORDER_TYPES,
   // Iran locale display preferences (Batch G, Refs #241) — display-only.
   currency_display: 'rial',
   number_digits: 'locale',
@@ -528,6 +537,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',
   'customers_enabled',
   'split_checks_enabled',
+  ORDER_TYPES_SETTING_KEY,
   'currency_display', 'number_digits', 'calendar',
 ]);
 
@@ -608,6 +618,19 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
     }
 
     let valueToPersist = value;
+    // Stored as a canonical CSV so the POS, the day's filters and the order
+    // API all read the same list. Refusing an empty one matters: a tenant with
+    // no enabled type could not take an order at all.
+    if (req.params.key === ORDER_TYPES_SETTING_KEY) {
+      const submitted: unknown[] = Array.isArray(value)
+        ? value
+        : String(value).split(',').map((entry) => entry.trim()).filter(Boolean);
+      const check = validateOrderTypes(submitted);
+      if (!check.valid) {
+        return res.status(400).json({ error: check.error });
+      }
+      valueToPersist = serializeOrderTypes(submitted as string[]);
+    }
     if (req.params.key === 'business_phone') {
       const effectiveCountry = getAllSettings(db).country || 'IN';
       const phoneRes = normalizeOptionalPhone(value, effectiveCountry);

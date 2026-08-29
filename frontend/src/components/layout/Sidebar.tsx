@@ -26,6 +26,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
 import { useConfirm } from '@/hooks/use-confirm';
+import { ORDER_TYPES_SETTING_KEY, parseOrderTypes } from '@/lib/order-types';
 import {
   Sidebar,
   SidebarContent,
@@ -70,7 +71,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, currentTenant, logout } = useAuthStore();
-  const { tablesRequired, kdsEnabled, whatsappEnabled, customersEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled } = usePosSettingsStore();
+  const { tablesRequired, kdsEnabled, whatsappEnabled, customersEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes } = usePosSettingsStore();
   const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
@@ -105,6 +106,12 @@ export default function AppSidebar() {
     api.get('/settings/customers_enabled')
       .then((res) => setCustomersEnabled(res.data.setting?.value !== 'false'))
       .catch(() => { });
+    // Which order types the POS may offer. Read here, like the other
+    // business-level flags, so every screen that renders after login already
+    // knows what this tenant takes.
+    api.get(`/settings/${ORDER_TYPES_SETTING_KEY}`)
+      .then((res) => setOrderTypes(parseOrderTypes(res.data.setting?.value)))
+      .catch(() => { });
     // Sync the WhatsApp enabled flag from the backend so the sidebar shows
     // the nav entry only when the integration is actually enabled on this
     // tenant. The WhatsApp page also writes the store on enable/disable so
@@ -112,7 +119,7 @@ export default function AppSidebar() {
     api.get('/whatsapp/status')
       .then((res) => setWhatsappEnabled(!!res.data?.enabled))
       .catch(() => { });
-  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled]);
+  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes]);
 
   return (
     <Sidebar collapsible="icon">

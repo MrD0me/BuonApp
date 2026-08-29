@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useMemo } from 'react';
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck,
   Plus, Minus, Trash2, Pause, MapPin, SquarePen,
@@ -37,10 +38,31 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
   const billingType = usePosSettingsStore((s) => s.billingType);
+  const enabledOrderTypes = usePosSettingsStore((s) => s.orderTypes);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
+  // What this tenant actually takes: the types the owner left on, minus
+  // dine-in for a business without tables.
+  const availableTypes = useMemo(
+    () => enabledOrderTypes.filter((type) => isRestaurant || type !== 'dine_in'),
+    [enabledOrderTypes, isRestaurant],
+  );
+  // A cart left on a type that has since been switched off would sit on
+  // something the backend now refuses, with no button left to change it.
+  const cartOrderType = cart.orderType;
+  const setCartOrderType = cart.setOrderType;
+  useEffect(() => {
+    if (availableTypes.length > 0 && !availableTypes.includes(cartOrderType)) {
+      setCartOrderType(availableTypes[0]);
+    }
+  }, [availableTypes, cartOrderType, setCartOrderType]);
+  // With a single type left the selector goes, and the strip around it is only
+  // worth drawing while something inside it still is.
+  const showOrderTypeBar = availableTypes.length > 1
+    || cartOrderType === 'dine_in'
+    || cartOrderType === 'delivery';
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
 
   const handleHold = async () => {
@@ -71,10 +93,13 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         : 'w-full h-full bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm'
     }>
       {/* Order Type */}
+      {showOrderTypeBar && (
       <div className="p-4 border-b border-gray-100 space-y-2">
+        {/* One choice is not a choice: with everything but one type switched
+            off the row is a button that can only say what it already says. */}
+        {availableTypes.length > 1 && (
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {(['dine_in', 'takeaway', 'delivery'] as const)
-            .filter((type) => isRestaurant || type !== 'dine_in')
+          {availableTypes
             .map((type) => {
               const Icon = orderTypeIcons[type];
               const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : t('orderTypeDelivery');
@@ -94,6 +119,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               );
             })}
         </div>
+        )}
 
         {cart.orderType === 'dine_in' && (
           <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
@@ -120,6 +146,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           </div>
         )}
       </div>
+      )}
 
       {/* Cart Items */}
       <div className={isDrawer ? 'overflow-y-auto p-4 max-h-[40vh]' : 'flex-1 overflow-y-auto p-4'}>

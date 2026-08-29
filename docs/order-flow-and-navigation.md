@@ -241,7 +241,8 @@ fatto due volte.
 
 | Passo | Controlli minimi |
 | --- | --- |
-| 1, 3, 6, 7 | `npm run lint`, `npm run build:frontend`, `npm run i18n:check` |
+| 1 | `npm run lint`, `npm run build`, `npm run build:frontend`, `npm run i18n:check`, `npm run test:order-types`, più `test:schema-health` e `test:upgrade-path` per la voce di impostazione |
+| 3, 6, 7 | `npm run lint`, `npm run build:frontend`, `npm run i18n:check` |
 | 2 | `npm run lint`, `npm run build`, `npm run test:service-days` |
 | 4 | le sei suite di sala: `test:table-crud`, `test:rooms-map`, `test:reservations`, `test:reservation-sheet`, `test:table-merge-layouts`, `test:service-days` — non fanno parte di `npm test` |
 | 5 | `npm run test:printer`, `npm run test:receipt-printing`, `npm run test:kot-batch`, più test su database nuovo e su percorso di aggiornamento per la migrazione |

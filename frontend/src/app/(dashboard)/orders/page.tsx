@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
@@ -121,7 +121,7 @@ export default function OrdersPage() {
   const heldOrdersStore = useHeldOrdersStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { setTablesRequired, autoPrintBill, printerUseUnicode, customersEnabled } = usePosSettingsStore();
+  const { setTablesRequired, autoPrintBill, printerUseUnicode, customersEnabled, orderTypes: enabledOrderTypes } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
@@ -480,6 +480,17 @@ export default function OrdersPage() {
     }
     return true;
   };
+
+  // Types worth offering as a filter: what the tenant takes, plus anything an
+  // order on screen actually is — switching takeaway off mid-service must not
+  // strip the filter for the takeaway orders already taken today.
+  const typeFilterOptions = useMemo(() => {
+    const present = new Set(orders.map((order) => order.type));
+    const enabled = enabledOrderTypes as readonly string[];
+    return (['dine_in', 'takeaway', 'delivery', 'online'] as const)
+      .filter((type) => enabled.includes(type) || present.has(type));
+  }, [orders, enabledOrderTypes]);
+  const takeawayEnabled = (enabledOrderTypes as readonly string[]).includes('takeaway');
 
   const filteredOrders = orders.filter((order) => {
     // Tab filter
@@ -936,10 +947,9 @@ export default function OrdersPage() {
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
           <option value="">{tOrders('allTypes')}</option>
-          <option value="dine_in">{tOrders('dineIn')}</option>
-          <option value="takeaway">{tOrders('takeaway')}</option>
-          <option value="delivery">{tOrders('delivery')}</option>
-          <option value="online">{tOrders('online')}</option>
+          {typeFilterOptions.map((type) => (
+            <option key={type} value={type}>{tOrders(ORDER_TYPE_KEYS[type])}</option>
+          ))}
         </select>
 
         {/* Status filter */}
@@ -1334,7 +1344,7 @@ export default function OrdersPage() {
                         {tOrders('addItem')}
                       </Button>
                     )}
-                    {order.type === 'dine_in' && !['completed', 'cancelled'].includes(order.status) && (
+                    {order.type === 'dine_in' && takeawayEnabled && !['completed', 'cancelled'].includes(order.status) && (
                       <Button
                         variant="outline"
                         onClick={() => handleConvertToTakeaway(order)}
