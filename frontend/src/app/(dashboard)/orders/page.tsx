@@ -41,6 +41,7 @@ import {
   type AppendAttemptStorage,
 } from '@/lib/append-attempt';
 import { preferChildScopedBill } from '@/lib/printer/bill-scope';
+import { CurrentDayCard } from '@/components/service-days/CurrentDayCard';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
@@ -246,7 +247,13 @@ export default function OrdersPage() {
 
   const fetchOrders = async () => {
     try {
-      const { data } = await api.get('/orders', { params: { per_page: 50 } });
+      // The service day, not the calendar day: a restaurant that closes at one
+      // in the morning is still working the same evening, and its orders must
+      // stay here rather than slide into the archive at midnight.
+      // One page holds a whole service day: 500 is the API's ceiling and far
+      // past what a dining room turns over in an evening, so the day is never
+      // shown in halves.
+      const { data } = await api.get('/orders', { params: { service_day: 'current', per_page: 500 } });
       const orders = data.orders || [];
       setOrders(orders);
       // Fetch print history only for bills we haven't fetched yet
@@ -892,6 +899,9 @@ export default function OrdersPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
+      {/* The day this page is showing, and the ritual that ends it. */}
+      <CurrentDayCard onChanged={fetchOrders} />
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">{tNav('orders')}</h1>

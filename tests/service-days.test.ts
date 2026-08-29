@@ -368,6 +368,46 @@ async function main() {
       're-running the migration creates no duplicates',
     );
 
+    // ── The day's orders, filtered by service day ─────────────────────────
+    // The day page asks for `service_day=current` rather than a calendar date,
+    // so a service that runs past midnight stays on one page instead of
+    // splitting in half at 00:00.
+    console.log('\n9. GET /orders filters by service day');
+    const freshOrderId = await placeOrder(null);
+    const openDayRes = await api(baseUrl, '/api/service-days/current', { headers: authHeader });
+    assertEqual(openDayRes.status, 200, 'the new order opened a day again');
+    const openDayId = openDayRes.data.day.id;
+
+    const currentList = await api(baseUrl, '/api/orders?service_day=current', { headers: authHeader });
+    assertEqual(currentList.status, 200, 'GET /orders?service_day=current succeeds');
+    assert(
+      currentList.data.orders.length > 0
+        && currentList.data.orders.every((order: any) => order.service_day_id === openDayId),
+      'only orders filed under the open day come back',
+    );
+    assert(
+      currentList.data.orders.some((order: any) => order.id === freshOrderId),
+      'the order just taken is on the page',
+    );
+    assert(
+      !currentList.data.orders.some((order: any) => String(order.order_number).startsWith('ORD-OLD')),
+      'orders from earlier days stay out',
+    );
+
+    const byExplicitId = await api(baseUrl, `/api/orders?service_day=${openDayId}`, { headers: authHeader });
+    assertEqual(
+      byExplicitId.data.orders.length,
+      currentList.data.orders.length,
+      'an explicit day id returns the same page as "current"',
+    );
+
+    const closedForFilter = await api(baseUrl, `/api/service-days/${openDayId}/close`, {
+      method: 'POST', headers: authHeader, body: { force: true, reason: 'filter test' },
+    });
+    assertEqual(closedForFilter.status, 200, 'day force-closed for the empty-current check');
+    const afterClose = await api(baseUrl, '/api/orders?service_day=current', { headers: authHeader });
+    assertEqual(afterClose.data.orders.length, 0, 'with no day open the page is empty, not everything ever taken');
+
     console.log('\n✅ All service day tests passed');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

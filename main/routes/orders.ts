@@ -7,7 +7,7 @@ import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
 import { resolveOrderTable } from './tables';
 import { tableLabelSource, tableGroupLeader } from '../services/tables';
-import { getOrOpenServiceDay } from '../services/service-day';
+import { getOpenServiceDay, getOrOpenServiceDay } from '../services/service-day';
 import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
 import { seatReservationForTable } from '../services/reservations';
 import expressRateLimit from 'express-rate-limit';
@@ -212,6 +212,23 @@ router.get('/', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', '
       if (endDate) {
         wheres.push('created_at < ?');
         params.push(utcDayBounds(endDate)[1]);
+      }
+    }
+    // The day's orders, by service day rather than by clock. A restaurant that
+    // closes at one in the morning is still working the same evening, and its
+    // orders must not slide into yesterday at midnight. `current` resolves to
+    // the open day — a GET must never open one — and with no day open the
+    // answer is empty, because nothing has been filed under a day that does
+    // not exist yet.
+    if (typeof req.query.service_day === 'string' && req.query.service_day) {
+      const dayId = req.query.service_day === 'current'
+        ? getOpenServiceDay(db)?.id ?? null
+        : req.query.service_day;
+      if (dayId === null) {
+        wheres.push('0 = 1');
+      } else {
+        wheres.push('service_day_id = ?');
+        params.push(dayId);
       }
     }
     if (req.query.table_id) {
