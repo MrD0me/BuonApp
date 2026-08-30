@@ -1254,8 +1254,11 @@ function recomputeOrderAfterItemChange(db: ReturnType<typeof getDatabase>, order
   const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
   if (existingBill) {
     const newBillBalance = Math.max(0, orderTotal - (existingBill.paid_amount || 0));
-    db.prepare('UPDATE bills SET total = ?, balance = ?, discount_amount = ?, updated_at = ? WHERE id = ?')
-      .run(orderTotal, newBillBalance, newOrderDiscount, now(), existingBill.id);
+    // The cover travels with the total, or the printed bill contradicts itself:
+    // the right amount at the bottom and yesterday's cover on its own line,
+    // with the per-head price back-calculated from the stale figure.
+    db.prepare('UPDATE bills SET total = ?, balance = ?, discount_amount = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
+      .run(orderTotal, newBillBalance, newOrderDiscount, Number(order.cover_charge || 0), now(), existingBill.id);
   }
 }
 

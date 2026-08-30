@@ -4290,6 +4290,33 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSettingIfMissing(COVER_CHARGE_SETTING_KEY, '0');
     },
   },
+  {
+    version: 89,
+    name: 'resync_cover_charge_on_open_bills',
+    up: () => {
+      // Correcting the covers repriced the order and its bill's total, but left
+      // the bill's own cover line at the old figure. The printed bill then
+      // divided the stale charge by the new head count and quoted a price per
+      // cover nobody had ever set: "Coperto 5 x 1,60" under a total that
+      // correctly counted five at two euro. The bug is fixed at the source;
+      // this straightens the bills it already wrote, and only those still open,
+      // because a bill already paid is a bill already handed over.
+      const fixed = db.prepare(`
+        UPDATE bills SET cover_charge = (SELECT COALESCE(orders.cover_charge, 0) FROM orders WHERE orders.id = bills.order_id),
+                         updated_at = ?
+        WHERE payment_status != 'paid'
+          AND split_group_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM orders
+            WHERE orders.id = bills.order_id
+              AND COALESCE(orders.cover_charge, 0) != COALESCE(bills.cover_charge, 0)
+          )
+      `).run(new Date().toISOString());
+      if (fixed.changes > 0) {
+        console.log(`[DB] v89: cover charge resynced on ${fixed.changes} open bill(s)`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

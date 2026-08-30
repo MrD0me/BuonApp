@@ -294,8 +294,12 @@ export function buildClassicReceiptBytes(
   if (Number(bill.discount_amount) > 0) {
     enc.text(padRow('Discount', `-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}`, cols)).newline();
   }
-  if (Number(bill.service_charge) > 0) {
-    enc.text(padRow('Service Charge', formatAmount(bill.service_charge, currency, locale, trimDecimals), cols)).newline();
+  if (Number(bill.cover_charge) > 0) {
+    const heads = Number(bill.order?.guest_count || 0);
+    const perHead = heads > 0 ? Number(bill.cover_charge) / heads : 0;
+    const divides = heads > 0 && Math.abs(Number((perHead * heads).toFixed(2)) - Number(Number(bill.cover_charge).toFixed(2))) < 0.005;
+    const coverLabel = divides ? `Cover ${heads} x ${formatAmount(perHead, currency, locale, trimDecimals)}` : 'Cover';
+    enc.text(padRow(coverLabel, formatAmount(Number(bill.cover_charge), currency, locale, trimDecimals), cols)).newline();
   }
   if (Number(bill.delivery_charge) > 0) {
     enc.text(padRow('Delivery', formatAmount(bill.delivery_charge, currency, locale, trimDecimals), cols)).newline();

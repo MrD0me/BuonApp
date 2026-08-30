@@ -119,6 +119,10 @@ async function main() {
     const billAfter = await api(baseUrl, `/api/bills/order/${seated.id}`, { headers: authHeader });
     assertEqual(Number(billAfter.data.bill.total), 1012.5, 'the open bill follows too');
     assertEqual(Number(billAfter.data.bill.balance), 1012.5, 'and so does what is owed');
+    // The line, not just the bottom of the bill: with the total right and the
+    // cover stale, the print divided the old charge by the new head count and
+    // invented a price per cover nobody had ever set.
+    assertEqual(Number(billAfter.data.bill.cover_charge), 12.5, 'and so does the cover line itself');
 
     console.log('\n6. What it refuses');
     assertEqual(

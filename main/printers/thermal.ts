@@ -873,8 +873,14 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   // table being laid is owed the reason.
   if (Number(bill.cover_charge) > 0) {
     const heads = Number(order?.guest_count || 0);
-    const coverLabel = heads > 0
-      ? `${L.cover} ${heads} x ${formatCurrency(Number(bill.cover_charge) / heads, prefix, locale, trimDecimals)}`
+    const perHead = heads > 0 ? Number(bill.cover_charge) / heads : 0;
+    // Only spell out "4 x 2,00" when the sum actually works out: once a fixed
+    // menu carries the cover for some of the table, the charge no longer
+    // divides by the number of guests, and a made-up unit price on a printed
+    // bill is worse than no unit price at all.
+    const divides = heads > 0 && Math.abs(Number((perHead * heads).toFixed(2)) - Number(Number(bill.cover_charge).toFixed(2))) < 0.005;
+    const coverLabel = divides
+      ? `${L.cover} ${heads} x ${formatCurrency(perHead, prefix, locale, trimDecimals)}`
       : L.cover;
     lines.push(...financialRows(coverLabel, formatCurrency(bill.cover_charge, prefix, locale, trimDecimals), cols));
   }
@@ -971,8 +977,14 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   // table being laid is owed the reason.
   if (Number(bill.cover_charge) > 0) {
     const heads = Number(order?.guest_count || 0);
-    const coverLabel = heads > 0
-      ? `${L.cover} ${heads} x ${formatCurrency(Number(bill.cover_charge) / heads, prefix, locale, trimDecimals)}`
+    const perHead = heads > 0 ? Number(bill.cover_charge) / heads : 0;
+    // Only spell out "4 x 2,00" when the sum actually works out: once a fixed
+    // menu carries the cover for some of the table, the charge no longer
+    // divides by the number of guests, and a made-up unit price on a printed
+    // bill is worse than no unit price at all.
+    const divides = heads > 0 && Math.abs(Number((perHead * heads).toFixed(2)) - Number(Number(bill.cover_charge).toFixed(2))) < 0.005;
+    const coverLabel = divides
+      ? `${L.cover} ${heads} x ${formatCurrency(perHead, prefix, locale, trimDecimals)}`
       : L.cover;
     lines.push(...financialRows(coverLabel, formatCurrency(bill.cover_charge, prefix, locale, trimDecimals), cols));
   }

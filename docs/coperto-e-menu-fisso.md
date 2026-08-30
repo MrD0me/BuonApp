@@ -28,7 +28,7 @@ La comanda le raggruppa da sola come fa già oggi, il KDS le vede singolarmente,
 | Fatto | Dove |
 | --- | --- |
 | I coperti si contano ma non si prezzano: `guest_count` non entra in nessun totale | `main/routes/orders.ts` |
-| `service_charge` compare nel calcolo dei conti e nella stampa, ma la colonna non esiste: vale sempre zero — residuo del modulo fiscale rimosso | `main/routes/bills.ts:1100`, `frontend/src/lib/printer/receipt-encoder.ts:297` |
+| ~~`service_charge` compare nel calcolo dei conti e nella stampa, ma la colonna non esiste: vale sempre zero — residuo del modulo fiscale rimosso~~ tolto da entrambi i punti | `main/routes/bills.ts`, `frontend/src/lib/printer/receipt-encoder.ts` |
 | Il numero di coperti si sceglie alla presa dell'ordine e non si può più correggere | `frontend/src/components/pos/CartPanel.tsx` |
 | La comanda raggruppa per categoria del prodotto | `main/printers/thermal.ts:1318` |
 | Un extra ha nome e prezzo, nessuna categoria | `main/db.ts` (tabella `addons`) |
@@ -61,6 +61,15 @@ poter dire "coperto incluso".
 - `PATCH /orders/:id/guests` corregge i coperti a ordine aperto e riprezza; rifiutata su ordine
   chiuso o conto diviso, come le altre modifiche che spostano denaro.
 - Sul conto la riga dice il conto della serva: `Coperto 4 x 2,00`.
+
+**Corretto subito dopo (v89).** Cambiare i coperti riprezzava l'ordine e il totale del conto, ma
+non la riga del coperto sul conto: la stampa divideva l'importo vecchio per le teste nuove e
+annunciava un prezzo a coperto che nessuno aveva mai messo — `Coperto 5 x 1,60` sotto un totale che
+contava correttamente cinque coperti a due euro. Ora il coperto viaggia col totale in
+`recomputeOrderAfterItemChange()`, la migrazione raddrizza i conti ancora aperti che il difetto
+aveva già scritto, e la stampa smette di scrivere il calcolo quando i conti non tornano — servirà
+col menu fisso, dove il coperto non si divide più per il numero di commensali. Nel farlo il coperto
+è arrivato anche sulla stampa dal browser, che non l'aveva mai avuto.
 
 **Trovato mentre lo facevo, non sistemato:** la stampa termica non ha mai stampato consegna e
 imballo — solo l'encoder del browser lo fa. Su un conto con consegna, le righe non tornano col
