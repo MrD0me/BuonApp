@@ -272,6 +272,13 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   Anche la divisione del conto è poi passata nel pannello (2026-08-29), dietro il menu "Altro" e
   sempre dietro `split_checks_enabled`: i sotto-conti si elencano accanto ai totali e si incassano da
   lì. Ordina non ha più nessuna azione di cassa.
+- **Dopo una divisione, il pannello parlava per il primo ospite.** Il conto originale diventa la
+  quota del Guest 1, e il riquadro dei totali lo leggeva da lì: un tavolo da 111,50 mostrava 42,00
+  di cibo e il suo totale, con sotto le quote che sommate davano piu' del totale scritto sopra. Ora
+  quando c'e' una divisione i totali si leggono dall'ordine, e pagato/residuo sommano le quote.
+  Stessa cosa per la stampigliante in alto a destra, che stampava quella prima quota mentre il
+  pulsante "Stampa preconto" a fondo pannello stampava il conto intero: ora passano dalla stessa
+  porta.
 - **La finestra di pagamento ha perso lo sconto e ha guadagnato i pulsanti.** Lo sconto si fa prima,
   sull'ordine o sulla riga, così compare sul preconto che va al tavolo: scontarlo dopo la stampa
   vorrebbe dire che la carta in mano al cliente non dice quello che paga. E il metodo di pagamento

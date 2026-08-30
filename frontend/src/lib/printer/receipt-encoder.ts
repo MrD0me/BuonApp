@@ -296,8 +296,8 @@ export function buildClassicReceiptBytes(
   }
   if (Number(bill.cover_charge) > 0) {
     const heads = Number(bill.order?.guest_count || 0);
-    const perHead = heads > 0 ? Number(bill.cover_charge) / heads : 0;
-    const divides = heads > 0 && Math.abs(Number((perHead * heads).toFixed(2)) - Number(Number(bill.cover_charge).toFixed(2))) < 0.005;
+    const perHead = heads > 0 ? Number((Number(bill.cover_charge) / heads).toFixed(2)) : 0;
+    const divides = heads > 0 && !bill.split_group_id && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
     const coverLabel = divides ? `Cover ${heads} x ${formatAmount(perHead, currency, locale, trimDecimals)}` : 'Cover';
     enc.text(padRow(coverLabel, formatAmount(Number(bill.cover_charge), currency, locale, trimDecimals), cols)).newline();
   }

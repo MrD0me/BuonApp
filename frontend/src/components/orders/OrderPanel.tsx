@@ -775,10 +775,23 @@ export function OrderPanel({
             const payStatus = paymentStatusOf(order);
             const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
             const bill = order.bill;
-            const discount = bill ? Number(bill.discount_amount) : Number(order.discount_amount);
-            const subtotal = bill ? Number(bill.subtotal) : Number(order.subtotal);
-            const coverCharge = Number(bill ? bill.cover_charge || 0 : order.cover_charge || 0);
-            const total = bill ? Number(bill.total) : Number(order.total);
+            // With a split in place there is no bill that stands for the whole
+            // table: the original became the first share. Reading the summary
+            // off it put one guest's check where the order's own figures
+            // belong — 42,00 of food and 3,01 of cover for a table that ate
+            // 111,50 and sat four — and the shares listed underneath then added
+            // up to more than the total printed above them.
+            const fromOrder = splitBills.length > 0 || !bill;
+            const discount = fromOrder ? Number(order.discount_amount) : Number(bill.discount_amount);
+            const subtotal = fromOrder ? Number(order.subtotal) : Number(bill.subtotal);
+            const coverCharge = Number(fromOrder ? order.cover_charge || 0 : bill.cover_charge || 0);
+            const total = fromOrder ? Number(order.total) : Number(bill.total);
+            const paidSoFar = splitBills.length > 0
+              ? splitBills.reduce((sum, entry) => sum + Number(entry.paid_amount || 0), 0)
+              : Number(bill?.paid_amount || 0);
+            const stillOwed = splitBills.length > 0
+              ? splitBills.reduce((sum, entry) => sum + Number(entry.balance || 0), 0)
+              : Number(bill?.balance || 0);
 
   return (
     <>
@@ -822,7 +835,7 @@ export function OrderPanel({
             )}
             {order.bill && (
               <button
-                onClick={() => setConfirmPrintBillId(order.bill!.id)}
+                onClick={handlePrintBill}
                 disabled={printingBillId === order.bill.id}
                 className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-50 transition-colors"
                 title={(printHistory[order.bill.id]?.length ?? 0) > 0 ? tCommon('reprint') : tCommon('print')}
@@ -1013,8 +1026,8 @@ export function OrderPanel({
             </div>
             {bill && payStatus === 'partial' && (
               <div className="flex justify-between text-xs text-gray-500 pt-0.5">
-                <span>{tOrders('paid')} {fmt(Number(bill.paid_amount))}</span>
-                <span>{tOrders('balance')} {fmt(Number(bill.balance))}</span>
+                <span>{tOrders('paid')} {fmt(paidSoFar)}</span>
+                <span>{tOrders('balance')} {fmt(stillOwed)}</span>
               </div>
             )}
           </div>

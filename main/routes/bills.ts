@@ -396,7 +396,48 @@ interface OrderBillSyncValues {
   discountAmount: number;
   deliveryCharge: number;
   packagingCharge: number;
+  coverCharge: number;
   total: number;
+}
+
+interface SplitShareAmounts {
+  subtotal: number[];
+  discountAmount: number[];
+  deliveryCharge: number[];
+  packagingCharge: number[];
+  coverCharge: number[];
+  total: number[];
+}
+
+/**
+ * How one check's money is divided among its shares.
+ *
+ * The food follows the food: each share carries the value of the lines it was
+ * allocated. The cover does not — it is so much a head, and a share is a head.
+ * Split by what each guest ate, sitting down costs the steak more than the
+ * soup, and the table sees a cover per head nobody ever set: four covers at
+ * 2,00 came out as 3,01 for one guest and 1,89 for another.
+ */
+function allocateAcrossShares(
+  source: Pick<OrderBillSyncValues, 'subtotal' | 'discountAmount' | 'deliveryCharge' | 'packagingCharge' | 'coverCharge'>,
+  weights: number[],
+): SplitShareAmounts {
+  const split = (amount: number, by: number[]) =>
+    allocateMinorUnits(Math.round(Number(amount || 0) * 100), by).map((minor) => minor / 100);
+  const perHead = weights.map(() => 1);
+
+  const subtotal = split(source.subtotal, weights);
+  const discountAmount = split(source.discountAmount, weights);
+  const deliveryCharge = split(source.deliveryCharge, weights);
+  const packagingCharge = split(source.packagingCharge, weights);
+  const coverCharge = split(source.coverCharge, perHead);
+  // Each share's total is built from that share's own rows, so the printed
+  // check adds up in front of the guest. Allocating the total separately let
+  // it land a cent away from the lines above it.
+  const total = weights.map((_, index) => roundMoney(
+    subtotal[index] - discountAmount[index] + deliveryCharge[index] + packagingCharge[index] + coverCharge[index],
+  ));
+  return { subtotal, discountAmount, deliveryCharge, packagingCharge, coverCharge, total };
 }
 
 // Each check's share of the order, weighted by the value of the lines it was
@@ -449,33 +490,23 @@ export function syncUnpaidBillsForOrder(
   if (!splitBills) {
     const update = db.prepare(`
       UPDATE bills SET subtotal = ?, total = ?, balance = ?,
-        discount_amount = ?, delivery_charge = ?, packaging_charge = ?, updated_at = ?
+        discount_amount = ?, delivery_charge = ?, packaging_charge = ?, cover_charge = ?, updated_at = ?
       WHERE id = ?
     `);
     for (const bill of unpaidBills) {
       update.run(
         source.subtotal, billTotal, Math.max(0, billTotal - Number(bill.paid_amount || 0)),
-        source.discountAmount, source.deliveryCharge, source.packagingCharge, now(), bill.id,
+        source.discountAmount, source.deliveryCharge, source.packagingCharge, source.coverCharge, now(), bill.id,
       );
     }
     return;
   }
 
   const weights = getSplitBillAllocationWeights(db, orderId, bills);
-  const fields = {
-    subtotal: Math.round(source.subtotal * 100),
-    discountAmount: Math.round(source.discountAmount * 100),
-    deliveryCharge: Math.round(source.deliveryCharge * 100),
-    packagingCharge: Math.round(source.packagingCharge * 100),
-    total: Math.round(billTotal * 100),
-  };
-  const allocations = Object.fromEntries(Object.entries(fields).map(([field, value]) => [
-    field,
-    allocateMinorUnits(value, weights).map((minor) => minor / 100),
-  ])) as Record<keyof typeof fields, number[]>;
+  const allocations = allocateAcrossShares(source, weights);
   const update = db.prepare(`
     UPDATE bills SET subtotal = ?, discount_amount = ?,
-      delivery_charge = ?, packaging_charge = ?, total = ?, balance = ?, updated_at = ?
+      delivery_charge = ?, packaging_charge = ?, cover_charge = ?, total = ?, balance = ?, updated_at = ?
     WHERE id = ?
   `);
 
@@ -485,6 +516,7 @@ export function syncUnpaidBillsForOrder(
     update.run(
       allocations.subtotal[index], allocations.discountAmount[index],
       allocations.deliveryCharge[index], allocations.packagingCharge[index],
+      allocations.coverCharge[index],
       total, Math.max(0, total - Number(bill.paid_amount || 0)), now(), bill.id,
     );
   });
@@ -543,12 +575,13 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
         check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)
       );
 
-      const fields = ['subtotal', 'discount_amount', 'delivery_charge', 'packaging_charge', 'cover_charge', 'total'] as const;
-      const allocations: Record<string, number[]> = {};
-      for (const field of fields) {
-        const totalMinor = Math.round(Number(txnSource[field] || 0) * 100);
-        allocations[field] = allocateMinorUnits(totalMinor, weights).map((minor) => minor / 100);
-      }
+      const allocations = allocateAcrossShares({
+        subtotal: Number(txnSource.subtotal || 0),
+        discountAmount: Number(txnSource.discount_amount || 0),
+        deliveryCharge: Number(txnSource.delivery_charge || 0),
+        packagingCharge: Number(txnSource.packaging_charge || 0),
+        coverCharge: Number(txnSource.cover_charge || 0),
+      }, weights);
 
       const billIds: number[] = [];
       txnNormalized.forEach((check, index) => {
@@ -560,11 +593,11 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
           // leaving it open would strand the whole order as unpaid forever.
           const settledNow = allocations.total[index] <= 0 ? 'paid' : 'unpaid';
           db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, cover_charge = ?, total = ?, balance = ?, payment_status = ?, paid_at = ?, updated_at = ? WHERE id = ?`)
-            .run(groupId, check.label, allocations.subtotal[index], allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.cover_charge[index], allocations.total[index], allocations.total[index], settledNow, settledNow === 'paid' ? now() : null, now(), txnSource.id);
+            .run(groupId, check.label, allocations.subtotal[index], allocations.discountAmount[index], allocations.deliveryCharge[index], allocations.packagingCharge[index], allocations.coverCharge[index], allocations.total[index], allocations.total[index], settledNow, settledNow === 'paid' ? now() : null, now(), txnSource.id);
           billId = Number(txnSource.id);
         } else {
           const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, cover_charge, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`)
-            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.cover_charge[index], allocations.total[index], allocations.total[index], allocations.total[index] <= 0 ? 'paid' : 'unpaid', groupId, check.label, now(), now());
+            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.discountAmount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.deliveryCharge[index], allocations.packagingCharge[index], allocations.coverCharge[index], allocations.total[index], allocations.total[index], allocations.total[index] <= 0 ? 'paid' : 'unpaid', groupId, check.label, now(), now());
           billId = Number(inserted.lastInsertRowid);
         }
         billIds.push(billId);

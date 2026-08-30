@@ -124,7 +124,49 @@ async function main() {
     // invented a price per cover nobody had ever set.
     assertEqual(Number(billAfter.data.bill.cover_charge), 12.5, 'and so does the cover line itself');
 
-    console.log('\n6. What it refuses');
+    console.log('\n6. Splitting the check divides the cover per head, not per plate');
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'split_checks_enabled'").run();
+    seedProduct(db, 'prod-cheap', 'cat-cover', 'Caffe', 100);
+
+    const shared = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        guest_count: 4,
+        items: [{ product_id: 'prod-cover', quantity: 1 }, { product_id: 'prod-cheap', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    const steak = shared.data.order.items.find((item: any) => item.product_id === 'prod-cover');
+    const coffee = shared.data.order.items.find((item: any) => item.product_id === 'prod-cheap');
+    assertEqual(Number(shared.data.order.cover_charge), 10, 'four covers on the shared table');
+
+    const wholeBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: shared.data.order.id }, headers: authHeader,
+    });
+    const split = await api(baseUrl, `/api/bills/${wholeBill.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Guest 1', items: [{ order_item_id: steak.id, quantity: 1 }] },
+        { label: 'Guest 2', items: [{ order_item_id: coffee.id, quantity: 1 }] },
+      ] },
+      headers: authHeader,
+    });
+    assertEqual(split.status, 201, 'the check splits');
+    const [first, second] = split.data.bills;
+    // The one who took the steak was paying 9,90 of the cover and the one who
+    // took the coffee 0,10: it was being spread by the price of the food.
+    assertEqual(Number(first.cover_charge), 5, 'the steak carries its own head and no more');
+    assertEqual(Number(second.cover_charge), 5, 'and so does the coffee');
+    assertEqual(Number(first.total), 1005, 'the share adds up: its own food plus its own cover');
+    assertEqual(Number(second.total), 105, 'and so does the other');
+    assertEqual(
+      Number((Number(first.total) + Number(second.total)).toFixed(2)),
+      Number(wholeBill.data.bill.total),
+      'and together they are still the whole check',
+    );
+
+    console.log('\n7. What it refuses');
     assertEqual(
       (await api(baseUrl, `/api/orders/${seated.id}/guests`, { method: 'PATCH', body: { guest_count: 0 }, headers: authHeader })).status,
       400,

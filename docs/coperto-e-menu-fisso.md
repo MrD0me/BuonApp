@@ -71,6 +71,14 @@ aveva già scritto, e la stampa smette di scrivere il calcolo quando i conti non
 col menu fisso, dove il coperto non si divide più per il numero di commensali. Nel farlo il coperto
 è arrivato anche sulla stampa dal browser, che non l'aveva mai avuto.
 
+**Il coperto si divide a testa (v90).** Dividendo il conto veniva spartito col cibo, a peso: quattro
+coperti da 2,00 diventavano 3,01 sulla quota di chi aveva preso la tagliata e 1,89 su chi aveva
+preso la zuppa. Ma il coperto e' tanto a testa, e una quota e' una testa: ora si divide in parti
+uguali, il centesimo dispari alle prime quote. Il totale di ogni quota si ricompone dalle sue righe
+invece di essere spartito per conto suo, cosi' il conto in mano al cliente torna riga per riga. E
+sulla quota di un conto diviso la stampa scrive `Coperto` e basta: il numero di teste del tavolo non
+descrive quella quota.
+
 **Trovato mentre lo facevo, non sistemato:** la stampa termica non ha mai stampato consegna e
 imballo — solo l'encoder del browser lo fa. Su un conto con consegna, le righe non tornano col
 totale. Qui non si vede perché delivery e asporto sono spenti, ma è un difetto vero e resta lì.

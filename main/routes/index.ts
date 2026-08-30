@@ -341,6 +341,7 @@ export function registerRoutes(app: Express): void {
           discountAmount: newDiscountAmount,
           deliveryCharge: order.delivery_charge || 0,
           packagingCharge: order.packaging_charge || 0,
+          coverCharge: order.cover_charge || 0,
           total,
         });
 
@@ -459,6 +460,7 @@ export function registerRoutes(app: Express): void {
           discountAmount: newDiscountAmount,
           deliveryCharge: order.delivery_charge || 0,
           packagingCharge: order.packaging_charge || 0,
+          coverCharge: order.cover_charge || 0,
           total,
         });
 

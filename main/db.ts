@@ -4317,6 +4317,62 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 90,
+    name: 'resplit_cover_charge_per_head',
+    up: () => {
+      // Splitting a check divided the cover by what each guest ate, along with
+      // the food. But a cover is so much a head, and a share is a head: four
+      // covers at two euro came out as 3,01 on the share that took the steak
+      // and 1,89 on the one that took the soup, and each share's own line then
+      // announced a price per cover nobody had ever set. Now it splits evenly,
+      // and this re-divides the groups that were split under the old rule.
+      //
+      // Only groups where no share has taken money — the same condition under
+      // which the floor could unsplit and split again by hand, which is all
+      // this does for them.
+      const groups = db.prepare(`
+        SELECT split_group_id AS id FROM bills
+        WHERE split_group_id IS NOT NULL
+        GROUP BY split_group_id
+        HAVING SUM(CASE WHEN payment_status != 'unpaid' OR COALESCE(paid_amount, 0) > 0 THEN 1 ELSE 0 END) = 0
+      `).all() as { id: string }[];
+      if (groups.length === 0) return;
+
+      const readShares = db.prepare('SELECT * FROM bills WHERE split_group_id = ? ORDER BY id');
+      const readOrderCover = db.prepare('SELECT COALESCE(cover_charge, 0) AS cover FROM orders WHERE id = ?');
+      const writeShare = db.prepare('UPDATE bills SET cover_charge = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?');
+      let repaired = 0;
+
+      for (const group of groups) {
+        const shares = readShares.all(group.id) as any[];
+        if (shares.length === 0) continue;
+        const orderCover = Number((readOrderCover.get(shares[0].order_id) as any)?.cover || 0);
+
+        // Even to the cent, the odd cent to the first shares: the same
+        // largest-remainder rule the split itself uses.
+        const totalMinor = Math.round(orderCover * 100);
+        const base = Math.floor(totalMinor / shares.length);
+        const spare = totalMinor - base * shares.length;
+        const target = shares.map((_, index) => (base + (index < spare ? 1 : 0)) / 100);
+        if (shares.every((share, index) => Math.abs(Number(share.cover_charge || 0) - target[index]) < 0.005)) continue;
+
+        const stamp = new Date().toISOString();
+        shares.forEach((share, index) => {
+          const cover = target[index];
+          const total = Math.round((
+            Number(share.subtotal || 0) - Number(share.discount_amount || 0)
+            + Number(share.delivery_charge || 0) + Number(share.packaging_charge || 0) + cover
+          ) * 100) / 100;
+          writeShare.run(cover, total, Math.max(0, total), stamp, share.id);
+        });
+        repaired += 1;
+      }
+      if (repaired > 0) {
+        console.log(`[DB] v90: cover charge re-divided per head on ${repaired} split check(s)`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
