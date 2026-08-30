@@ -15,6 +15,7 @@ import {
   serializeOrderTypes,
   validateOrderTypes,
 } from '../lib/order-types';
+import { COVER_CHARGE_SETTING_KEY, parseCoverChargeAmount } from '../money';
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -60,6 +61,8 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   // Unset means every type, so a database from before the setting existed
   // keeps offering the same three buttons it always did.
   [ORDER_TYPES_SETTING_KEY]: DEFAULT_ORDER_TYPES,
+  // No cover charge until the house sets one.
+  [COVER_CHARGE_SETTING_KEY]: '0',
   // Iran locale display preferences (Batch G, Refs #241) — display-only.
   currency_display: 'rial',
   number_digits: 'locale',
@@ -538,6 +541,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'customers_enabled',
   'split_checks_enabled',
   ORDER_TYPES_SETTING_KEY,
+  COVER_CHARGE_SETTING_KEY,
   'currency_display', 'number_digits', 'calendar',
 ]);
 
@@ -630,6 +634,15 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
         return res.status(400).json({ error: check.error });
       }
       valueToPersist = serializeOrderTypes(submitted as string[]);
+    }
+    // Stored as a plain number: anything that is not a positive amount means
+    // the house does not charge for the cover, and the line disappears.
+    if (req.params.key === COVER_CHARGE_SETTING_KEY) {
+      const amount = parseCoverChargeAmount(String(value));
+      if (String(value).trim() !== '' && !Number.isFinite(Number(String(value).replace(',', '.')))) {
+        return res.status(400).json({ error: 'The cover charge must be a number' });
+      }
+      valueToPersist = String(amount);
     }
     if (req.params.key === 'business_phone') {
       const effectiveCountry = getAllSettings(db).country || 'IN';

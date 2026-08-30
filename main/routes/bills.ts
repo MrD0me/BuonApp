@@ -17,7 +17,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { requireRole } from '../middleware/security';
-import { roundMoney } from '../money';
+import { orderCharges, roundMoney } from '../money';
 
 const router = Router();
 
@@ -282,6 +282,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
         const orderDiscountAmt   = order.discount_amount || 0;
         const orderDelivery      = order.delivery_charge || 0;
         const orderPackaging     = order.packaging_charge|| 0;
+        const orderCover         = order.cover_charge    || 0;
         const orderTotal         = order.total           || 0;
 
         const roundedOrderTotal = roundMoney(orderTotal);
@@ -304,6 +305,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
                 discount_reason= ?,
                 delivery_charge= ?,
                 packaging_charge= ?,
+                cover_charge   = ?,
                 total          = ?,
                 balance        = ?,
                 updated_at     = ?
@@ -311,7 +313,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
           `).run(
             orderSubtotal,
             orderDiscountAmt, order.discount_type, order.discount_value, order.discount_reason,
-            orderDelivery, orderPackaging,
+            orderDelivery, orderPackaging, orderCover,
             roundedOrderTotal, newBalance, now(),
             existingBill.id
           );
@@ -329,17 +331,18 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
       const discountAmount = order.discount_amount || 0;
       const deliveryCharge = order.delivery_charge || 0;
       const packagingCharge = order.packaging_charge || 0;
+      const coverCharge = order.cover_charge || 0;
       const total = roundMoney(order.total || 0);
 
       const runResult = db.prepare(`
         INSERT INTO bills (bill_number, order_id, customer_id, subtotal,
           discount_amount, discount_type, discount_value, discount_reason,
-          delivery_charge, packaging_charge, total, paid_amount, balance, payment_status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
+          delivery_charge, packaging_charge, cover_charge, total, paid_amount, balance, payment_status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
       `).run(
         billNumber, order_id, order.customer_id, subtotal,
         discountAmount, order.discount_type, order.discount_value, order.discount_reason,
-        deliveryCharge, packagingCharge, total, 0, total, now(), now()
+        deliveryCharge, packagingCharge, coverCharge, total, 0, total, now(), now()
       );
 
       const newBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(runResult.lastInsertRowid));
@@ -540,7 +543,7 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
         check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)
       );
 
-      const fields = ['subtotal', 'discount_amount', 'delivery_charge', 'packaging_charge', 'total'] as const;
+      const fields = ['subtotal', 'discount_amount', 'delivery_charge', 'packaging_charge', 'cover_charge', 'total'] as const;
       const allocations: Record<string, number[]> = {};
       for (const field of fields) {
         const totalMinor = Math.round(Number(txnSource[field] || 0) * 100);
@@ -556,12 +559,12 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
           // owed on it, and the payment route refuses a zero balance, so
           // leaving it open would strand the whole order as unpaid forever.
           const settledNow = allocations.total[index] <= 0 ? 'paid' : 'unpaid';
-          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, total = ?, balance = ?, payment_status = ?, paid_at = ?, updated_at = ? WHERE id = ?`)
-            .run(groupId, check.label, allocations.subtotal[index], allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.total[index], allocations.total[index], settledNow, settledNow === 'paid' ? now() : null, now(), txnSource.id);
+          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, cover_charge = ?, total = ?, balance = ?, payment_status = ?, paid_at = ?, updated_at = ? WHERE id = ?`)
+            .run(groupId, check.label, allocations.subtotal[index], allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.cover_charge[index], allocations.total[index], allocations.total[index], settledNow, settledNow === 'paid' ? now() : null, now(), txnSource.id);
           billId = Number(txnSource.id);
         } else {
-          const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`)
-            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.total[index], allocations.total[index], allocations.total[index] <= 0 ? 'paid' : 'unpaid', groupId, check.label, now(), now());
+          const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, cover_charge, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`)
+            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.cover_charge[index], allocations.total[index], allocations.total[index], allocations.total[index] <= 0 ? 'paid' : 'unpaid', groupId, check.label, now(), now());
           billId = Number(inserted.lastInsertRowid);
         }
         billIds.push(billId);
@@ -1097,7 +1100,7 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
     // discounted total: editing 10% to 20% must not compound the first cut.
     const discountedSubtotal = Math.max(0, bill.subtotal - discountAmount);
     const newTotal = roundMoney(discountedSubtotal
-      + (bill.delivery_charge || 0) + (bill.packaging_charge || 0) + (bill.service_charge || 0));
+      + orderCharges(bill));
     const newBalance = Math.max(0, newTotal - (bill.paid_amount || 0));
 
     const updatedBill = withTxn(() => {
@@ -1226,12 +1229,12 @@ router.post('/:id/unsplit', requireRole('owner', 'manager', 'cashier'), (req: Re
       db.prepare('DELETE FROM bill_items WHERE bill_id = ?').run(keep.id);
       db.prepare(`
         UPDATE bills SET split_group_id = NULL, split_label = NULL,
-          subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?,
+          subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, cover_charge = ?,
           total = ?, paid_amount = 0, balance = ?, payment_status = 'unpaid',
           payment_details = NULL, paid_at = NULL, updated_at = ?
         WHERE id = ?
       `).run(
-        order.subtotal, order.discount_amount, order.delivery_charge || 0, order.packaging_charge || 0,
+        order.subtotal, order.discount_amount, order.delivery_charge || 0, order.packaging_charge || 0, order.cover_charge || 0,
         order.total, order.total, now(), keep.id,
       );
       return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(keep.id));

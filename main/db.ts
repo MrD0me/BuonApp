@@ -10,6 +10,7 @@ import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, defaultTableSize, createGridPlacer } from './lib/table-geometry';
 import { DEFAULT_ORDER_TYPES, ORDER_TYPES_SETTING_KEY } from './lib/order-types';
+import { COVER_CHARGE_SETTING_KEY } from './money';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -4273,6 +4274,22 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 88,
+    name: 'add_cover_charge',
+    up: () => {
+      // The covers were counted and never priced. Existing orders keep a zero
+      // cover: charging one after the fact would rewrite bills already handed
+      // to guests.
+      if (!getColumns(db, 'orders').includes('cover_charge')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN cover_charge REAL DEFAULT 0`);
+      }
+      if (!getColumns(db, 'bills').includes('cover_charge')) {
+        db.exec(`ALTER TABLE bills ADD COLUMN cover_charge REAL DEFAULT 0`);
+      }
+      insertSettingIfMissing(COVER_CHARGE_SETTING_KEY, '0');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4606,6 +4623,9 @@ function createSchema(): void {
       special_instructions TEXT,
       packaging_charge REAL DEFAULT 0,
       delivery_charge REAL DEFAULT 0,
+      -- So much a head for laying the table. Computed from guest_count and the
+      -- configured price; zero when the house does not charge one.
+      cover_charge REAL DEFAULT 0,
       status TEXT DEFAULT 'pending',
       subtotal REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
@@ -4680,6 +4700,7 @@ function createSchema(): void {
       discount_reason TEXT,
       delivery_charge REAL DEFAULT 0,
       packaging_charge REAL DEFAULT 0,
+      cover_charge REAL DEFAULT 0,
       round_off REAL DEFAULT 0,
       total REAL DEFAULT 0,
       paid_amount REAL DEFAULT 0,
@@ -4827,6 +4848,7 @@ function seedInstallDefaults(): void {
   insert('kds_enabled', 'true');
   insert('customers_enabled', 'true');
   insert(ORDER_TYPES_SETTING_KEY, DEFAULT_ORDER_TYPES);
+  insert(COVER_CHARGE_SETTING_KEY, '0');
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
   insert('printer_trim_decimals', 'false');

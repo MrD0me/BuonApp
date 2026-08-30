@@ -173,6 +173,10 @@ export function OrderPanel({
   const [previewingBillId, setPreviewingBillId] = useState<number | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [splitBill, setSplitBill] = useState<Bill | null>(null);
+  // How many are actually eating. Fixed when the order was taken and never
+  // touchable again, which with a cover charge on it leaves the bill wrong the
+  // moment somebody joins the table.
+  const [guestEdit, setGuestEdit] = useState<string | null>(null);
 
   const [cancelModal, setCancelModal] = useState<CancelModal | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState<number | null>(null);
@@ -628,6 +632,26 @@ export function OrderPanel({
    * catalogue and the add-on choices — the picker that used to live here could
    * not order a pizza with extra anchovies.
    */
+  const saveGuestCount = async () => {
+    if (guestEdit === null) return;
+    const parsed = Number(guestEdit);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 99) {
+      toast.error(tOrders('guestsInvalid'));
+      return;
+    }
+    setSavingRow(true);
+    try {
+      await api.patch(`/orders/${order.id}/guests`, { guest_count: parsed });
+      toast.success(tOrders('guestsSaved'));
+      setGuestEdit(null);
+      onChanged();
+    } catch {
+      toast.error(tOrders('guestsFailed'));
+    } finally {
+      setSavingRow(false);
+    }
+  };
+
   const handleAddItems = async () => {
     if (cartStore.items.length > 0) {
       const proceed = await confirm(tOrders('addItemsCartClearConfirm'));
@@ -753,6 +777,7 @@ export function OrderPanel({
             const bill = order.bill;
             const discount = bill ? Number(bill.discount_amount) : Number(order.discount_amount);
             const subtotal = bill ? Number(bill.subtotal) : Number(order.subtotal);
+            const coverCharge = Number(bill ? bill.cover_charge || 0 : order.cover_charge || 0);
             const total = bill ? Number(bill.total) : Number(order.total);
 
   return (
@@ -973,6 +998,15 @@ export function OrderPanel({
                 <span className="text-purple-600">-{fmt(discount)}</span>
               </div>
             )}
+            {coverCharge > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">
+                  {tOrders('coverCharge')}
+                  {order.guest_count ? ` (${order.guest_count})` : ''}
+                </span>
+                <span className="text-gray-700">{fmt(coverCharge)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-base font-bold pt-1 border-t border-gray-100">
               <span className="text-gray-900">{tCommon('total')}</span>
               <span className="text-gray-900">{fmt(total)}</span>
@@ -1137,6 +1171,12 @@ export function OrderPanel({
                   })}>
                     <Percent size={14} className="me-2" />
                     {tOrders('orderDiscountAction')}
+                  </DropdownMenuItem>
+                )}
+                {order.type === 'dine_in' && splitBills.length === 0 && (
+                  <DropdownMenuItem onClick={() => setGuestEdit(String(order.guest_count || 1))}>
+                    <Users size={14} className="me-2" />
+                    {tOrders('changeGuests')}
                   </DropdownMenuItem>
                 )}
                 {splitBills.length > 0 && !splitBills.some((entry) => Number(entry.paid_amount || 0) > 0) && (
@@ -1564,6 +1604,52 @@ placeholder={tOrders('managerPin')}
           onClose={() => setSplitBill(null)}
           onSplit={() => { setSplitBill(null); onChanged(); }}
         />
+      )}
+
+      {/* How many are at the table. Its own little window because it changes
+          what the guests pay, not just what the screen says. */}
+      {guestEdit !== null && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-xs">
+            <h3 className="font-bold text-gray-900 mb-1">{tOrders('changeGuests')}</h3>
+            <p className="text-sm text-gray-500 mb-4">{tOrders('changeGuestsHint')}</p>
+            <div className="flex items-center justify-center gap-3 mb-5">
+              <button
+                type="button"
+                onClick={() => setGuestEdit(String(Math.max(1, Number(guestEdit) - 1)))}
+                className="size-9 rounded-full bg-gray-100 flex items-center justify-center"
+                aria-label={tPos('decreasePax')}
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min="1"
+                max="99"
+                value={guestEdit}
+                onChange={(e) => setGuestEdit(e.target.value)}
+                className="w-16 text-center text-lg font-semibold border border-gray-300 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-brand"
+                dir="ltr"
+              />
+              <button
+                type="button"
+                onClick={() => setGuestEdit(String(Math.min(99, Number(guestEdit) + 1)))}
+                className="size-9 rounded-full bg-gray-100 flex items-center justify-center"
+                aria-label={tPos('increasePax')}
+              >
+                +
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setGuestEdit(null)} disabled={savingRow}>
+                {tCommon('cancel')}
+              </Button>
+              <Button type="button" className="flex-1" onClick={saveGuestCount} disabled={savingRow}>
+                {tCommon('save')}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {ConfirmDialog}

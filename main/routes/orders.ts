@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate } from '../db';
-import { roundMoney } from '../money';
+import { COVER_CHARGE_SETTING_KEY, computeCoverCharge, orderCharges, parseCoverChargeAmount, roundMoney } from '../money';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
@@ -441,6 +441,12 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
     const db = getDatabase();
 
+    // So much a head, from the setting. A takeaway is not a laid table, so it
+    // pays no cover however many people are eating out of the bag.
+    const coverCharge = type === 'dine_in'
+      ? computeCoverCharge(guest_count, parseCoverChargeAmount(getSettingValue(COVER_CHARGE_SETTING_KEY)))
+      : 0;
+
     try {
       validateOrderNotes(db, special_instructions);
       for (const item of items) {
@@ -489,11 +495,11 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
       const orderResult = db.prepare(`
         INSERT INTO orders (order_number, table_id, table_label, room_label, service_day_id, customer_id, user_id, type,
-          guest_count, special_instructions, packaging_charge, delivery_charge, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          guest_count, special_instructions, packaging_charge, delivery_charge, cover_charge, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `).run(orderNumber, table_id || null, orderTableRow?.number ?? null, orderTableRow?.room ?? null,
         serviceDay.id, customer_id || null, authenticatedUserId, type, guest_count || null,
-        special_instructions || null, packaging_charge || 0, delivery_charge || 0, now(), now());
+        special_instructions || null, packaging_charge || 0, delivery_charge || 0, coverCharge, now(), now());
 
       const orderId = orderResult.lastInsertRowid;
 
@@ -564,7 +570,7 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
         }
       }
 
-      const total = roundMoney(subtotal + (delivery_charge || 0) + (packaging_charge || 0));
+      const total = roundMoney(subtotal + orderCharges({ delivery_charge, packaging_charge, cover_charge: coverCharge }));
 
       db.prepare('UPDATE orders SET subtotal = ?, total = ?, updated_at = ? WHERE id = ?')
         .run(subtotal, total, now(), orderId);
@@ -763,8 +769,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
       }
 
       const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
-      const total = roundMoney(discountedSubtotal
-        + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0));
+      const total = roundMoney(discountedSubtotal + orderCharges(currentOrder));
 
       // Update order totals and optionally update order-level notes
       if (special_instructions !== undefined) {
@@ -1172,8 +1177,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
       // The discount always applies to the stored subtotal, so calling this
       // endpoint repeatedly does not compound the reduction each time.
       const discountedSubtotal = Math.max(0, currentOrder.subtotal - discountAmount);
-      const newTotal = roundMoney(discountedSubtotal
-        + (currentOrder.packaging_charge || 0) + (currentOrder.delivery_charge || 0));
+      const newTotal = roundMoney(discountedSubtotal + orderCharges(currentOrder));
 
       db.prepare(`
         UPDATE orders SET discount_amount = ?, discount_type = ?, discount_value = ?,
@@ -1241,8 +1245,7 @@ function recomputeOrderAfterItemChange(db: ReturnType<typeof getDatabase>, order
   }
 
   const discountedSubtotal = Math.max(0, orderSubtotal - newOrderDiscount);
-  const orderTotal = roundMoney(discountedSubtotal
-    + (order.packaging_charge || 0) + (order.delivery_charge || 0));
+  const orderTotal = roundMoney(discountedSubtotal + orderCharges(order));
 
   db.prepare(`
     UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
@@ -1449,6 +1452,53 @@ router.patch('/:id/items/:itemId/price', orderWriteRateLimit, requireRole('owner
     notifyOrderUpdated();
 
     res.json({ item: updatedItem });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+  }
+});
+
+/**
+ * Corrects how many people are actually eating.
+ *
+ * The number is picked when the order is taken and was never touchable again;
+ * with a cover charge on it that leaves the bill wrong the moment a friend
+ * turns up late. Changing it re-prices the cover and follows the change
+ * through to an unpaid bill, exactly like a row edit does.
+ */
+router.patch('/:id/guests', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({ error: 'Cannot change the covers on a completed or cancelled order' });
+    }
+    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
+      return res.status(409).json({ error: 'Covers cannot be changed after a check has been split' });
+    }
+
+    const { guest_count } = req.body || {};
+    if (!Number.isSafeInteger(guest_count) || guest_count < 1 || guest_count > 99) {
+      return res.status(400).json({ error: 'guest_count must be a whole number between 1 and 99' });
+    }
+
+    const coverCharge = order.type === 'dine_in'
+      ? computeCoverCharge(guest_count, parseCoverChargeAmount(getSettingValue(COVER_CHARGE_SETTING_KEY)))
+      : 0;
+
+    const updated = withTxn(() => {
+      db.prepare('UPDATE orders SET guest_count = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
+        .run(guest_count, coverCharge, now(), req.params.id);
+      recomputeOrderAfterItemChange(db, String(req.params.id), { ...order, cover_charge: coverCharge });
+      return parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id));
+    });
+
+    notifyOrderUpdated();
+
+    res.json({ order: updated });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });

@@ -868,6 +868,16 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   if (bill.discount_amount > 0) {
     lines.push(...financialRows(L.discount, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
   }
+  // So much a head. Printed only when there is one, and it says the arithmetic
+  // out loud — "Coperto 4 x 2,00" — because a guest who is charged for the
+  // table being laid is owed the reason.
+  if (Number(bill.cover_charge) > 0) {
+    const heads = Number(order?.guest_count || 0);
+    const coverLabel = heads > 0
+      ? `${L.cover} ${heads} x ${formatCurrency(Number(bill.cover_charge) / heads, prefix, locale, trimDecimals)}`
+      : L.cover;
+    lines.push(...financialRows(coverLabel, formatCurrency(bill.cover_charge, prefix, locale, trimDecimals), cols));
+  }
   lines.push(...financialRows(L.total, formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
 
   if (bill.payment_details) {
@@ -955,6 +965,16 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push(...financialRows(L.subtotal, formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
   if (bill.discount_amount > 0) {
     lines.push(...financialRows(L.discount, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
+  }
+  // So much a head. Printed only when there is one, and it says the arithmetic
+  // out loud — "Coperto 4 x 2,00" — because a guest who is charged for the
+  // table being laid is owed the reason.
+  if (Number(bill.cover_charge) > 0) {
+    const heads = Number(order?.guest_count || 0);
+    const coverLabel = heads > 0
+      ? `${L.cover} ${heads} x ${formatCurrency(Number(bill.cover_charge) / heads, prefix, locale, trimDecimals)}`
+      : L.cover;
+    lines.push(...financialRows(coverLabel, formatCurrency(bill.cover_charge, prefix, locale, trimDecimals), cols));
   }
   lines.push(...financialRows(L.total, formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
 
@@ -1176,6 +1196,7 @@ interface ReceiptLabels {
   qtyCol: string;
   amountCol: string;
   note: string;
+  cover: string;
   offered: string;
   pointsRedeemed: string;
   pointsEarned: string;
@@ -1201,6 +1222,7 @@ const RECEIPT_LABELS: Record<string, ReceiptLabels> = {
     qtyCol: 'Qty',
     amountCol: 'Amount',
     note: 'Note: ',
+    cover: 'Cover',
     offered: 'On the house',
     pointsRedeemed: 'Points Redeemed',
     pointsEarned: 'Points Earned',
@@ -1224,6 +1246,7 @@ const RECEIPT_LABELS: Record<string, ReceiptLabels> = {
     qtyCol: 'Qta',
     amountCol: 'Importo',
     note: 'Nota: ',
+    cover: 'Coperto',
     offered: 'Offerto',
     pointsRedeemed: 'Punti usati',
     pointsEarned: 'Punti accumulati',

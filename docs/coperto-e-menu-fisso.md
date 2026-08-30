@@ -1,7 +1,7 @@
 # Coperto e menu fisso
 
-**Stato:** ACTIVE DESIGN. Decisioni prese con l'utente il 2026-08-30. Nessuna riga di codice
-scritta.
+**Stato:** ACTIVE DESIGN. Decisioni prese con l'utente il 2026-08-30. **Il passo 1, il coperto, è
+fatto** (migrazione v88); restano i passi 2-4, il menu fisso.
 
 ## Contesto
 
@@ -51,6 +51,20 @@ propria.
 
 Va fatto **prima** del menu fisso: è indipendente, è mezza giornata, e il menu ne ha bisogno per
 poter dire "coperto incluso".
+
+**Fatto il 2026-08-30.** Come è venuto, con due scelte prese strada facendo:
+
+- **L'asporto non paga il coperto**, qualunque sia il numero di persone: non è un tavolo apparecchiato.
+- **Le sei somme del totale sono diventate una.** Consegna, imballo e coperto si sommano in
+  `orderCharges()` (`main/money.ts`), chiamata da tutti i punti che ricostruiscono un totale. Erano
+  sei formule scritte a mano, e il coperto sarebbe stata la settima occasione di dimenticarne una.
+- `PATCH /orders/:id/guests` corregge i coperti a ordine aperto e riprezza; rifiutata su ordine
+  chiuso o conto diviso, come le altre modifiche che spostano denaro.
+- Sul conto la riga dice il conto della serva: `Coperto 4 x 2,00`.
+
+**Trovato mentre lo facevo, non sistemato:** la stampa termica non ha mai stampato consegna e
+imballo — solo l'encoder del browser lo fa. Su un conto con consegna, le righe non tornano col
+totale. Qui non si vede perché delivery e asporto sono spenti, ma è un difetto vero e resta lì.
 
 ## B. Il menu fisso
 

@@ -288,6 +288,9 @@ export default function SettingsPage() {
   const [customersEnabledSetting, setCustomersEnabledSetting] = useState(true);
   const [savingCustomersEnabled, setSavingCustomersEnabled] = useState(false);
   const [orderTypesSetting, setOrderTypesSetting] = useState<SelectableOrderType[]>([...SELECTABLE_ORDER_TYPES]);
+  const [coverCharge, setCoverCharge] = useState('0');
+  const [savedCoverCharge, setSavedCoverCharge] = useState('0');
+  const [savingCoverCharge, setSavingCoverCharge] = useState(false);
   const [savingOrderTypes, setSavingOrderTypes] = useState(false);
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -1329,6 +1332,12 @@ export default function SettingsPage() {
       posSettings.setCustomersEnabled(enabled);
     }).catch(() => {});
 
+    api.get('/settings/cover_charge_amount').then((res) => {
+      const amount = String(res.data.setting?.value ?? '0');
+      setCoverCharge(amount);
+      setSavedCoverCharge(amount);
+    }).catch(() => {});
+
     api.get(`/settings/${ORDER_TYPES_SETTING_KEY}`).then((res) => {
       const types = parseOrderTypes(res.data.setting?.value);
       setOrderTypesSetting(types);
@@ -1524,6 +1533,31 @@ export default function SettingsPage() {
    * enabled could not take an order at all — so the last one refuses here
    * instead of coming back as a failed save.
    */
+  /**
+   * So much a head for laying the table. Zero — the default — means the house
+   * charges none, and the line disappears from every bill.
+   */
+  const saveCoverCharge = async () => {
+    if (savingCoverCharge) return;
+    const parsed = Number(coverCharge.replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      toast.error(t('coverChargeInvalid'));
+      return;
+    }
+    setSavingCoverCharge(true);
+    try {
+      const { data } = await api.put('/settings/cover_charge_amount', { value: String(parsed) });
+      const stored = String(data.setting?.value ?? parsed);
+      setCoverCharge(stored);
+      setSavedCoverCharge(stored);
+      toast.success(t('coverChargeSaved'));
+    } catch {
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingCoverCharge(false);
+    }
+  };
+
   const saveOrderTypes = async (type: SelectableOrderType, enabled: boolean) => {
     if (savingOrderTypes) return;
     const next = enabled
@@ -2326,6 +2360,30 @@ export default function SettingsPage() {
                     />
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* The cover charge, so much a head. It belongs with the order
+                types: both decide what the table is charged for before a
+                single dish is chosen. */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <Users size={20} className="text-gray-500" />
+                <h2 className="font-semibold text-gray-900">{t('coverCharge')}</h2>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">{t('coverChargeHint')}</p>
+              <div className="flex items-center gap-2 max-w-xs">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={coverCharge}
+                  onChange={(e) => setCoverCharge(e.target.value)}
+                  className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  dir="ltr"
+                />
+                <Button type="button" onClick={saveCoverCharge} disabled={savingCoverCharge || coverCharge === savedCoverCharge}>
+                  {t('save')}
+                </Button>
               </div>
             </div>
 

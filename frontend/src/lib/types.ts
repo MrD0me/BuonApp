@@ -244,6 +244,8 @@ export interface Order {
   discount_amount: number;
   delivery_charge: number;
   packaging_charge?: number;
+  /** So much a head for laying the table; zero when the house charges none. */
+  cover_charge?: number;
   total: number;
   guest_count: number | null;
   special_instructions: string | null;
@@ -290,6 +292,8 @@ export interface Bill {
   service_charge: number;
   delivery_charge: number;
   packaging_charge?: number;
+  /** So much a head for laying the table; zero when the house charges none. */
+  cover_charge?: number;
   total: number;
   paid_amount: number;
   balance: number;
