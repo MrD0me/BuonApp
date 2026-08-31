@@ -9,7 +9,9 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
-import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
+import type { Addon, Category, Product, Table, Bill, Order, CartItem, FixedMenuSelection } from '@/lib/types';
+import { isFixedMenu } from '@/lib/fixed-menu';
+import { cartItemToPayload } from '@/lib/cart-payload';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
@@ -19,6 +21,7 @@ import {
 import ProductGrid from '@/components/pos/ProductGrid';
 import CartPanel from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
+import FixedMenuPicker from '@/components/pos/FixedMenuPicker';
 import CustomerSearch from '@/components/pos/CustomerSearch';
 import TablePickerModal from '@/components/pos/TablePickerModal';
 import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
@@ -94,6 +97,11 @@ export default function POSPage() {
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
+  const [menuProduct, setMenuProduct] = useState<Product | null>(null);
+  const [editingMenuItem, setEditingMenuItem] = useState<CartItem | null>(null);
+  // The last set of choices, so "one more like it" is a tap rather than
+  // another pass through every course.
+  const [lastMenuChoice, setLastMenuChoice] = useState<{ menuId: string; selection: FixedMenuSelection; instructions: string } | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
@@ -388,8 +396,33 @@ export default function POSPage() {
   }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
 
   const handleProductClick = (product: Product) => {
+    // A fixed menu is not ordered, it is composed: the window that opens asks
+    // for a dish per course and writes them as real rows.
+    if (isFixedMenu(product)) {
+      setMenuProduct(product);
+      return;
+    }
     // Always open modal so user can add notes and adjust quantity
     setAddonProduct(product);
+  };
+
+  const handleMenuAdd = (menu: Product, selection: FixedMenuSelection, instructions: string) => {
+    cart.addFixedMenu(menu, selection, instructions);
+    setLastMenuChoice({ menuId: menu.id, selection, instructions });
+    setMenuProduct(null);
+  };
+
+  // Adds this menu and leaves the window open with the same choices, ready for
+  // the next guest taking the same thing.
+  const handleMenuAddAnother = (menu: Product, selection: FixedMenuSelection, instructions: string) => {
+    cart.addFixedMenu(menu, selection, instructions);
+    setLastMenuChoice({ menuId: menu.id, selection, instructions });
+  };
+
+  const handleMenuEditSave = (_menu: Product, selection: FixedMenuSelection, instructions: string) => {
+    if (!editingMenuItem) return;
+    cart.updateMenuSelection(editingMenuItem.id, selection, instructions);
+    setEditingMenuItem(null);
   };
 
   const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string) => {
@@ -403,7 +436,7 @@ export default function POSPage() {
 
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyModalOpen = showTablePicker || !!addonProduct || !!editingCartItem || !!checkoutTable
+  const anyModalOpen = showTablePicker || !!addonProduct || !!menuProduct || !!editingMenuItem || !!editingCartItem || !!checkoutTable
     || !!paymentBill || showCustomerPrompt || showPrepaidCheckout;
 
   useBarcodeScanner((code) => {
@@ -443,14 +476,7 @@ export default function POSPage() {
 
       if (pendingOrder) {
         // Add new items to an existing order with a durable retry key.
-        const newItems = cart.items.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          addons: item.addons.length > 0
-            ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-            : null,
-          special_instructions: item.special_instructions || null,
-        }));
+        const newItems = cart.items.map(cartItemToPayload);
         const specialInstructions = cart.orderNotes || undefined;
         const itemFingerprint = buildAppendItemsFingerprint(pendingOrder.id, newItems, specialInstructions);
         const storage = getAppendAttemptStorage();
@@ -481,14 +507,7 @@ export default function POSPage() {
           type: cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
-          items: cart.items.map((item) => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-            addons: item.addons.length > 0
-              ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-              : null,
-            special_instructions: item.special_instructions || null,
-          })),
+          items: cart.items.map(cartItemToPayload),
         };
         const orderFingerprint = JSON.stringify(orderPayload);
         const priorOrderAttempt = readPostpaidAttempt();
@@ -549,14 +568,7 @@ export default function POSPage() {
     const isPrepaidCheckout = shouldTakePaymentNow;
     setShowPrepaidCheckout(false);
     setSubmitting(true);
-    const orderItems = cart.items.map((item) => ({
-      product_id: item.product.id,
-      quantity: item.quantity,
-      addons: item.addons.length > 0
-        ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-        : null,
-      special_instructions: item.special_instructions || null,
-    }));
+    const orderItems = cart.items.map(cartItemToPayload);
     const paymentLines = payments
       .filter((p) => p.amount > 0)
       .map((p) => ({
@@ -901,14 +913,7 @@ export default function POSPage() {
     }
     setSubmitting(true);
     try {
-      const items = cart.items.map((item) => ({
-        product_id: item.product.id,
-        quantity: item.quantity,
-        addons: item.addons.length > 0
-          ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-          : null,
-        special_instructions: item.special_instructions || null,
-      }));
+      const items = cart.items.map(cartItemToPayload);
       const specialInstructions = order.special_instructions || undefined;
       const fingerprint = buildAppendItemsFingerprint(order.id, items, specialInstructions);
       const storage = getAppendAttemptStorage();
@@ -1055,6 +1060,30 @@ export default function POSPage() {
           currency={currency}
           onAdd={handleAddonAdd}
           onClose={() => setAddonProduct(null)}
+        />
+      )}
+
+      {menuProduct && (
+        <FixedMenuPicker
+          menu={menuProduct}
+          products={products}
+          initialSelection={lastMenuChoice?.menuId === menuProduct.id ? lastMenuChoice.selection : undefined}
+          initialInstructions={lastMenuChoice?.menuId === menuProduct.id ? lastMenuChoice.instructions : ''}
+          onAdd={handleMenuAdd}
+          onAddAnother={(selection, instructions) => handleMenuAddAnother(menuProduct, selection, instructions)}
+          onClose={() => setMenuProduct(null)}
+        />
+      )}
+
+      {editingMenuItem && (
+        <FixedMenuPicker
+          menu={editingMenuItem.product}
+          products={products}
+          mode="edit"
+          initialSelection={editingMenuItem.menu_selection || []}
+          initialInstructions={editingMenuItem.special_instructions}
+          onAdd={handleMenuEditSave}
+          onClose={() => setEditingMenuItem(null)}
         />
       )}
 

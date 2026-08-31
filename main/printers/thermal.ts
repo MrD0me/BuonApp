@@ -1077,14 +1077,25 @@ function itemAmountWidth(
 
 function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, offeredLabel?: string): string[] {
   const qtyW = 4;
-  const name = truncate(item.product_name, nameLen).padEnd(nameLen);
+  // A dish chosen inside a fixed menu sits under its package, indented and
+  // silent about money: the package is what costs, and this is the guest
+  // reading back what was counted for it. Only a surcharge shows, with the
+  // sign on it, so `Menu completo 25,00` and `  Tagliata +3,00` add up in the
+  // head to the total at the bottom.
+  const isCourse = item.menu_role === 'course';
+  const name = truncate(isCourse ? `  ${item.product_name}` : item.product_name, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
+  if (isCourse && !(Number(item.total) > 0)) return [label.trimEnd()];
   // A row worth nothing was given away — say so, rather than printing a 0,00
   // the guest has to interpret. A row whose price is simply not set yet is a
-  // different thing and keeps its zero, so the omission stays visible.
-  const offered = offeredLabel && Number(item.total) === 0 && !item.price_required;
-  const amount = offered ? offeredLabel : formatCurrency(item.total, prefix, locale, trimDecimals);
+  // different thing and keeps its zero, so the omission stays visible. A menu
+  // course is a third thing again: it is worth nothing by construction and
+  // nobody offered anybody anything, so it never says "on the house".
+  const offered = offeredLabel && Number(item.total) === 0 && !item.price_required && !item.menu_group_id;
+  const amount = offered
+    ? offeredLabel
+    : (isCourse ? '+' : '') + formatCurrency(item.total, prefix, locale, trimDecimals);
   const inlineWidth = Math.max(1, cols - label.length - 1);
   if (amount.length <= inlineWidth) return [label + rightAlign(amount, cols - label.length)];
   return [label.trimEnd(), ...wrapValue(amount, cols)];

@@ -15,6 +15,7 @@ import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { cartLineUnitPrice, courseSurcharge } from '@/lib/fixed-menu';
 
 interface Props {
   tables: Table[];
@@ -172,7 +173,22 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           </div>
         ) : (
           <div className="space-y-3">
-            {cart.items.map((item) => (
+            {cart.items.map((item) => {
+              // A fixed menu shows the dishes it was built from, so the floor
+              // can read back what was chosen without reopening the window.
+              const menuCourses = (item.menu_selection || []).map((choice) => {
+                const course = (item.product.courses || []).find((entry) => entry.id === choice.course_id);
+                const dish = cart.items.find((other) => other.product.id === choice.product_id)?.product;
+                return {
+                  key: `${choice.course_id}:${choice.product_id}`,
+                  label: course?.label ?? '',
+                  name: dish?.name ?? choice.product_id,
+                  surcharge: course ? courseSurcharge(course, choice.product_id) : 0,
+                };
+              });
+              const isMenu = Boolean(item.menu_selection);
+
+              return (
               <div key={item.id} className="flex items-start gap-3">
                 <button
                   onClick={() => cart.removeItem(item.id)}
@@ -204,30 +220,47 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                       ))}
                     </div>
                   )}
+                  {menuCourses.length > 0 && (
+                    <div className="mt-0.5">
+                      {menuCourses.map((course) => (
+                        <p key={course.key} className="text-xs text-gray-400">
+                          · {course.name}{course.surcharge > 0 ? ` (+${fmt(course.surcharge)})` : ''}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                   {item.special_instructions && (
                     <p className="text-xs text-gray-400 italic mt-0.5 break-words">{item.special_instructions}</p>
                   )}
                   <p className="text-sm text-gray-500">
-                    {fmt(Number(item.product.price))}
+                    {fmt(cartLineUnitPrice(item))}
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => cart.updateQuantity(item.id, item.quantity - 1)}
-                    className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-                  >
-                    <Minus size={14} />
-                  </button>
-                  <span className="text-sm font-medium w-5 text-center">{item.quantity}</span>
-                  <button
-                    onClick={() => cart.updateQuantity(item.id, item.quantity + 1)}
-                    className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
+                {/* One menu is one line of one: another guest taking the same
+                    menu is another menu, because a split check hands each of
+                    them over whole. Hence no quantity stepper here. */}
+                {isMenu ? (
+                  <span className="text-sm font-medium w-5 text-center shrink-0 text-gray-400">1</span>
+                ) : (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => cart.updateQuantity(item.id, item.quantity - 1)}
+                      className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="text-sm font-medium w-5 text-center">{item.quantity}</span>
+                    <button
+                      onClick={() => cart.updateQuantity(item.id, item.quantity + 1)}
+                      className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

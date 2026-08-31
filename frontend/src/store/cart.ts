@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem } from '@/lib/types';
-import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
+import type { FixedMenuSelection } from '@/lib/types';
+import { generateCartItemId, newMenuLineId, normalizeCartItems } from '@/lib/cart-identity';
+import { cartLineUnitPrice } from '@/lib/fixed-menu';
 
 export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
@@ -16,6 +18,8 @@ interface CartState {
   orderNotes: string;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
+  addFixedMenu: (menu: Product, selection: FixedMenuSelection, specialInstructions?: string) => void;
+  updateMenuSelection: (cartItemId: string, selection: FixedMenuSelection, specialInstructions?: string) => void;
   updateItemDetails: (cartItemId: string, quantity: number, addons: Addon[], specialInstructions: string) => void;
   removeItem: (cartItemId: string) => void;
   updateQuantity: (cartItemId: string, quantity: number) => void;
@@ -60,6 +64,40 @@ export const useCartStore = create<CartState>((set, get) => ({
         items: [...items, { id: itemId, product, quantity, addons, special_instructions: specialInstructions }],
       });
     }
+  },
+
+  /**
+   * One menu, one line, quantity one. Six identical menus are six lines and
+   * that is deliberate: a split check hands a menu to a guest whole, and a
+   * block of six cannot be shared between six of them.
+   */
+  addFixedMenu: (menu, selection, specialInstructions = '') => {
+    const lineId = newMenuLineId();
+    set({
+      items: [...get().items, {
+        id: generateCartItemId(menu.id, [], specialInstructions, lineId),
+        product: menu,
+        quantity: 1,
+        addons: [],
+        special_instructions: specialInstructions,
+        menu_selection: selection,
+        menu_line_id: lineId,
+      }],
+    });
+  },
+
+  updateMenuSelection: (cartItemId, selection, specialInstructions) => {
+    set({
+      items: get().items.map((item) => (
+        item.id === cartItemId
+          ? {
+            ...item,
+            menu_selection: selection,
+            special_instructions: specialInstructions ?? item.special_instructions,
+          }
+          : item
+      )),
+    });
   },
 
   updateItemDetails: (cartItemId, quantity, addons, specialInstructions) => {
@@ -127,12 +165,9 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOrderNotes: (notes) => set({ orderNotes: notes }),
 
   subtotal: () => {
-    return get().items.reduce((sum, item) => {
-      const itemPrice = Number(item.product?.price) || 0;
-      const itemQty = Number(item.quantity) || 1;
-      const addonTotal = (item.addons || []).reduce((a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1), 0);
-      return sum + (itemPrice + addonTotal) * itemQty;
-    }, 0);
+    // cartLineUnitPrice folds in a fixed menu's surcharges, which are what the
+    // chosen dishes add to its one price.
+    return get().items.reduce((sum, item) => sum + cartLineUnitPrice(item) * (Number(item.quantity) || 1), 0);
   },
 
   itemCount: () => {

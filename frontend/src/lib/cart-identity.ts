@@ -45,7 +45,17 @@ function canonicalize(value: unknown): string {
  * lines. Add-on arrays are order-insensitive, while every selected add-on
  * field and the exact note text remain part of the identity.
  */
-export function generateCartItemId(productId: number | string, addons: Addon[], specialInstructions: string): string {
+export function generateCartItemId(
+  productId: number | string,
+  addons: Addon[],
+  specialInstructions: string,
+  menuLineId?: string | null,
+): string {
+  // A fixed menu is never merged with another one, not even an identical one:
+  // one menu is one line of one, so a split check can hand each of them to a
+  // different guest whole. Its own line id is its identity.
+  if (menuLineId) return `cart-menu:${menuLineId}`;
+
   const normalizedAddons = addons.map((addon) => ({
     ...addon,
     quantity: addon.quantity || 1,
@@ -65,7 +75,7 @@ export function generateCartItemId(productId: number | string, addons: Addon[], 
 export function normalizeCartItems(items: CartItem[]): CartItem[] {
   const normalized: CartItem[] = [];
   for (const item of items) {
-    const id = generateCartItemId(item.product.id, item.addons || [], item.special_instructions || '');
+    const id = generateCartItemId(item.product.id, item.addons || [], item.special_instructions || '', item.menu_line_id);
     const existing = normalized.find((candidate) => candidate.id === id);
     if (existing) {
       existing.quantity += item.quantity;
@@ -74,4 +84,17 @@ export function normalizeCartItems(items: CartItem[]): CartItem[] {
     }
   }
   return normalized;
+}
+
+/**
+ * A fresh identity for one menu line. Not derived from the choices: two guests
+ * ordering the very same menu are still two menus.
+ */
+export function newMenuLineId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  } catch {
+    // Older webviews expose crypto without randomUUID; fall through.
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

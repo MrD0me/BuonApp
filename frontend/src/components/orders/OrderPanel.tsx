@@ -474,12 +474,15 @@ export function OrderPanel({
     }
   };
 
-  const deleteItem = async (orderId: number, itemId: number) => {
+  const deleteItem = async (orderId: number, itemId: number, item?: OrderItem) => {
     if (!isOwnerOrManager) {
       toast.error(tOrders('onlyOwnersRemove'));
       return;
     }
-    if (!await confirm(tOrders('removeItemConfirm'), { destructive: true, confirmLabel: tCommon('remove') })) return;
+    // A fixed menu comes off the check whole, from whichever of its rows this
+    // was pressed on. Say so before doing it.
+    const question = item?.menu_group_id ? tOrders('removeMenuConfirm') : tOrders('removeItemConfirm');
+    if (!await confirm(question, { destructive: true, confirmLabel: tCommon('remove') })) return;
     try {
       await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: tOrders('removedByManager') });
       toast.success(tOrders('itemRemoved'));
@@ -936,6 +939,7 @@ export function OrderPanel({
           <div className="divide-y divide-gray-50">
             {activeItems.map((item: OrderItem) => {
               const config = itemStatusConfig[item.status] || itemStatusConfig.pending;
+              const isMenuCourse = item.menu_role === 'course';
               return (
                 <div key={item.id} className="py-1.5">
                   <div className="flex items-center justify-between">
@@ -944,7 +948,7 @@ export function OrderPanel({
                       <span className={`text-sm font-medium ${config.color}`}>
                         {item.quantity}x
                       </span>
-                      <span className="text-sm text-gray-900 truncate">{item.product_name}</span>
+                      <span className={`text-sm truncate ${isMenuCourse ? 'text-gray-500 ps-3' : 'text-gray-900'}`}>{item.product_name}</span>
                       {awaitsPrice(item) && (
                         <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[11px] font-medium">
                           {tOrders('rowPriceMissing')}
@@ -955,10 +959,16 @@ export function OrderPanel({
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">{fmt(Number(item.total))}</span>
+                      {/* A dish inside a menu is paid for by the package: it
+                          shows a surcharge or nothing, never a bare 0,00. */}
+                      <span className="text-sm text-gray-600">
+                        {isMenuCourse
+                          ? (Number(item.total) > 0 ? `+${fmt(Number(item.total))}` : '')
+                          : fmt(Number(item.total))}
+                      </span>
                       {item.status === 'pending' && isOwnerOrManager && !paid && (
                         <button
-                          onClick={() => deleteItem(order.id, item.id)}
+                          onClick={() => deleteItem(order.id, item.id, item)}
                           className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
                           title={tCommon('removeItem')}
                         >

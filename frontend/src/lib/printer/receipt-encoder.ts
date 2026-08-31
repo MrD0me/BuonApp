@@ -124,6 +124,20 @@ function col4Header(widths: Col4Widths): string {
   return item + qty + rate + amt;
 }
 
+/**
+ * How a row of a fixed menu reads on paper. The package line is the one that
+ * costs; a dish chosen inside it sits underneath, indented, and shows only a
+ * surcharge — with the sign on it, so the guest can add the indented lines to
+ * the package in their head and land on the total.
+ */
+function menuCourseLine(
+  item: { menu_role?: string | null; total?: number | string },
+): { indent: boolean; suppressAmount: boolean; sign: string } {
+  const isCourse = item?.menu_role === 'course';
+  if (!isCourse) return { indent: false, suppressAmount: false, sign: '' };
+  return { indent: true, suppressAmount: !(Number(item.total) > 0), sign: '+' };
+}
+
 function col4Rows(
   name: string,
   qty: number,
@@ -132,11 +146,12 @@ function col4Rows(
   currency: string,
   widths: Col4Widths,
   locale: string,
-  trimDecimals: boolean = false
+  trimDecimals: boolean = false,
+  amountSign: string = ''
 ): string[] {
   const [nameWidth, qtyWidth, rateWidth, amountWidth] = widths;
-  const rateStr = formatAmount(rate, currency, locale, trimDecimals);
-  const amtStr = formatAmount(amount, currency, locale, trimDecimals);
+  const rateStr = rate === '' ? '' : formatAmount(rate, currency, locale, trimDecimals);
+  const amtStr = amountSign + formatAmount(amount, currency, locale, trimDecimals);
   const qtyStr = String(qty);
 
   if (qtyStr.length > qtyWidth || rateStr.length > rateWidth || amtStr.length > amountWidth) {
@@ -263,7 +278,17 @@ export function buildClassicReceiptBytes(
   // Line items
   const items = order?.items ?? [];
   for (const item of items) {
-    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
+    const course = menuCourseLine(item);
+    const rows = course.suppressAmount
+      ? [truncate(`  ${item.product_name}`, cols - 1)]
+      : col4Rows(
+        course.indent ? `  ${item.product_name}` : item.product_name,
+        item.quantity,
+        course.indent ? '' : item.unit_price,
+        item.total,
+        currency, col4Layout, locale, trimDecimals, course.sign,
+      );
+    for (const row of rows) {
       safePrinterText(enc, row, warnings).newline();
     }
 
@@ -413,12 +438,15 @@ export function buildCompactReceiptBytes(
   // Items — compact: one line per item with total, qty x rate below if qty > 1
   const items = order?.items ?? [];
   for (const item of items) {
-    const nameMax = cols - formatAmount(item.total, currency, locale, trimDecimals).length - 1;
-    safePrinterText(
-      enc,
-      padRow(truncate(item.product_name, nameMax), formatAmount(item.total, currency, locale, trimDecimals), cols),
-      warnings
-    ).newline();
+    const course = menuCourseLine(item);
+    const name = course.indent ? `  ${item.product_name}` : item.product_name;
+    if (course.suppressAmount) {
+      safePrinterText(enc, truncate(name, cols), warnings).newline();
+    } else {
+      const amount = course.sign + formatAmount(item.total, currency, locale, trimDecimals);
+      const nameMax = cols - amount.length - 1;
+      safePrinterText(enc, padRow(truncate(name, nameMax), amount, cols), warnings).newline();
+    }
 
     if (item.quantity > 1) {
       enc

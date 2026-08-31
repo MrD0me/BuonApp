@@ -5,11 +5,12 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, UtensilsCrossed, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
+import FixedMenuEditor from '@/components/products/FixedMenuEditor';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -56,7 +57,7 @@ const CATEGORY_COLORS: { key: string; labelKey: ProductsKey; bg: string; text: s
   { key: 'rose', labelKey: 'colorRose', bg: 'bg-rose-100', text: 'text-rose-700' },
 ];
 
-type TabType = 'products' | 'categories' | 'addons';
+type TabType = 'products' | 'categories' | 'addons' | 'fixedMenus';
 
 export default function ProductsPage() {
   const t = useTranslations('products');
@@ -71,6 +72,7 @@ export default function ProductsPage() {
   };
   const { currentTenant } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabType>('products');
+  const [editingFixedMenu, setEditingFixedMenu] = useState<Product | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
@@ -92,6 +94,7 @@ export default function ProductsPage() {
     name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
     description: '',
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true, price_required: false,
+    is_fixed_menu: false, fixed_menu_includes_cover: false,
     tags: [] as string[],
     customTag: '',
     addon_group_ids: [] as string[],
@@ -199,6 +202,7 @@ export default function ProductsPage() {
       name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
       description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true, price_required: false,
+    is_fixed_menu: false, fixed_menu_includes_cover: false,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
     });
     setImageTouched(false);
@@ -224,6 +228,8 @@ export default function ProductsPage() {
       description: product.description || '',
       track_inventory: product.track_inventory,
       price_required: Boolean(product.price_required),
+      is_fixed_menu: Boolean(product.is_fixed_menu),
+      fixed_menu_includes_cover: Boolean(product.fixed_menu_includes_cover),
       stock_quantity: String(product.stock_quantity || '0'),
       low_stock_threshold: String(product.low_stock_threshold ?? '5'),
       is_active: product.is_active,
@@ -258,6 +264,8 @@ export default function ProductsPage() {
         description: form.description || null,
         track_inventory: form.track_inventory,
         price_required: form.price_required,
+        is_fixed_menu: form.is_fixed_menu,
+        fixed_menu_includes_cover: form.fixed_menu_includes_cover,
         stock_quantity: Number(form.stock_quantity),
         low_stock_threshold: Number(form.low_stock_threshold),
         is_active: form.is_active,
@@ -432,6 +440,8 @@ export default function ProductsPage() {
     } catch { toast.error(tCommon('failedToDelete')); }
   };
 
+  const fixedMenus = products.filter((product) => product.is_fixed_menu);
+
   const addAddonItem = () => setAddonList((prev) => [...prev, { name: '', price: 0 }]);
   const updateAddonItem = (idx: number, field: string, value: string | number) => setAddonList((prev) => prev.map((a, i) => i === idx ? { ...a, [field]: value } : a));
   const removeAddonItem = (idx: number) => setAddonList((prev) => prev.filter((_, i) => i !== idx));
@@ -462,7 +472,52 @@ export default function ProductsPage() {
             <Puzzle size={16} /> {t('tabAddonGroups')}
           </button>
         )}
+        {isRestaurant && (
+          <button onClick={() => setActiveTab('fixedMenus')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'fixedMenus' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            <UtensilsCrossed size={16} /> {t('tabFixedMenus')}
+          </button>
+        )}
       </div>
+
+      {activeTab === 'fixedMenus' && isRestaurant && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {fixedMenus.length === 0 ? (
+            <p className="p-6 text-sm text-gray-500">{t('fixedMenuNoneYet')}</p>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <tr>
+                  <th className="text-start px-4 py-3">{t('fieldName')}</th>
+                  <th className="text-start px-4 py-3">{t('columnPrice')}</th>
+                  <th className="text-start px-4 py-3">{tPos('menuIncludesCoverLabel')}</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {fixedMenus.map((menu) => (
+                  <tr key={menu.id} className="border-t">
+                    <td className="px-4 py-3 font-medium text-gray-900">{menu.name}</td>
+                    <td className="px-4 py-3 text-gray-600">{fmt(Number(menu.price))}</td>
+                    <td className="px-4 py-3 text-gray-600">{menu.fixed_menu_includes_cover ? tCommon('yes') : tCommon('no')}</td>
+                    <td className="px-4 py-3 text-end">
+                      <Button variant="outline" onClick={() => setEditingFixedMenu(menu)}>{t('fixedMenuCourses')}</Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {editingFixedMenu && (
+        <FixedMenuEditor
+          menu={editingFixedMenu}
+          categories={categories}
+          products={products}
+          onClose={() => setEditingFixedMenu(null)}
+        />
+      )}
 
       {activeTab === 'products' && (
         <>
@@ -815,6 +870,24 @@ export default function ProductsPage() {
                   <span className="block text-xs text-gray-500">{t('priceRequiredHint')}</span>
                 </span>
               </label>
+              {/* A set menu at one price. Its courses are built in the Fixed
+                  menus tab, because they are a thing of their own and this
+                  form is already long. */}
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={form.is_fixed_menu} onChange={(e) => setForm({ ...form, is_fixed_menu: e.target.checked })}
+                  className="mt-0.5 rounded border-gray-300 text-brand focus:ring-brand" />
+                <span>
+                  <span className="block text-sm text-gray-700">{tPos('menuFixed')}</span>
+                  <span className="block text-xs text-gray-500">{tPos('menuFixedHint')}</span>
+                </span>
+              </label>
+              {!!form.is_fixed_menu && (
+                <label className="flex items-start gap-2 ms-6">
+                  <input type="checkbox" checked={form.fixed_menu_includes_cover} onChange={(e) => setForm({ ...form, fixed_menu_includes_cover: e.target.checked })}
+                    className="mt-0.5 rounded border-gray-300 text-brand focus:ring-brand" />
+                  <span className="block text-sm text-gray-700">{tPos('menuIncludesCoverLabel')}</span>
+                </label>
+              )}
               {!!form.track_inventory && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>

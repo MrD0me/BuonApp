@@ -571,6 +571,39 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
 // by any station fall back to the default printer under the generic 'Kitchen'
 // label — this is also what happens for the whole order when no station is
 // configured at all, so stores not using stations see no behavior change.
+/**
+ * Drops the rows nobody cooks: the package line of a fixed menu, which is a
+ * price, not a dish. Its courses were written as real rows of their own and go
+ * to the stations on their own categories.
+ *
+ * Filtered here rather than when the rows are picked, because the package must
+ * still be claimed into the ticket batch — leave it out of `getPendingKotItems`
+ * and it never gets stamped, so every later send finds it waiting again.
+ */
+function cookableItems(orderItems: any[]): any[] {
+  return orderItems.filter((item) => item?.menu_role !== 'package');
+}
+
+/**
+ * Adds the package row back alongside the dishes of any menu going back into
+ * the queue. It never prints, but it is claimed into the batch with its
+ * courses, and leaving it stamped with a ticket that never came out would
+ * strand it in a round of its own.
+ */
+function withMenuPackages(itemIds: number[], allItems: any[]): number[] {
+  const released = new Set(itemIds);
+  const affected = new Set(
+    allItems.filter((item) => released.has(Number(item?.id)) && item?.menu_group_id).map((item) => item.menu_group_id),
+  );
+  if (affected.size === 0) return itemIds;
+  for (const item of allItems) {
+    if (item?.menu_role === 'package' && item?.menu_group_id && affected.has(item.menu_group_id)) {
+      released.add(Number(item.id));
+    }
+  }
+  return [...released];
+}
+
 export function routeItemsToStations(db: any, orderItems: any[]): { stationName: string; printer: any; items: any[] }[] {
   const rawStations = db.prepare(
     `SELECT * FROM kitchen_stations WHERE is_active = 1 AND printer_id IS NOT NULL AND category_ids IS NOT NULL AND category_ids != ''`
@@ -593,13 +626,13 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
     .filter((s) => s.categoryIds.length > 0 && s.printer);
 
   if (stations.length === 0) {
-    return [{ stationName: 'Kitchen', printer: null, items: orderItems }];
+    return [{ stationName: 'Kitchen', printer: null, items: cookableItems(orderItems) }];
   }
 
   const groups = new Map<string, { stationName: string; printer: any; items: any[] }>();
   const unrouted: any[] = [];
 
-  for (const item of orderItems) {
+  for (const item of cookableItems(orderItems)) {
     const product: any = item.product_id ? db.prepare('SELECT category_id FROM products WHERE id = ?').get(item.product_id) : null;
     const categoryId = product?.category_id;
     const matched = categoryId ? stations.find((s) => s.categoryIds.includes(categoryId)) : undefined;
@@ -679,7 +712,7 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier', 'server'), 
     let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
 
     if (stationName || items) {
-      const kotItems = items || getEffectiveOrderItems(db, orderId);
+      const kotItems = cookableItems(items || getEffectiveOrderItems(db, orderId));
       const station = stationName || 'Kitchen';
       const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req), batch);
       success = result.ok;
@@ -727,7 +760,7 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier', 'server'), 
       // One station can fail while another prints fine. Only the rows whose
       // ticket never came out go back in the queue — re-sending then reprints
       // just those, instead of duplicating a round the kitchen already has.
-      if (!isReprint && undelivered.length > 0) releaseKotItems(db, undelivered);
+      if (!isReprint && undelivered.length > 0) releaseKotItems(db, withMenuPackages(undelivered, kotItems));
       res.status(502).json({ error: 'KOT print failed. Check printer connection.', code: failure?.code, correlation_id: failure?.correlationId, stage: failure?.stage });
     }
   } catch (error: any) {

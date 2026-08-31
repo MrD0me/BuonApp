@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404, isTokenRevoked, isTokenStale } from '../middleware/security';
 import { parseCategoryIds } from './auth';
-import { notifyKdsUpdate } from '../services/kds';
+import { notifyKdsUpdate, NOT_A_MENU_PACKAGE } from '../services/kds';
 
 const router = Router();
 
@@ -137,7 +137,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
         FROM order_items oi
         LEFT JOIN products p ON oi.product_id = p.id
         LEFT JOIN categories c ON p.category_id = c.id
-        WHERE oi.order_id IN (${placeholders})
+        WHERE oi.order_id IN (${placeholders}) ${NOT_A_MENU_PACKAGE}
         ORDER BY oi.order_id, oi.created_at ASC
       `).all(...orderIds) as any[];
       for (const item of rawItems) {
@@ -313,6 +313,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       WHERE oi.status NOT IN ('completed', 'cancelled', 'served', 'void_adjustment')
         AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         AND o.status != 'cancelled'
+        ${NOT_A_MENU_PACKAGE}
     `;
 
     const params: any[] = [voidedCutoff];

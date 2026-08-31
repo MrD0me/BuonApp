@@ -570,6 +570,26 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
         }
       }
 
+      // A fixed menu goes to one guest whole. Hand the package to one share and
+      // its dishes to another and the first pays 25 € for nothing while the
+      // second eats for free — and both shares still add up, so nobody at the
+      // table would ever catch it. See docs/coperto-e-menu-fisso.md.
+      const menuGroupShare = new Map<string, number>();
+      txnNormalized.forEach((check: { label: string; items: { item: any; quantity: number }[] }, index: number) => {
+        for (const entry of check.items) {
+          const groupId = entry.item.menu_group_id;
+          if (!groupId) continue;
+          const already = menuGroupShare.get(groupId);
+          if (already !== undefined && already !== index) {
+            throw Object.assign(
+              new Error(`${entry.item.product_name} belongs to a fixed menu: put the whole menu on one check`),
+              { statusCode: 400 },
+            );
+          }
+          menuGroupShare.set(groupId, index);
+        }
+      });
+
       const groupId = randomUUID();
       const weights = txnNormalized.map((check: { items: { item: any; quantity: number }[] }) =>
         check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)

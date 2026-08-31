@@ -4,7 +4,9 @@ import { requireRole } from '../middleware/security';
 import { categoryRoutes } from './categories';
 import { productRoutes } from './products';
 import { addonGroupRoutes } from './addon-groups';
-import { orderRoutes } from './orders';
+import { fixedMenuRoutes } from './fixed-menus';
+import { menuGroupRowIds } from '../services/fixed-menu';
+import { orderRoutes, orderCoverCharge } from './orders';
 import { orderItemRoutes } from './order-items';
 import { billRoutes, syncUnpaidBillsForOrder } from './bills';
 import { tableRoutes } from './tables';
@@ -47,6 +49,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/categories', categoryRoutes);
   app.use('/api/products', productRoutes);
   app.use('/api/addon-groups', addonGroupRoutes);
+  app.use('/api/fixed-menus', fixedMenuRoutes);
   app.use('/api/orders', orderRoutes);
   app.use('/api/order-items', orderItemRoutes);
   app.use('/api/kitchen', kitchenRoutes);
@@ -255,40 +258,51 @@ export function registerRoutes(app: Express): void {
           }
         }
 
-        if (isItemVoid) {
-          // Leave the original line alone (it's a true record of what was
-          // ordered and prepared) and add a mirrored negative line instead of
-          // deleting anything — the bill total nets to the refund/comp
-          // automatically via the recalc below, same as a plain cancel would,
-          // but both lines stay on the bill permanently.
-          db.prepare(`
-            INSERT INTO order_items (
-              order_id, product_id, product_name, product_sku, unit_price, quantity,
-              subtotal, discount_amount, total,
-              variant_selection, modifier_selection, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
-          `).run(
-            orderId, currentItem.product_id, `Void: ${currentItem.product_name}`, currentItem.product_sku,
-            -currentItem.unit_price, currentItem.quantity, -currentItem.subtotal,
-            -(currentItem.discount_amount || 0), -currentItem.total,
-            currentItem.variant_selection, currentItem.modifier_selection, now(), now(),
-          );
-          // #150 Q1-Q4 decision: mark 'voided', not 'cancelled' — a distinct,
-          // terminal status. Item stage-change endpoints reject any further
-          // transition once status is 'voided', and inventory is
-          // deliberately left alone: it was already deducted when the item
-          // was added, and voiding an already-prepared item must not restock it.
-          db.prepare("UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?")
-            .run(now(), now(), itemId);
-        } else {
-          // Cancel the item and restore the inventory quantity recorded when it was added.
-          db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
-            .run(now(), itemId);
+        // A fixed menu goes off the check whole, from whichever of its rows the
+        // floor happened to press. Half a menu — the package with no dishes, or
+        // dishes with nothing priced — is not something anybody ordered.
+        const groupIds = menuGroupRowIds(db, currentItem);
+        const targets = (groupIds.length > 0
+          ? groupIds.map((id) => db.prepare('SELECT * FROM order_items WHERE id = ?').get(id) as any)
+          : [currentItem]
+        ).filter((row) => row && !['cancelled', 'voided', 'void_adjustment'].includes(row.status));
 
-          const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
-          if (product && currentItem.inventory_deducted_quantity > 0) {
-            db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-              .run(currentItem.inventory_deducted_quantity, now(), product.id);
+        for (const target of targets) {
+          if (isItemVoid) {
+            // Leave the original line alone (it's a true record of what was
+            // ordered and prepared) and add a mirrored negative line instead of
+            // deleting anything — the bill total nets to the refund/comp
+            // automatically via the recalc below, same as a plain cancel would,
+            // but both lines stay on the bill permanently.
+            db.prepare(`
+              INSERT INTO order_items (
+                order_id, product_id, product_name, product_sku, unit_price, quantity,
+                subtotal, discount_amount, total,
+                variant_selection, modifier_selection, status, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
+            `).run(
+              orderId, target.product_id, `Void: ${target.product_name}`, target.product_sku,
+              -target.unit_price, target.quantity, -target.subtotal,
+              -(target.discount_amount || 0), -target.total,
+              target.variant_selection, target.modifier_selection, now(), now(),
+            );
+            // #150 Q1-Q4 decision: mark 'voided', not 'cancelled' — a distinct,
+            // terminal status. Item stage-change endpoints reject any further
+            // transition once status is 'voided', and inventory is
+            // deliberately left alone: it was already deducted when the item
+            // was added, and voiding an already-prepared item must not restock it.
+            db.prepare("UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?")
+              .run(now(), now(), target.id);
+          } else {
+            // Cancel the item and restore the inventory quantity recorded when it was added.
+            db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
+              .run(now(), target.id);
+
+            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(target.product_id) as any;
+            if (product && target.inventory_deducted_quantity > 0) {
+              db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
+                .run(target.inventory_deducted_quantity, now(), product.id);
+            }
           }
         }
 
@@ -312,8 +326,13 @@ export function registerRoutes(app: Express): void {
 
         const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
 
+        // The cover follows the rows: take a menu that carried it off the
+        // check and the table owes its cover again; put one back and it does
+        // not. One formula, shared with every other path that reprices.
+        const coverCharge = orderCoverCharge(db, orderId);
+
         // BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
-        const total = roundMoney(discountedSubtotal + orderCharges(currentOrder));
+        const total = roundMoney(discountedSubtotal + orderCharges({ ...currentOrder, cover_charge: coverCharge }));
 
         // #132 FIX: cancelling the last active item leaves nothing to serve or
         // bill — treat it as the whole order being cancelled, the same way the
@@ -323,17 +342,17 @@ export function registerRoutes(app: Express): void {
 
         if (orderCancelled) {
           db.prepare(`
-            UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?,
+            UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, cover_charge = ?,
               status = 'cancelled', cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?
-          `).run(subtotal, newDiscountAmount, total, now(), 'All items cancelled', now(), orderId);
+          `).run(subtotal, newDiscountAmount, total, coverCharge, now(), 'All items cancelled', now(), orderId);
           if (currentOrder.table_id) {
             db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
               .run(now(), currentOrder.table_id);
           }
         } else {
           db.prepare(`
-            UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
-          `).run(subtotal, newDiscountAmount, total, now(), orderId);
+            UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, cover_charge = ?, updated_at = ? WHERE id = ?
+          `).run(subtotal, newDiscountAmount, total, coverCharge, now(), orderId);
         }
 
         syncUnpaidBillsForOrder(db, orderId, {
@@ -341,7 +360,7 @@ export function registerRoutes(app: Express): void {
           discountAmount: newDiscountAmount,
           deliveryCharge: order.delivery_charge || 0,
           packagingCharge: order.packaging_charge || 0,
-          coverCharge: order.cover_charge || 0,
+          coverCharge,
           total,
         });
 
@@ -414,19 +433,28 @@ export function registerRoutes(app: Express): void {
           return { updatedOrder: currentOrder, items, changed: false };
         }
 
-        // Re-deduct the inventory quantity originally consumed by the item
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
-        if (product && currentItem.inventory_deducted_quantity > 0) {
-          if (product.stock_quantity < currentItem.inventory_deducted_quantity) {
-            throw Object.assign(new Error(`Insufficient stock to restore item (Available: ${product.stock_quantity}, Required: ${currentItem.inventory_deducted_quantity})`), { statusCode: 400 });
-          }
-          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
-            .run(currentItem.inventory_deducted_quantity, now(), product.id);
-        }
+        // A fixed menu comes back whole, the same way it went off the check.
+        const groupIds = menuGroupRowIds(db, currentItem);
+        const targets = (groupIds.length > 0
+          ? groupIds.map((id) => db.prepare('SELECT * FROM order_items WHERE id = ?').get(id) as any)
+          : [currentItem]
+        ).filter((row) => row && row.status === 'cancelled');
 
-        // Restore - mark as pending
-        db.prepare("UPDATE order_items SET status = 'pending', updated_at = ? WHERE id = ?")
-          .run(now(), itemId);
+        for (const target of targets) {
+          // Re-deduct the inventory quantity originally consumed by the item
+          const product = db.prepare('SELECT * FROM products WHERE id = ?').get(target.product_id) as any;
+          if (product && target.inventory_deducted_quantity > 0) {
+            if (product.stock_quantity < target.inventory_deducted_quantity) {
+              throw Object.assign(new Error(`Insufficient stock to restore item (Available: ${product.stock_quantity}, Required: ${target.inventory_deducted_quantity})`), { statusCode: 400 });
+            }
+            db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
+              .run(target.inventory_deducted_quantity, now(), product.id);
+          }
+
+          // Restore - mark as pending
+          db.prepare("UPDATE order_items SET status = 'pending', updated_at = ? WHERE id = ?")
+            .run(now(), target.id);
+        }
 
         // Recalculate order totals
         const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')")
@@ -448,19 +476,24 @@ export function registerRoutes(app: Express): void {
 
         const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
 
+        // The cover follows the rows: take a menu that carried it off the
+        // check and the table owes its cover again; put one back and it does
+        // not. One formula, shared with every other path that reprices.
+        const coverCharge = orderCoverCharge(db, orderId);
+
         // BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
-        const total = roundMoney(discountedSubtotal + orderCharges(currentOrder));
+        const total = roundMoney(discountedSubtotal + orderCharges({ ...currentOrder, cover_charge: coverCharge }));
 
         db.prepare(`
-          UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, newDiscountAmount, total, now(), orderId);
+          UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, cover_charge = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, newDiscountAmount, total, coverCharge, now(), orderId);
 
         syncUnpaidBillsForOrder(db, orderId, {
           subtotal,
           discountAmount: newDiscountAmount,
           deliveryCharge: order.delivery_charge || 0,
           packagingCharge: order.packaging_charge || 0,
-          coverCharge: order.cover_charge || 0,
+          coverCharge,
           total,
         });
 

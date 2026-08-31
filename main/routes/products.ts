@@ -7,6 +7,7 @@ import * as dns from 'dns';
 import * as https from 'https';
 import * as net from 'net';
 import { asyncHandler } from '../middleware/async-handler';
+import { readFixedMenuCourses } from '../services/fixed-menu';
 
 const MAX_FETCH_BYTES = 10 * 1024 * 1024;
 
@@ -308,6 +309,8 @@ function serializeProduct(product: any): any {
     is_active: toBoolean(product.is_active),
     track_inventory: toBoolean(product.track_inventory),
     price_required: toBoolean(product.price_required),
+    is_fixed_menu: toBoolean(product.is_fixed_menu),
+    fixed_menu_includes_cover: toBoolean(product.fixed_menu_includes_cover),
     has_image: toBoolean(product.has_image),
     category: serializeCategory(product.category),
     addon_groups: Array.isArray(product.addon_groups) ? product.addon_groups.map(serializeAddonGroup) : product.addon_groups,
@@ -412,7 +415,8 @@ router.get('/', (req: Request, res: Response) => {
     const db = getDatabase();
     let query = `SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
       p.is_active, p.sort_order, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
-      p.cb_percent, p.tags, p.price_required, p.deleted_at, p.created_at, p.updated_at,
+      p.cb_percent, p.tags, p.price_required, p.is_fixed_menu, p.fixed_menu_includes_cover,
+      p.deleted_at, p.created_at, p.updated_at,
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
       FROM products p 
       LEFT JOIN categories c ON p.category_id = c.id
@@ -458,6 +462,9 @@ router.get('/', (req: Request, res: Response) => {
         tags: parseTags(product.tags),
         category: rel.category,
         addon_groups: rel.addon_groups,
+        // A set menu carries its courses the way a dish carries its add-on
+        // groups: the till needs them the moment the tile is tapped.
+        ...(product.is_fixed_menu ? { courses: readFixedMenuCourses(db, product.id) } : {}),
       });
     });
 
@@ -542,7 +549,13 @@ router.get('/:id', (req: Request, res: Response) => {
     const relations = loadProductRelationsBatch(db, [product as any]);
     const rel = relations.get((product as any).id) || { category: null, addon_groups: [] };
 
-    res.json({ product: serializeProduct({ ...(product as any), tags: parseTags((product as any).tags), category: rel.category, addon_groups: rel.addon_groups }) });
+    res.json({ product: serializeProduct({
+      ...(product as any),
+      tags: parseTags((product as any).tags),
+      category: rel.category,
+      addon_groups: rel.addon_groups,
+      ...((product as any).is_fixed_menu ? { courses: readFixedMenuCourses(db, (product as any).id) } : {}),
+    }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -687,7 +700,8 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const {
       category_id, name, sku, barcode, description, price, cost_price,
       track_inventory, stock_quantity,
-      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, price_required, addon_group_ids
+      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, price_required, addon_group_ids,
+      is_fixed_menu, fixed_menu_includes_cover
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
     const productName = normalizeRequiredName(name);
@@ -740,14 +754,16 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       db.prepare(`
         INSERT INTO products (id, category_id, name, sku, barcode, description, price, cost,
           track_inventory, stock_quantity, low_stock_threshold,
-          is_active, image_url, sort_order, cb_percent, tags, price_required, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          is_active, image_url, sort_order, cb_percent, tags, price_required,
+          is_fixed_menu, fixed_menu_includes_cover, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, normalizeNullableString(category_id), productName, normalizeNullableString(sku), normalizedBarcode, normalizeNullableString(description), price, cost_price || 0,
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, normalizeNullableString(image_url),
         sort_order || 0, cb_percent !== undefined ? cb_percent : null, JSON.stringify(tags || []),
         price_required ? 1 : 0,
+        is_fixed_menu ? 1 : 0, fixed_menu_includes_cover ? 1 : 0,
         now(), now()
       );
 
@@ -779,7 +795,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const {
       category_id, name, sku, barcode, description, price, cost_price,
       track_inventory, stock_quantity,
-      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, price_required, addon_group_ids
+      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, price_required, addon_group_ids,
+      is_fixed_menu, fixed_menu_includes_cover
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
     const hasName = hasOwn(req.body, 'name');
@@ -857,6 +874,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
           cb_percent = CASE WHEN @has_cb_percent = 1 THEN @cb_percent ELSE cb_percent END,
           tags = CASE WHEN @has_tags = 1 THEN @tags ELSE tags END,
           price_required = COALESCE(@price_required, price_required),
+          is_fixed_menu = COALESCE(@is_fixed_menu, is_fixed_menu),
+          fixed_menu_includes_cover = COALESCE(@fixed_menu_includes_cover, fixed_menu_includes_cover),
           updated_at = @updated_at
         WHERE id = @id
       `).run({
@@ -883,6 +902,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         has_cb_percent: hasCbPercent ? 1 : 0,
         cb_percent: hasCbPercent ? cb_percent : null,
         price_required: price_required !== undefined ? (price_required ? 1 : 0) : null,
+        is_fixed_menu: is_fixed_menu !== undefined ? (is_fixed_menu ? 1 : 0) : null,
+        fixed_menu_includes_cover: fixed_menu_includes_cover !== undefined ? (fixed_menu_includes_cover ? 1 : 0) : null,
         has_tags: hasTags ? 1 : 0,
         tags: hasTags ? JSON.stringify(tags || []) : null,
         updated_at: now(),
