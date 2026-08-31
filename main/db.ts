@@ -4469,6 +4469,64 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[DB] v91: split checks removed; ${merged} divided check(s) put back together`);
     },
   },
+  {
+    version: 92,
+    name: 'add_fixed_menus',
+    up: () => {
+      // A fixed menu is a product with a tick, so it inherits the order row,
+      // the check, the archive and the reports for free. What hangs off it are
+      // its courses; what it writes into an order is real rows, one per dish
+      // chosen, because the kitchen ticket sections dishes by product category
+      // and a commercial package has no category to be sectioned by.
+      // See docs/coperto-e-menu-fisso.md.
+      const productColumns = getColumns(db, 'products');
+      if (!productColumns.includes('is_fixed_menu')) {
+        db.exec(`ALTER TABLE products ADD COLUMN is_fixed_menu INTEGER DEFAULT 0`);
+      }
+      if (!productColumns.includes('fixed_menu_includes_cover')) {
+        db.exec(`ALTER TABLE products ADD COLUMN fixed_menu_includes_cover INTEGER DEFAULT 0`);
+      }
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS fixed_menu_courses (
+          id TEXT PRIMARY KEY,
+          product_id TEXT NOT NULL,
+          label TEXT NOT NULL,
+          is_required INTEGER DEFAULT 1,
+          max_choices INTEGER DEFAULT 1,
+          sort_order INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (product_id) REFERENCES products(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_fixed_menu_courses_product ON fixed_menu_courses(product_id);
+
+        CREATE TABLE IF NOT EXISTS fixed_menu_course_categories (
+          course_id TEXT NOT NULL,
+          category_id TEXT NOT NULL,
+          PRIMARY KEY (course_id, category_id),
+          FOREIGN KEY (course_id) REFERENCES fixed_menu_courses(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS fixed_menu_course_surcharges (
+          course_id TEXT NOT NULL,
+          product_id TEXT NOT NULL,
+          surcharge REAL NOT NULL DEFAULT 0,
+          PRIMARY KEY (course_id, product_id),
+          FOREIGN KEY (course_id) REFERENCES fixed_menu_courses(id)
+        );
+      `);
+
+      const itemColumns = getColumns(db, 'order_items');
+      if (!itemColumns.includes('menu_group_id')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN menu_group_id TEXT`);
+      }
+      if (!itemColumns.includes('menu_role')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN menu_role TEXT`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_menu_group ON order_items(menu_group_id)`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4647,11 +4705,52 @@ function createSchema(): void {
       -- puts a price on them. Zero is NOT that signal: in a place that offers
       -- the coffee and the amaro, zero means 'on the house'.
       price_required INTEGER DEFAULT 0,
+      -- This product is a fixed menu, not a dish: a package at one price with
+      -- courses hanging off it. Ordering it writes a package row plus a real
+      -- row per dish chosen, so the kitchen ticket can section them by category
+      -- the way it sections everything else. See docs/coperto-e-menu-fisso.md.
+      is_fixed_menu INTEGER DEFAULT 0,
+      -- Whether the cover is part of that one price. The guests eating a menu
+      -- that says so are taken off the cover charge, so nobody pays it twice.
+      fixed_menu_includes_cover INTEGER DEFAULT 0,
       tags TEXT,
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (category_id) REFERENCES categories(id)
+    );
+
+    -- The courses of a fixed menu: "Primo", required, one choice.
+    CREATE TABLE IF NOT EXISTS fixed_menu_courses (
+      id TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      is_required INTEGER DEFAULT 1,
+      max_choices INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    );
+
+    -- Which categories a course draws from. Categories, not lists of dishes:
+    -- switch off the tart because it ran out and the course follows by itself,
+    -- which is exactly the "fruit or dessert, depending" case.
+    CREATE TABLE IF NOT EXISTS fixed_menu_course_categories (
+      course_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      PRIMARY KEY (course_id, category_id),
+      FOREIGN KEY (course_id) REFERENCES fixed_menu_courses(id)
+    );
+
+    -- What one dish inside a course costs on top — the fish main at 3 € more.
+    -- Only the dishes that have one appear here.
+    CREATE TABLE IF NOT EXISTS fixed_menu_course_surcharges (
+      course_id TEXT NOT NULL,
+      product_id TEXT NOT NULL,
+      surcharge REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (course_id, product_id),
+      FOREIGN KEY (course_id) REFERENCES fixed_menu_courses(id)
     );
 
     CREATE TABLE IF NOT EXISTS addon_groups (
@@ -4859,6 +4958,15 @@ function createSchema(): void {
       -- waiting. Saving a price is the confirmation — zero included, because a
       -- dish given away is a decision, not an omission.
       price_confirmed INTEGER DEFAULT 0,
+      -- The fixed menu this row came out of. One menu is one group: two menus
+      -- at the same table are two groups, each with its own choices, and a
+      -- group is what a split check moves around whole.
+      menu_group_id TEXT,
+      -- 'package' (the priced row) or 'course' (a dish chosen inside it);
+      -- NULL on every ordinary row. It lives on the row rather than being read
+      -- back off the product for the same reason product_name is a copy: the
+      -- row has to still say what it is once the catalogue has moved on.
+      menu_role TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id)
@@ -4942,6 +5050,11 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_orders_user       ON orders(user_id);
     CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
     CREATE INDEX IF NOT EXISTS idx_bills_order       ON bills(order_id);
+    CREATE INDEX IF NOT EXISTS idx_fixed_menu_courses_product ON fixed_menu_courses(product_id);
+    -- No index on order_items(menu_group_id) here: this function also runs
+    -- against an install that has not reached v91 yet, where the column does
+    -- not exist and indexing it throws. Migration v91 creates it, on every
+    -- install including a fresh one. Same reason as idx_order_items_kot_batch.
   `);
 }
 

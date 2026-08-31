@@ -11,6 +11,7 @@ import { getOpenServiceDay, getOrOpenServiceDay } from '../services/service-day'
 import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
 import { seatReservationForTable } from '../services/reservations';
 import { syncUnpaidBillsForOrder } from './bills';
+import { coveredGuestCount, expandFixedMenuItems, type ExpandedOrderItem } from '../services/fixed-menu';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -171,6 +172,110 @@ function resolveItemAddons(
   }
 
   return resolved;
+}
+
+/**
+ * Writes the rows of an order and returns what they add up to.
+ *
+ * One copy, called both by the route that opens an order and by the one that
+ * appends to it. They were two identical loops that had to be kept in step by
+ * hand, and the fixed menu would have made them two places to expand a package
+ * into its dishes.
+ */
+/**
+ * So much a head, less the heads whose cover is already inside a fixed menu
+ * they ordered.
+ *
+ * The one formula. Every path that changes what is on a check calls this
+ * instead of keeping a copy: the covers were counted from four places by the
+ * time the fixed menu arrived, and four copies is four chances to reprice one
+ * of them and not the others — which is exactly the bug v89 had to repair.
+ */
+export function orderCoverCharge(db: ReturnType<typeof getDatabase>, orderId: string | number): number {
+  const order = db.prepare('SELECT type, guest_count FROM orders WHERE id = ?').get(orderId) as any;
+  if (!order || order.type !== 'dine_in') return 0;
+  return computeCoverCharge(
+    order.guest_count,
+    parseCoverChargeAmount(getSettingValue(COVER_CHARGE_SETTING_KEY)),
+    coveredGuestCount(db, orderId),
+  );
+}
+
+function insertOrderItemRows(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number | bigint,
+  items: ExpandedOrderItem[],
+): number {
+  const insertItem = db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
+      subtotal, discount_amount, total, variant_selection,
+      modifier_selection, special_instructions, menu_group_id, menu_role, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+  `);
+
+  let subtotal = 0;
+
+  for (const item of items) {
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
+    if (!product) {
+      throw new Error(`Product ${item.product_id} not found`);
+    }
+
+    if (product.track_inventory && product.stock_quantity < item.quantity) {
+      throw new Error(`Insufficient stock for ${product.name}`);
+    }
+
+    // A dish chosen inside a fixed menu is paid for by the package: its own row
+    // carries the surcharge alone, or nothing at all.
+    const unitPrice = item.unit_price_override !== null ? item.unit_price_override : parseFloat(product.price);
+    const quantity = item.quantity;
+    // item.discount_amount is intentionally ignored here — discounts are only
+    // applied through the dedicated PATCH discount endpoints, which enforce
+    // discount_mode/max_percentage/max_amount/approval (vuln-0002).
+    const itemDiscount = 0;
+
+    // Validate quantity and price
+    if (!quantity || quantity <= 0 || !Number.isFinite(quantity)) {
+      throw new Error(`Invalid quantity for ${product.name}: must be a positive number`);
+    }
+    if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
+      throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
+    }
+
+    let itemSubtotal = unitPrice * quantity;
+    if (item.addons && Array.isArray(item.addons)) {
+      for (const addon of item.addons as any[]) {
+        if (!addon) continue;
+        if (addon.quantity !== undefined) {
+          if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
+            throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
+          }
+        }
+        const addonQty = addon.quantity || 1;
+        itemSubtotal += (addon.price || 0) * addonQty * quantity;
+      }
+    }
+    itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
+
+    subtotal += itemSubtotal;
+
+    const itemCreatedAt = now();
+    const insertItemResult = insertItem.run(
+      orderId, product.id, product.name, product.sku, unitPrice, quantity, product.track_inventory ? quantity : 0,
+      itemSubtotal, itemDiscount, itemSubtotal,
+      JSON.stringify(item.variant_selection || null),
+      JSON.stringify(item.modifier_selection || null),
+      item.special_instructions || null, item.menu_group_id, item.menu_role, itemCreatedAt, itemCreatedAt
+    );
+    insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons as any, itemCreatedAt);
+
+    if (product.track_inventory) {
+      db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
+        .run(quantity, now(), product.id);
+    }
+  }
+
+  return subtotal;
 }
 
 router.get('/', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
@@ -442,18 +547,17 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
     const db = getDatabase();
 
-    // So much a head, from the setting. A takeaway is not a laid table, so it
-    // pays no cover however many people are eating out of the bag.
-    const coverCharge = type === 'dine_in'
-      ? computeCoverCharge(guest_count, parseCoverChargeAmount(getSettingValue(COVER_CHARGE_SETTING_KEY)))
-      : 0;
-
+    // A fixed menu arrives as one chosen package and leaves as real rows, one
+    // per dish, so the kitchen ticket can section them by category like any
+    // other order. See docs/coperto-e-menu-fisso.md.
+    let expandedItems: ExpandedOrderItem[] = [];
     try {
       validateOrderNotes(db, special_instructions);
       for (const item of items) {
         validateItemNotes(db, item.special_instructions);
         item.addons = resolveItemAddons(db, item.product_id, item.addons);
       }
+      expandedItems = expandFixedMenuItems(db, items);
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
@@ -500,81 +604,22 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `).run(orderNumber, table_id || null, orderTableRow?.number ?? null, orderTableRow?.room ?? null,
         serviceDay.id, customer_id || null, authenticatedUserId, type, guest_count || null,
-        special_instructions || null, packaging_charge || 0, delivery_charge || 0, coverCharge, now(), now());
+        special_instructions || null, packaging_charge || 0, delivery_charge || 0, 0, now(), now());
 
       const orderId = orderResult.lastInsertRowid;
 
-      let subtotal = 0;
+      const subtotal = insertOrderItemRows(db, orderId, expandedItems);
 
-      const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
-          subtotal, discount_amount, total, variant_selection,
-          modifier_selection, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `);
+      // The cover is settled once the rows are on the check, never before: a
+      // menu that includes it takes its guest off the count, so the figure
+      // cannot be struck until we know what was ordered. A takeaway pays none
+      // however many people are eating out of the bag.
+      const finalCover = orderCoverCharge(db, String(orderId));
 
-      for (const item of items) {
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-        if (!product) {
-          throw new Error(`Product ${item.product_id} not found`);
-        }
+      const total = roundMoney(subtotal + orderCharges({ delivery_charge, packaging_charge, cover_charge: finalCover }));
 
-        if (product.track_inventory && product.stock_quantity < item.quantity) {
-          throw new Error(`Insufficient stock for ${product.name}`);
-        }
-
-        const unitPrice = parseFloat(product.price);
-        const quantity = item.quantity;
-        // item.discount_amount is intentionally ignored here — discounts are only
-        // applied through the dedicated PATCH discount endpoints, which enforce
-        // discount_mode/max_percentage/max_amount/approval (vuln-0002).
-        const itemDiscount = 0;
-
-        // Validate quantity and price
-        if (!quantity || quantity <= 0 || !Number.isFinite(quantity)) {
-          throw new Error(`Invalid quantity for ${product.name}: must be a positive number`);
-        }
-        if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
-          throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
-        }
-
-        let itemSubtotal = unitPrice * quantity;
-        if (item.addons && Array.isArray(item.addons)) {
-          for (const addon of item.addons) {
-            if (!addon) continue;
-            if (addon.quantity !== undefined) {
-              if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
-                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
-              }
-            }
-            const addonQty = addon.quantity || 1;
-            itemSubtotal += (addon.price || 0) * addonQty * quantity;
-          }
-        }
-        itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
-
-        subtotal += itemSubtotal;
-
-        const itemCreatedAt = now();
-        const insertItemResult = insertItem.run(
-          orderId, product.id, product.name, product.sku, unitPrice, quantity, product.track_inventory ? quantity : 0,
-          itemSubtotal, itemDiscount, itemSubtotal,
-          JSON.stringify(item.variant_selection || null),
-          JSON.stringify(item.modifier_selection || null),
-          item.special_instructions || null, itemCreatedAt, itemCreatedAt
-        );
-        insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
-
-        if (product.track_inventory) {
-          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
-            .run(quantity, now(), product.id);
-        }
-      }
-
-      const total = roundMoney(subtotal + orderCharges({ delivery_charge, packaging_charge, cover_charge: coverCharge }));
-
-      db.prepare('UPDATE orders SET subtotal = ?, total = ?, updated_at = ? WHERE id = ?')
-        .run(subtotal, total, now(), orderId);
+      db.prepare('UPDATE orders SET subtotal = ?, total = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
+        .run(subtotal, total, finalCover, now(), orderId);
 
       if (table_id && type === 'dine_in') {
         db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?").run(now(), table_id);
@@ -674,6 +719,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
       }
 
+      let expandedItems: ExpandedOrderItem[] = [];
       try {
         for (const item of items) {
           validateItemNotes(db, item.special_instructions);
@@ -682,71 +728,12 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         if (special_instructions !== undefined) {
           validateOrderNotes(db, special_instructions);
         }
+        expandedItems = expandFixedMenuItems(db, items);
       } catch (err: unknown) {
         throw Object.assign(new Error(err instanceof Error ? err.message : 'Invalid order item'), { statusCode: 400 });
       }
 
-      const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
-          subtotal, discount_amount, total, variant_selection,
-          modifier_selection, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `);
-
-      for (const item of items) {
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-        if (!product) {
-          throw new Error(`Product ${item.product_id} not found`);
-        }
-        if (product.track_inventory && product.stock_quantity < item.quantity) {
-          throw new Error(`Insufficient stock for ${product.name}`);
-        }
-
-        const unitPrice = parseFloat(product.price);
-        const quantity = item.quantity;
-        // item.discount_amount is intentionally ignored here — discounts are only
-        // applied through the dedicated PATCH discount endpoints, which enforce
-        // discount_mode/max_percentage/max_amount/approval (vuln-0002).
-        const itemDiscount = 0;
-
-        // Validate quantity and price
-        if (!quantity || quantity <= 0 || !Number.isFinite(quantity)) {
-          throw new Error(`Invalid quantity for ${product.name}: must be a positive number`);
-        }
-        if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
-          throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
-        }
-
-        let itemSubtotal = unitPrice * quantity;
-        if (item.addons && Array.isArray(item.addons)) {
-          for (const addon of item.addons) {
-            if (!addon) continue;
-            if (addon.quantity !== undefined) {
-              if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
-                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
-              }
-            }
-            const addonQty = addon.quantity || 1;
-            itemSubtotal += (addon.price || 0) * addonQty * quantity;
-          }
-        }
-        itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
-
-        const itemCreatedAt = now();
-        const insertItemResult = insertItem.run(
-          req.params.id, product.id, product.name, product.sku, unitPrice, quantity, product.track_inventory ? quantity : 0,
-          itemSubtotal, itemDiscount, itemSubtotal,
-          JSON.stringify(item.variant_selection || null),
-          JSON.stringify(item.modifier_selection || null),
-          item.special_instructions || null, itemCreatedAt, itemCreatedAt
-        );
-        insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
-
-        if (product.track_inventory) {
-          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
-            .run(quantity, now(), product.id);
-        }
-      }
+      insertOrderItemRows(db, String(req.params.id), expandedItems);
 
       // BUG #3 FIX: Filter out cancelled items from total recalculation
       const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(req.params.id) as any[];
@@ -766,18 +753,23 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         // amount type: keep same value
       }
 
+      // A menu that includes the cover has just landed on the check, or has
+      // not: either way the cover is settled from the rows, never left at what
+      // it was when the order was opened.
+      const coverCharge = orderCoverCharge(db, String(req.params.id));
+
       const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
-      const total = roundMoney(discountedSubtotal + orderCharges(currentOrder));
+      const total = roundMoney(discountedSubtotal + orderCharges({ ...currentOrder, cover_charge: coverCharge }));
 
       // Update order totals and optionally update order-level notes
       if (special_instructions !== undefined) {
         db.prepare(`
-          UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, special_instructions = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, newDiscountAmount, total, special_instructions || null, now(), req.params.id);
+          UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, cover_charge = ?, special_instructions = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, newDiscountAmount, total, coverCharge, special_instructions || null, now(), req.params.id);
       } else {
         db.prepare(`
-          UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, newDiscountAmount, total, now(), req.params.id);
+          UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, cover_charge = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, newDiscountAmount, total, coverCharge, now(), req.params.id);
       }
 
       // Sync the bill through the shared path rather than by hand. The
@@ -791,7 +783,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         discountAmount: newDiscountAmount,
         deliveryCharge: currentOrder.delivery_charge || 0,
         packagingCharge: currentOrder.packaging_charge || 0,
-        coverCharge: currentOrder.cover_charge || 0,
+        coverCharge,
         total,
       });
 
@@ -1243,12 +1235,19 @@ function recomputeOrderAfterItemChange(db: ReturnType<typeof getDatabase>, order
     newOrderDiscount = Math.round(existingDiscountAmount * (orderSubtotal / order.subtotal) * 100) / 100;
   }
 
+  // The cover is worked out here and nowhere else, from what is on the check
+  // right now: so much a head, less the heads whose cover is already inside a
+  // fixed menu they ordered. Cancel that menu and the cover comes back; add one
+  // and it goes. Read from the row rather than the caller's copy, because
+  // PATCH /guests writes the new head count just before calling in.
+  const coverCharge = orderCoverCharge(db, orderId);
+
   const discountedSubtotal = Math.max(0, orderSubtotal - newOrderDiscount);
-  const orderTotal = roundMoney(discountedSubtotal + orderCharges(order));
+  const orderTotal = roundMoney(discountedSubtotal + orderCharges({ ...order, cover_charge: coverCharge }));
 
   db.prepare(`
-    UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
-  `).run(orderSubtotal, newOrderDiscount, orderTotal, now(), orderId);
+    UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, cover_charge = ?, updated_at = ? WHERE id = ?
+  `).run(orderSubtotal, newOrderDiscount, orderTotal, coverCharge, now(), orderId);
 
   const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
   if (existingBill) {
@@ -1257,7 +1256,7 @@ function recomputeOrderAfterItemChange(db: ReturnType<typeof getDatabase>, order
     // the right amount at the bottom and yesterday's cover on its own line,
     // with the per-head price back-calculated from the stale figure.
     db.prepare('UPDATE bills SET total = ?, balance = ?, discount_amount = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
-      .run(orderTotal, newBillBalance, newOrderDiscount, Number(order.cover_charge || 0), now(), existingBill.id);
+      .run(orderTotal, newBillBalance, newOrderDiscount, coverCharge, now(), existingBill.id);
   }
 }
 
@@ -1478,14 +1477,13 @@ router.patch('/:id/guests', orderWriteRateLimit, requireRole('owner', 'manager',
       return res.status(400).json({ error: 'guest_count must be a whole number between 1 and 99' });
     }
 
-    const coverCharge = order.type === 'dine_in'
-      ? computeCoverCharge(guest_count, parseCoverChargeAmount(getSettingValue(COVER_CHARGE_SETTING_KEY)))
-      : 0;
-
     const updated = withTxn(() => {
-      db.prepare('UPDATE orders SET guest_count = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
-        .run(guest_count, coverCharge, now(), req.params.id);
-      recomputeOrderAfterItemChange(db, String(req.params.id), { ...order, cover_charge: coverCharge });
+      // Write the new head count first: the recompute reads it back and prices
+      // the cover from it, so there is one formula rather than two that have to
+      // agree.
+      db.prepare('UPDATE orders SET guest_count = ?, updated_at = ? WHERE id = ?')
+        .run(guest_count, now(), req.params.id);
+      recomputeOrderAfterItemChange(db, String(req.params.id), order);
       return parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id));
     });
 

@@ -79,9 +79,33 @@ export interface Product {
   variants: Record<string, unknown>[] | null;
   modifiers: Record<string, unknown>[] | null;
   sort_order: number;
+  /** This product is a set menu at one price, not a dish. */
+  is_fixed_menu?: boolean;
+  /** The cover is part of that price, so its guest is taken off the cover charge. */
+  fixed_menu_includes_cover?: boolean;
+  /** Present on a fixed menu: the courses to choose from, in order. */
+  courses?: FixedMenuCourse[];
   category?: Category;
   addon_groups?: AddonGroup[];
 }
+
+/**
+ * One course of a fixed menu. It draws from categories rather than a list of
+ * dishes, so switching off the tart because it ran out updates the course by
+ * itself. See docs/coperto-e-menu-fisso.md.
+ */
+export interface FixedMenuCourse {
+  id: string;
+  label: string;
+  is_required: boolean;
+  max_choices: number;
+  sort_order: number;
+  category_ids: string[];
+  surcharges: { product_id: string; surcharge: number }[];
+}
+
+/** What the guest picked, course by course. */
+export type FixedMenuSelection = { course_id: string; product_id: string }[];
 
 export interface AddonGroup {
   id: string;
@@ -277,6 +301,10 @@ export interface OrderItem {
   price_required?: boolean | number;
   /** Someone has settled what this row costs — saving a price, zero included. */
   price_confirmed?: boolean | number;
+  /** The fixed menu this row came out of; every row of one menu shares it. */
+  menu_group_id?: string | null;
+  /** 'package' is the priced line, 'course' a dish chosen inside it. */
+  menu_role?: 'package' | 'course' | null;
 }
 
 export interface Bill {
@@ -332,4 +360,12 @@ export interface CartItem {
   quantity: number;
   addons: Addon[];
   special_instructions: string;
+  /** Set on a fixed menu: the dishes chosen for it, course by course. */
+  menu_selection?: FixedMenuSelection;
+  /**
+   * What keeps two identical menus apart in the cart. A menu is always one
+   * line of one, because a split check moves a menu whole and a block of six
+   * cannot be shared between six guests.
+   */
+  menu_line_id?: string;
 }

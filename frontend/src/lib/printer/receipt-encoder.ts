@@ -97,21 +97,26 @@ const ON_THE_HOUSE = 'On the house';
 /**
  * What belongs in the amount column of one row.
  *
- * A row worth nothing was given away — say so, rather than printing a 0,00
- * the guest has to interpret. A row whose price is simply not set yet is a
- * different thing and keeps its zero, so the omission stays visible. The
- * ESC/POS formatter has drawn the same line since the price went on the row
- * (itemRows in main/printers/thermal.ts); printing the same bill from the
- * browser used to lose the distinction, and the two must not disagree.
+ * Three rows read as zero and mean different things. One given away says so,
+ * rather than printing a 0,00 the guest has to interpret. One whose price is
+ * simply not set yet keeps its zero, so the omission stays visible. And a
+ * course inside a fixed menu is paid for by the package: it shows a surcharge
+ * behind a plus, or nothing at all — menuCourseLine() settles that before this
+ * is ever asked, so a course never reaches the giveaway rule.
+ *
+ * The ESC/POS formatter has drawn the same lines since the price went on the
+ * row (itemRows in main/printers/thermal.ts); printing the same bill from the
+ * browser used to lose them, and the two must not disagree.
  */
-function itemAmountText(
-  item: { total?: number | string; price_required?: boolean | number },
+function amountTextFor(
+  item: { total?: number | string; price_required?: boolean | number; menu_role?: string | null },
   currency: string,
   locale: string,
   trimDecimals: boolean,
 ): string {
-  if (Number(item.total ?? 0) === 0 && !item.price_required) return ON_THE_HOUSE;
-  return formatAmount(item.total ?? 0, currency, locale, trimDecimals);
+  const { sign } = menuCourseLine(item);
+  if (!sign && Number(item.total ?? 0) === 0 && !item.price_required) return ON_THE_HOUSE;
+  return sign + formatAmount(item.total ?? 0, currency, locale, trimDecimals);
 }
 
 function resolveCol4Widths(
@@ -127,7 +132,7 @@ function resolveCol4Widths(
 
   for (const item of items) {
     rateWidth = Math.max(rateWidth, formatAmount(item.unit_price ?? 0, currency, locale, trimDecimals).length);
-    amountWidth = Math.max(amountWidth, itemAmountText(item, currency, locale, trimDecimals).length);
+    amountWidth = Math.max(amountWidth, amountTextFor(item, currency, locale, trimDecimals).length);
   }
 
   const valueBudget = cols - qtyWidth - 4;
@@ -149,6 +154,20 @@ function col4Header(widths: Col4Widths): string {
   return item + qty + rate + amt;
 }
 
+/**
+ * How a row of a fixed menu reads on paper. The package line is the one that
+ * costs; a dish chosen inside it sits underneath, indented, and shows only a
+ * surcharge — with the sign on it, so the guest can add the indented lines to
+ * the package in their head and land on the total.
+ */
+function menuCourseLine(
+  item: { menu_role?: string | null; total?: number | string },
+): { indent: boolean; suppressAmount: boolean; sign: string } {
+  const isCourse = item?.menu_role === 'course';
+  if (!isCourse) return { indent: false, suppressAmount: false, sign: '' };
+  return { indent: true, suppressAmount: !(Number(item.total) > 0), sign: '+' };
+}
+
 function col4Rows(
   name: string,
   qty: number,
@@ -161,7 +180,9 @@ function col4Rows(
   amountText?: string
 ): string[] {
   const [nameWidth, qtyWidth, rateWidth, amountWidth] = widths;
-  const rateStr = formatAmount(rate, currency, locale, trimDecimals);
+  // A course carries no rate of its own — the package holds the price — so the
+  // column is left empty rather than filled with a zero nobody set.
+  const rateStr = rate === '' ? '' : formatAmount(rate, currency, locale, trimDecimals);
   const amtStr = amountText ?? formatAmount(amount, currency, locale, trimDecimals);
   const qtyStr = String(qty);
 
@@ -289,7 +310,18 @@ export function buildClassicReceiptBytes(
   // Line items
   const items = order?.items ?? [];
   for (const item of items) {
-    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals, itemAmountText(item, currency, locale, trimDecimals))) {
+    const course = menuCourseLine(item);
+    const rows = course.suppressAmount
+      ? [truncate(`  ${item.product_name}`, cols - 1)]
+      : col4Rows(
+        course.indent ? `  ${item.product_name}` : item.product_name,
+        item.quantity,
+        course.indent ? '' : item.unit_price,
+        item.total,
+        currency, col4Layout, locale, trimDecimals,
+        amountTextFor(item, currency, locale, trimDecimals),
+      );
+    for (const row of rows) {
       safePrinterText(enc, row, warnings).newline();
     }
 
@@ -439,13 +471,15 @@ export function buildCompactReceiptBytes(
   // Items — compact: one line per item with total, qty x rate below if qty > 1
   const items = order?.items ?? [];
   for (const item of items) {
-    const amountText = itemAmountText(item, currency, locale, trimDecimals);
-    const nameMax = cols - amountText.length - 1;
-    safePrinterText(
-      enc,
-      padRow(truncate(item.product_name, nameMax), amountText, cols),
-      warnings
-    ).newline();
+    const course = menuCourseLine(item);
+    const name = course.indent ? `  ${item.product_name}` : item.product_name;
+    if (course.suppressAmount) {
+      safePrinterText(enc, truncate(name, cols), warnings).newline();
+    } else {
+      const amount = amountTextFor(item, currency, locale, trimDecimals);
+      const nameMax = cols - amount.length - 1;
+      safePrinterText(enc, padRow(truncate(name, nameMax), amount, cols), warnings).newline();
+    }
 
     if (item.quantity > 1) {
       enc
