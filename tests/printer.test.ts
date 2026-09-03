@@ -842,6 +842,45 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     }
   }
 
+  // A row worth nothing was given away; a row nobody has priced yet is a
+  // different thing and keeps its zero, so the omission stays visible. The
+  // ESC/POS formatter has drawn that line since the price went on the row —
+  // printing the same bill from the browser used to lose it.
+  const offeredBill = {
+    id: 'b2',
+    bill_number: 'INV-OFFERED-1',
+    order: {
+      ...irOrder,
+      items: [
+        { product_name: 'Amaro offerto', quantity: 1, unit_price: 0, total: 0, price_required: false },
+        { product_name: 'Piatto da prezzare', quantity: 1, unit_price: 0, total: 0, price_required: true },
+      ],
+    },
+    subtotal: 0,
+    discount_amount: 0,
+    total: 0,
+  };
+  for (const enc of encoders) {
+    const offeredWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const offeredText = Buffer.from(
+      enc.fn(offeredBill, frontendTenant, { useUnicode: false }, offeredWarnings),
+    ).toString('utf8');
+    const lineFor = (name: string) => offeredText
+      .split('\n')
+      .filter((line: string) => line.includes(name))
+      .join(' ');
+    assert(
+      `[frontend ${enc.name}] a row given away says so`,
+      lineFor('Amaro offerto').includes('On the house'),
+      lineFor('Amaro offerto'),
+    );
+    assert(
+      `[frontend ${enc.name}] a row nobody has priced keeps its zero`,
+      !lineFor('Piatto da prezzare').includes('On the house'),
+      lineFor('Piatto da prezzare'),
+    );
+  }
+
   // The frontend classic template also needs to keep the three-character IRR
   // prefix inside the 58mm (42-column) raw layout.
   for (const useUnicode of [false, true]) {
