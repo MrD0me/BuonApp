@@ -290,9 +290,11 @@ Cose decise mentre si implementava, che il piano non prevedeva:
 - **Rifacimento della scheda prodotti.** Il modulo chiede ancora SKU, codice a barre, prezzo di
   costo, percentuale di cashback, giacenza e scorta minima: campi da supermercato in un menu da
   ristorante. Sessione a parte.
-- **Menu fisso a prezzo unico** (antipasto, primo, secondo, dolce o frutta). Da valutare sui gruppi
-  extra, che hanno già obbligatorietà, minimo, massimo e voci a prezzo zero. Il pezzo mancante è che
-  le voci dei gruppi sono un catalogo separato dai prodotti. Sessione a parte.
+- ~~**Menu fisso a prezzo unico**~~ (antipasto, primo, secondo, dolce o frutta). Fatto il
+  2026-08-31, ma **non** sui gruppi extra: una voce di gruppo non ha categoria, e la comanda
+  impagina per categoria del prodotto, quindi il pacchetto arrivava in cucina indiviso. Il menu
+  scrive righe vere, una per piatto scelto. Vedi
+  [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md).
 - **Nome di riga modificabile.** Tecnicamente banale (`product_name` è già una copia), scartato per
   ora: rinominare la riga rende il fuori menu indistinguibile da un piatto di menu nell'archivio.
 - **Registro delle modifiche.** L'app non traccia chi applica sconti; una tracciatura dei cambi

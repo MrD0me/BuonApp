@@ -31,7 +31,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | Document | Description | Scope |
 | --- | --- | --- |
 | [order-flow-and-navigation.md](order-flow-and-navigation.md) | Riorganizzazione dell'interfaccia prima del rifacimento grafico: navigazione a cinque voci, pannello ordine condiviso nella scheda del tavolo, giornata di servizio e archivio, prezzo di riga modificabile. | ACTIVE DESIGN |
-| [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md) | Prezzo del coperto e menu completo a prezzo fisso: perché i gruppi extra non reggono (la comanda va in sezioni per categoria) e come il menu deve scrivere righe vere nell'ordine. | ACTIVE DESIGN |
+| [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md) | Prezzo del coperto e menu completo a prezzo fisso: perché i gruppi extra non reggono (la comanda va in sezioni per categoria) e come il menu scrive righe vere nell'ordine. | CURRENT |
 
 ### Historical records
 

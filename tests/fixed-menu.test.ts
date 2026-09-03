@@ -47,6 +47,7 @@ const {
   getResults, closeDatabase, now,
 } = require('./helpers/test-setup');
 
+const { registerRoutes } = require('../main/routes');
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { settingsRoutes } = require('../main/routes/settings');
@@ -87,6 +88,9 @@ async function main() {
     '/api/fixed-menus': fixedMenuRoutes,
     '/api/products': productRoutes,
   });
+  // The item cancel/restore endpoints are registered inline on the app rather
+  // than on a router, so the whole route table has to be mounted to reach them.
+  registerRoutes(app);
   const { baseUrl, server } = await startServer(app);
 
   const readOrder = async (orderId: number) =>
@@ -332,7 +336,7 @@ async function main() {
     await api(baseUrl, '/api/settings/split_checks_enabled', {
       method: 'PUT', body: { value: 'true' }, headers: authHeader,
     });
-    const billed = await api(baseUrl, '/api/bills', {
+    const billed = await api(baseUrl, '/api/bills/generate', {
       method: 'POST', headers: authHeader, body: { order_id: splitOrder.data.order.id },
     });
     assertEqual(billed.status, 201, 'the check is drawn up');
@@ -424,16 +428,19 @@ async function main() {
     assert(!receipt.includes('Offerto'), 'a dish worth nothing inside a menu is not a gift');
     assert(/\+\s*E?\s*3/.test(receipt.replace(/\s+/g, ' ')), 'and the surcharge shows with its sign');
 
+    // ── Summary ───────────────────────────────────────────────────────────
+    console.log('\n' + '='.repeat(60));
+    const results = getResults();
+    console.log(`Results: ${results.passed}/${results.total} passed, ${results.failed} failed`);
+    process.exit(results.failed > 0 ? 1 : 0);
+  } catch (error: any) {
+    console.error(`\n✗ Test crashed: ${error.message}`);
+    console.error(error.stack);
+    process.exit(1);
   } finally {
-    server.close();
+    server?.close();
     closeDatabase();
   }
-
-  const { failed } = getResults();
-  if (failed > 0) process.exit(1);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main();
