@@ -16,6 +16,7 @@ const {
   migrateLegacyAppendAttempt,
   readAppendAttempt,
   clearAppendAttempt,
+  isPermanentAppendRefusal,
 } = require('../frontend/src/lib/append-attempt');
 
 class MemoryStorage {
@@ -649,6 +650,23 @@ function main() {
   });
   assert.equal(readAppendAttempt(foreignStorage, { userId: 'cashier-2', now: 30_001 }), null, 'another cashier does not recover a foreign append attempt');
   assert.equal(readAppendAttempt(foreignStorage, { userId: 'cashier-1', now: 30_001 })?.idempotencyKey, foreignAttempt.idempotencyKey, 'the original cashier retains its pending append retry');
+
+  // A refusal is only permanent when trying again cannot change the answer.
+  // The append route is rate limited at sixty writes a minute, so a busy
+  // service can hand back a 429: treating that as final threw the rows away
+  // and told the floor the order had been closed, which was not true.
+  const refusal = (status?: number) => ({ response: { status } });
+  for (const status of [400, 403, 404, 409, 422]) {
+    assert.equal(isPermanentAppendRefusal(refusal(status)), true, `${status} is a refusal for good`);
+  }
+  for (const status of [401, 408, 425, 429]) {
+    assert.equal(isPermanentAppendRefusal(refusal(status)), false, `${status} is a wait, not a refusal`);
+  }
+  for (const status of [500, 502, 503, 504]) {
+    assert.equal(isPermanentAppendRefusal(refusal(status)), false, `${status} is the server failing, not refusing`);
+  }
+  assert.equal(isPermanentAppendRefusal(refusal(undefined)), false, 'a request that never got a status is not a refusal');
+  assert.equal(isPermanentAppendRefusal(new Error('offline')), false, 'a network error keeps the attempt');
 
   console.log('Issue #255 cart identity and append-attempt tests passed');
 }
