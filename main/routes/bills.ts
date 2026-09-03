@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'crypto';
+import { splitChecksAvailable, SPLIT_CHECKS_SETTING_KEY, SPLIT_CHECKS_UNAVAILABLE_CODE } from '../lib/split-checks';
 import { Router, Request, Response } from 'express';
 import {
   attachEffectiveAddons,
@@ -528,7 +529,15 @@ export function syncUnpaidBillsForOrder(
 router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    if (getSettingValue('split_checks_enabled') !== 'true') return res.status(403).json({ error: 'Split checks are not enabled' });
+    // Parked, not deleted — see main/lib/split-checks.ts. Refused here rather
+    // than only hidden in the till, because a handheld running an older screen
+    // must not be able to split a check in a house that has stopped offering
+    // it. Paying a share and merging one back are deliberately left open: the
+    // floor still has to settle the checks that were split before this.
+    if (!splitChecksAvailable()) {
+      return res.status(403).json({ error: 'Split checks are not available in this version', code: SPLIT_CHECKS_UNAVAILABLE_CODE });
+    }
+    if (getSettingValue(SPLIT_CHECKS_SETTING_KEY) !== 'true') return res.status(403).json({ error: 'Split checks are not enabled' });
     const checks = req.body?.checks;
     if (!Array.isArray(checks) || checks.length < 2 || checks.length > 20) return res.status(400).json({ error: 'Create between 2 and 20 guest checks' });
 

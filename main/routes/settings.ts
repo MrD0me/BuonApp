@@ -16,6 +16,7 @@ import {
   validateOrderTypes,
 } from '../lib/order-types';
 import { COVER_CHARGE_SETTING_KEY, parseCoverChargeAmount } from '../money';
+import { splitChecksAvailable, SPLIT_CHECKS_SETTING_KEY, SPLIT_CHECKS_UNAVAILABLE_CODE } from '../lib/split-checks';
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -74,10 +75,25 @@ function maskSetting(key: string, value: string): string {
   return value ? `****${value.slice(-4)}` : '';
 }
 
+/**
+ * What a reader is actually asking when it reads `split_checks_enabled` is
+ * "can this till split a check", and while the feature is parked the honest
+ * answer is no — whatever the house had chosen before.
+ *
+ * The stored row is left exactly as it was on purpose: it is a preference for
+ * when splitting comes back, not a stale flag to be swept up. Switch
+ * splitting back on and the house gets its own choice back,
+ * without anybody having to remember what it was.
+ */
+function effectiveSettingValue(key: string, value: string): string {
+  if (key === SPLIT_CHECKS_SETTING_KEY && !splitChecksAvailable()) return 'false';
+  return value;
+}
+
 function publicSettingsShape(settings: Record<string, string>): Record<string, string> {
   const publicSettings: Record<string, string> = {};
   for (const [key, value] of Object.entries(settings)) {
-    publicSettings[key] = maskSetting(key, value);
+    publicSettings[key] = effectiveSettingValue(key, maskSetting(key, value));
   }
   return publicSettings;
 }
@@ -566,15 +582,16 @@ router.get('/:key', settingsReadRateLimit, requireRole('owner', 'manager', 'cash
     }
     const key = String(req.params.key);
     const db = getDatabase();
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
+    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(key) as
+      { key: string; value: string; updated_at: string | null } | undefined;
     if (!setting) {
       const defaultValue = OPTIONAL_SETTING_DEFAULTS[key];
       if (defaultValue !== undefined) {
-        return res.json({ setting: { key, value: defaultValue, updated_at: null } });
+        return res.json({ setting: { key, value: effectiveSettingValue(key, defaultValue), updated_at: null } });
       }
       return res.status(404).json({ error: 'Setting not found' });
     }
-    res.json({ setting });
+    res.json({ setting: { ...setting, value: effectiveSettingValue(key, String(setting.value)) } });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -592,6 +609,15 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
     }
     if (req.params.key === 'bill_template' && !isCoreBillTemplate(String(value))) {
       return res.status(400).json({ error: 'Unsupported bill template' });
+    }
+    // The key stays writable so switching the feature back on is one constant
+    // and no migration, but while it is parked it can only be turned off.
+    // See main/lib/split-checks.ts.
+    if (req.params.key === SPLIT_CHECKS_SETTING_KEY && !splitChecksAvailable() && String(value) === 'true') {
+      return res.status(403).json({
+        error: 'Split checks are not available in this version',
+        code: SPLIT_CHECKS_UNAVAILABLE_CODE,
+      });
     }
     const db = getDatabase();
     const wildcardKey = String(req.params.key);

@@ -128,9 +128,25 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4">
-        <div><h2 className="font-semibold text-gray-900">{t('splitChecks')}</h2><p className="text-sm text-gray-500 mt-1">{t('splitChecksHint')}</p></div>
-        <input type="checkbox" className="size-5" disabled={!isAdmin} checked={splitChecksEnabled} onChange={async (e) => { const value = e.target.checked; setSplitChecksEnabled(value); try { await api.put('/settings/split_checks_enabled', { value: String(value) }); } catch { setSplitChecksEnabled(!value); toast.error(t('saveFailed')); } }} />
+      {/* Parked, not removed: the switch stays where the owner expects to find
+          it, greyed out, saying why. Turning it back on is one constant in
+          main/lib/split-checks.ts — and this block, which has to lose its note
+          and its `disabled` at the same time. The backend refuses either way. */}
+      <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4 opacity-60">
+        <div>
+          <h2 className="font-semibold text-gray-900">{t('splitChecks')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('splitChecksHint')}</p>
+          <p className="text-sm text-amber-700 mt-2">{t('splitChecksParked')}</p>
+        </div>
+        <input
+          type="checkbox"
+          className="size-5 cursor-not-allowed"
+          disabled
+          checked={splitChecksEnabled}
+          readOnly
+          aria-describedby="split-checks-parked"
+        />
+        <span id="split-checks-parked" className="sr-only">{t('splitChecksParked')}</span>
       </div>
 
       {merges.length > 0 && <div className="bg-white rounded-xl border border-gray-100 p-6"><h2 className="font-semibold text-gray-900 mb-3">{t('mergeHistory')}</h2><div className="space-y-2 text-sm text-gray-600">{merges.map((entry) => <p key={entry.id}>{entry.source_name} → {entry.target_name} · {entry.affected_payments} · {formatDate(entry.merged_at)}</p>)}</div></div>}

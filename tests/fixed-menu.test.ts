@@ -47,6 +47,12 @@ const {
   getResults, closeDatabase, now,
 } = require('./helpers/test-setup');
 
+// Splitting is parked for the dining room (main/lib/split-checks.ts). These
+// suites switch it on for themselves so the code stays exercised and ready
+// for whoever unparks it, instead of rotting untested behind a constant.
+const { setSplitChecksAvailableForTests } = require('../main/lib/split-checks');
+setSplitChecksAvailableForTests(true);
+
 const { registerRoutes } = require('../main/routes');
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');

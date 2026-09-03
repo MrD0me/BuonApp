@@ -26,6 +26,12 @@ async function main() {
   seedProduct(db, 'split-toast', 'split-cat', 'Toast', 90);
   const app = createApp({ '/api/orders': orderRoutes, '/api/bills': billRoutes, '/api/payment-methods': paymentMethodRoutes, '/api/settings': settingsRoutes, '/api/reports': reportRoutes });
   const { registerRoutes } = require('../main/routes/index');
+
+// Splitting is parked for the dining room (main/lib/split-checks.ts). These
+// suites switch it on for themselves so the code stays exercised and ready
+// for whoever unparks it, instead of rotting untested behind a constant.
+const { setSplitChecksAvailableForTests } = require('../main/lib/split-checks');
+setSplitChecksAvailableForTests(true);
   registerRoutes(app);
   const { baseUrl, server } = await startServer(app);
   try {
