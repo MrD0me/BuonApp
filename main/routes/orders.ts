@@ -10,6 +10,7 @@ import { tableLabelSource, tableGroupLeader } from '../services/tables';
 import { getOpenServiceDay, getOrOpenServiceDay } from '../services/service-day';
 import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
 import { seatReservationForTable } from '../services/reservations';
+import { syncUnpaidBillsForOrder } from './bills';
 import { coveredGuestCount, expandFixedMenuItems, type ExpandedOrderItem } from '../services/fixed-menu';
 import expressRateLimit from 'express-rate-limit';
 
@@ -774,13 +775,23 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         `).run(subtotal, newDiscountAmount, total, coverCharge, now(), req.params.id);
       }
 
-      // BUG #4 FIX: Sync bill if it exists (add-items didn't update the bill)
-      const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
-      if (existingBill) {
-        const newBillBalance = Math.max(0, total - (existingBill.paid_amount || 0));
-        db.prepare('UPDATE bills SET total = ?, balance = ?, discount_amount = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
-          .run(total, newBillBalance, newDiscountAmount, coverCharge, now(), existingBill.id);
-      }
+      // Sync the bill through the shared path rather than by hand. The
+      // hand-rolled update wrote total, balance, discount and cover and left
+      // `subtotal` at whatever it was when the bill was drawn up: add a dish to
+      // an order whose preconto had already been printed and the reprint said
+      // "Subtotale 90,00 ... TOTALE 118,00", two numbers that do not add up on
+      // the paper in the guest's hand. Splitting that check then divided the
+      // stale 90 while weighing the shares against the real 110, so the shares
+      // came to less than the total. A split check cannot be here — items are
+      // refused above once one exists — so this takes the plain branch.
+      syncUnpaidBillsForOrder(db, String(req.params.id), {
+        subtotal,
+        discountAmount: newDiscountAmount,
+        deliveryCharge: currentOrder.delivery_charge || 0,
+        packagingCharge: currentOrder.packaging_charge || 0,
+        coverCharge,
+        total,
+      });
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const updatedItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
