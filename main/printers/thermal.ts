@@ -874,13 +874,10 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   if (Number(bill.cover_charge) > 0) {
     const heads = Number(order?.guest_count || 0);
     // Only spell out "4 x 2,00" when it multiplies back to the amount printed
-    // beside it, as the guest at the table will check it. A share of a split
-    // check never does: it carries its own head's cover, not the table's, so
-    // dividing by the whole table announced a price nobody set — four covers
-    // at 2,00 printed as "4 x 0,75". The same will hold once a fixed menu
-    // carries the cover for part of the table.
+    // beside it, as the guest at the table will check it. It will not once a
+    // fixed menu carries the cover for part of the table.
     const perHead = heads > 0 ? Number((Number(bill.cover_charge) / heads).toFixed(2)) : 0;
-    const divides = heads > 0 && !bill.split_group_id && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
+    const divides = heads > 0 && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
     const coverLabel = divides
       ? `${L.cover} ${heads} x ${formatCurrency(perHead, prefix, locale, trimDecimals)}`
       : L.cover;
@@ -980,13 +977,10 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   if (Number(bill.cover_charge) > 0) {
     const heads = Number(order?.guest_count || 0);
     // Only spell out "4 x 2,00" when it multiplies back to the amount printed
-    // beside it, as the guest at the table will check it. A share of a split
-    // check never does: it carries its own head's cover, not the table's, so
-    // dividing by the whole table announced a price nobody set — four covers
-    // at 2,00 printed as "4 x 0,75". The same will hold once a fixed menu
-    // carries the cover for part of the table.
+    // beside it, as the guest at the table will check it. It will not once a
+    // fixed menu carries the cover for part of the table.
     const perHead = heads > 0 ? Number((Number(bill.cover_charge) / heads).toFixed(2)) : 0;
-    const divides = heads > 0 && !bill.split_group_id && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
+    const divides = heads > 0 && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
     const coverLabel = divides
       ? `${L.cover} ${heads} x ${formatCurrency(perHead, prefix, locale, trimDecimals)}`
       : L.cover;

@@ -4373,6 +4373,102 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 91,
+    name: 'remove_split_checks',
+    up: () => {
+      // Dividing a check between guests is gone from this fork. It was one
+      // screen, and behind it a second shape for the whole billing side: an
+      // order stopped being a single bill, every amount had to be apportioned
+      // across the shares, the cover had to be divided per head instead of
+      // per plate, and six order routes carried a guard against being edited
+      // once a check had been split. What the floor takes to the table is a
+      // preconto; which of the party pays what is settled at the till.
+      //
+      // Checks already divided cannot simply be left where they are: such an
+      // order holds one bill per guest, each with a slice of the total, and
+      // nothing reads them together any more. Every group is put back into a
+      // single bill first — the order's own totals, and the sum of whatever
+      // the shares had taken — and only then do the columns go.
+      db.prepare(`DELETE FROM settings WHERE key = 'split_checks_enabled'`).run();
+      if (!getColumns(db, 'bills').includes('split_group_id')) return;
+
+      const groups = db.prepare(`
+        SELECT split_group_id AS id FROM bills
+        WHERE split_group_id IS NOT NULL
+        GROUP BY split_group_id
+      `).all() as { id: string }[];
+
+      const readShares = db.prepare('SELECT * FROM bills WHERE split_group_id = ? ORDER BY id');
+      const readOrder = db.prepare('SELECT * FROM orders WHERE id = ?');
+      // Everything that points at a bill follows the survivor, so no row is
+      // left referring to a share this migration deletes. Some of these store
+      // the id as TEXT, hence the cast.
+      const dependants = [
+        'loyalty_ledger', 'print_logs', 'whatsapp_messages',
+        'payment_transaction_refs', 'payment_transaction_ref_conflicts', 'payment_idempotency',
+      ].filter((table) => getColumns(db, table).includes('bill_id'));
+      const money = (amount: number) => Math.round(amount * 100) / 100;
+      let merged = 0;
+
+      for (const group of groups) {
+        const shares = readShares.all(group.id) as any[];
+        if (shares.length === 0) continue;
+        const [keep, ...rest] = shares;
+        const order = readOrder.get(keep.order_id) as any;
+        const sum = (field: string) => money(shares.reduce((total, share) => total + Number(share[field] || 0), 0));
+
+        const total = money(Number(order?.total ?? sum('total')));
+        const paidAmount = sum('paid_amount');
+        const balance = Math.max(0, money(total - paidAmount));
+        // A guest who paid their share leaves a payment line behind; the
+        // rebuilt bill carries all of them, so the takings still add up.
+        const payments = shares.flatMap((share) => {
+          try {
+            const parsed = JSON.parse(share.payment_details || '[]');
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        });
+        const paidAt = shares.map((share) => share.paid_at).filter(Boolean).sort().pop() || null;
+        const status = balance <= 0 && (paidAmount > 0 || total <= 0)
+          ? 'paid'
+          : paidAmount > 0 ? 'partial' : 'unpaid';
+
+        for (const share of rest) {
+          for (const table of dependants) {
+            db.prepare(`UPDATE ${table} SET bill_id = ? WHERE CAST(bill_id AS INTEGER) = ?`).run(keep.id, share.id);
+          }
+          db.prepare('DELETE FROM bills WHERE id = ?').run(share.id);
+        }
+        db.prepare(`
+          UPDATE bills SET split_group_id = NULL, split_label = NULL,
+            subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, cover_charge = ?,
+            total = ?, paid_amount = ?, balance = ?, payment_status = ?,
+            payment_details = ?, paid_at = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+          money(Number(order?.subtotal ?? sum('subtotal'))),
+          money(Number(order?.discount_amount ?? sum('discount_amount'))),
+          money(Number(order?.delivery_charge ?? sum('delivery_charge'))),
+          money(Number(order?.packaging_charge ?? sum('packaging_charge'))),
+          money(Number(order?.cover_charge ?? sum('cover_charge'))),
+          total, paidAmount, balance, status,
+          payments.length > 0 ? JSON.stringify(payments) : null,
+          paidAt, now(), keep.id,
+        );
+        merged++;
+      }
+
+      // bill_items only ever recorded which units belonged to which share.
+      db.exec('DROP INDEX IF EXISTS idx_bills_split_group');
+      db.exec('DROP TABLE IF EXISTS bill_items');
+      db.exec('ALTER TABLE bills DROP COLUMN split_group_id');
+      if (getColumns(db, 'bills').includes('split_label')) db.exec('ALTER TABLE bills DROP COLUMN split_label');
+      console.log(`[DB] v91: split checks removed; ${merged} divided check(s) put back together`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

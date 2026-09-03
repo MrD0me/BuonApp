@@ -6,8 +6,8 @@
  * 30-day averages. That dashboard is gone — the service day's own close summary
  * (main/services/service-day.ts) is where a restaurant reads its numbers, and
  * it does it per service day rather than per calendar midnight. What is left
- * here are the queries that reconcile money, which the payment integrity and
- * split-check suites lean on as their oracle.
+ * here are the queries that reconcile money, which the payment integrity
+ * suites lean on as their oracle.
  */
 
 import { Router, Request, Response } from 'express';

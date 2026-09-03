@@ -947,7 +947,6 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         service_model: normalizedServiceModel,
         setup_profile: normalizedSetupProfile,
         onboarding_completed: 'true',
-        split_checks_enabled: 'false',
       });
 
       seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);

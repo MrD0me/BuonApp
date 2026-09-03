@@ -122,7 +122,7 @@ async function main() {
     assertEqual(tooLongKey.status, 400, 'an overlong idempotency key is rejected');
     assertEqual(countAfterInvalidKeys.count, whitespaceBefore.count + 1, 'invalid idempotency keys do not mutate the order');
 
-    db.prepare('INSERT INTO bills (bill_number, order_id, split_group_id) VALUES (?, ?, ?)').run('BILL-255-SPLIT', orderId, 'split-255');
+    db.prepare('INSERT INTO bills (bill_number, order_id) VALUES (?, ?)').run('BILL-255-EXTRA', orderId);
     const replayedResponse = await api(baseUrl, `/api/orders/${orderId}/items`, {
       method: 'POST',
       body: appendBody,
@@ -131,7 +131,7 @@ async function main() {
     const countAfterReplay = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId) as { count: number };
 
     assertEqual(committedResponse.status, 200, 'first append commits successfully');
-    assertEqual(replayedResponse.status, 200, 'retry with the same key replays the committed append after a later split');
+    assertEqual(replayedResponse.status, 200, 'retry with the same key replays the committed append after a later bill');
     assertEqual(countAfterReplay.count, countAfterCommit.count, 'response-loss retry does not duplicate order items');
     assertEqual(replayedResponse.data.order.items.length, committedResponse.data.order.items.length, 'replay returns the original append response');
     const addonRow = db.prepare(`

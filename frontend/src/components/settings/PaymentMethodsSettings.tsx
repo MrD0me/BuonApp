@@ -33,19 +33,16 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
   const [newName, setNewName] = useState('');
   const [mergeTargets, setMergeTargets] = useState<Record<number, string>>({});
   const [merges, setMerges] = useState<MergeRecord[]>([]);
-  const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
 
   const load = async () => {
-    const [methodsRes, historyRes, splitRes] = await Promise.all([
+    const [methodsRes, historyRes] = await Promise.all([
       api.get('/payment-methods?include_inactive=true'),
       api.get('/payment-methods/merge-history'),
-      api.get('/settings/split_checks_enabled').catch(() => ({ data: { setting: { value: 'false' } } })),
     ]);
     const rows = methodsRes.data.payment_methods || [];
     setMethods(rows);
     setNames(Object.fromEntries(rows.map((row: CustomPaymentMethod) => [row.id, row.name])));
     setMerges(historyRes.data.merges || []);
-    setSplitChecksEnabled(splitRes.data?.setting?.value === 'true');
   };
 
   useEffect(() => {
@@ -126,11 +123,6 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
           ))}
           {isAdmin && <div className="flex gap-2"><input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(); }} placeholder={t('paymentMethodName')} className="flex-1 px-3 py-2 text-sm border rounded-lg" /><Button onClick={add} disabled={!newName.trim()}><Plus size={14} className="me-1" />{tCommon('add')}</Button></div>}
         </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4">
-        <div><h2 className="font-semibold text-gray-900">{t('splitChecks')}</h2><p className="text-sm text-gray-500 mt-1">{t('splitChecksHint')}</p></div>
-        <input type="checkbox" className="size-5" disabled={!isAdmin} checked={splitChecksEnabled} onChange={async (e) => { const value = e.target.checked; setSplitChecksEnabled(value); try { await api.put('/settings/split_checks_enabled', { value: String(value) }); } catch { setSplitChecksEnabled(!value); toast.error(t('saveFailed')); } }} />
       </div>
 
       {merges.length > 0 && <div className="bg-white rounded-xl border border-gray-100 p-6"><h2 className="font-semibold text-gray-900 mb-3">{t('mergeHistory')}</h2><div className="space-y-2 text-sm text-gray-600">{merges.map((entry) => <p key={entry.id}>{entry.source_name} → {entry.target_name} · {entry.affected_payments} · {formatDate(entry.merged_at)}</p>)}</div></div>}

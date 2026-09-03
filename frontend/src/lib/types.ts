@@ -299,8 +299,6 @@ export interface Bill {
   balance: number;
   payment_status: 'unpaid' | 'partial' | 'paid';
   payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string }[] | null;
-  split_group_id?: string | null;
-  split_label?: string | null;
   order?: Order;
   /** Loyalty points credited for this bill (sum of loyalty_ledger credits). Only populated by /orders endpoints. */
   points_earned?: number;

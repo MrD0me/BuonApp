@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Percent, Banknote, Plus, ChefHat, Pencil, MoreHorizontal, Users, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
-import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
@@ -39,7 +38,6 @@ import {
   type DiscountMode,
   type DiscountType,
 } from '@/lib/discount-settings';
-import { preferChildScopedBill } from '@/lib/printer/bill-scope';
 
 /**
  * One order, everything that can be done to it.
@@ -138,7 +136,7 @@ export function OrderPanel({
   const { printBill } = usePrinterStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { autoPrintBill, printerUseUnicode, customersEnabled, kotPrintingEnabled, splitChecksEnabled, orderTypes: enabledOrderTypes } = usePosSettingsStore();
+  const { autoPrintBill, printerUseUnicode, customersEnabled, kotPrintingEnabled, orderTypes: enabledOrderTypes } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
@@ -172,7 +170,6 @@ export function OrderPanel({
 
   const [previewingBillId, setPreviewingBillId] = useState<number | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
-  const [splitBill, setSplitBill] = useState<Bill | null>(null);
   // How many are actually eating. Fixed when the order was taken and never
   // touchable again, which with a cover charge on it leaves the bill wrong the
   // moment somebody joins the table.
@@ -193,7 +190,6 @@ export function OrderPanel({
   const [sendingWaOrderId, setSendingWaOrderId] = useState<number | null>(null);
   const [confirmPrintBillId, setConfirmPrintBillId] = useState<number | null>(null);
   // Whether the print being confirmed is the whole check or one share of it.
-  const [printWholeOrder, setPrintWholeOrder] = useState(false);
 
   const [printHistoryExpanded, setPrintHistoryExpanded] = useState<Record<number, boolean>>({});
   const [printHistory, setPrintHistory] = useState<Record<number, { id: number; print_type: string; user_name: string; printed_at: string }[]>>({});
@@ -226,10 +222,6 @@ export function OrderPanel({
   const awaitsPrice = (item: OrderItem) =>
     Boolean(item.price_required) && !item.price_confirmed && item.status !== 'cancelled';
   const unpricedItems = (order.items || []).filter(awaitsPrice);
-  // Checks split between guests. Splitting is the one billing action with no
-  // other home, so it lives here with the rest of them rather than in the
-  // ordering screen, where it used to be the last thing taking money.
-  const splitBills = (order.bills || []).filter((entry) => Boolean(entry.split_group_id));
   const pendingKotItems = (order.items || []).filter(
     (item) => item.kot_batch == null && item.status !== 'cancelled',
   );
@@ -354,10 +346,6 @@ export function OrderPanel({
    * to get one was to press Checkout, which opens the payment window.
    */
   const handlePrintBill = async () => {
-    // Always the whole check: this is the bill that goes to the table. With a
-    // split in place there is no bill that stands for all of it — the original
-    // became the first share — so the print route is asked to add them back up.
-    setPrintWholeOrder(splitBills.length > 0);
     if (order.bill?.id) {
       setConfirmPrintBillId(order.bill.id);
       return;
@@ -381,9 +369,8 @@ export function OrderPanel({
 
     if (bill && autoPrintBill) {
       try {
-        const fallbackOrder = order.bill?.id === bill.id ? order : undefined;
         const { data } = await api.get(`/bills/${bill.id}`);
-        const latestBill = preferChildScopedBill(data.bill as Bill, fallbackOrder);
+        const latestBill = data.bill as Bill;
         await printBill(
           latestBill,
           {
@@ -404,12 +391,7 @@ export function OrderPanel({
     }
   };
 
-  /**
-   * `wholeOrder` is what the main print button asks for once a check has been
-   * split: the original bill became the first share, so without it the floor
-   * gets one guest's items when it wanted the whole table's.
-   */
-  const handlePrint = async (billId: number, wholeOrder = false) => {
+  const handlePrint = async (billId: number) => {
     // No guard on the panel's own copy of the order: a bill generated a moment
     // ago to print a preconto is not in it yet, and the bill is re-read from
     // the API below anyway.
@@ -417,7 +399,7 @@ export function OrderPanel({
     setPrintingBillId(billId);
     try {
       const { data } = await api.get(`/bills/${billId}`);
-      const latestBill = preferChildScopedBill(data.bill as Bill, order.bill?.id === billId ? order : undefined);
+      const latestBill = data.bill as Bill;
       // Actually attempt the print first — only log/report success if the printer accepted the job,
       // otherwise a disconnected printer would silently report "success" (it was only logging before).
       const printWarnings = await printBill(
@@ -431,7 +413,7 @@ export function OrderPanel({
           number_digits: currentTenant?.number_digits,
           calendar: currentTenant?.calendar,
         },
-        { isReprint, wholeOrder }
+        { isReprint }
       );
       await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
       toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
@@ -605,10 +587,6 @@ export function OrderPanel({
 
 
   const showCheckout = (order: Order) => {
-    // With the check split there is no single thing to cash: each share is
-    // settled on its own, and one button that looks like "take the money"
-    // would take only the first share's.
-    if (splitBills.length > 0) return false;
     return !isOrderPaid(order) && !['completed', 'cancelled'].includes(order.status);
   };
 
@@ -690,39 +668,6 @@ export function OrderPanel({
     }
   };
 
-  /**
-   * Puts a split check back together, when the party changes its mind about
-   * dividing it. Refused by the API once any share has taken money.
-   */
-  const handleUnsplit = async () => {
-    const [first] = splitBills;
-    if (!first) return;
-    if (!await confirm(tOrders('unsplitConfirm'))) return;
-    setGeneratingBill(order.id);
-    try {
-      await api.post(`/bills/${first.id}/unsplit`);
-      toast.success(tOrders('unsplitDone'));
-      onChanged();
-    } catch (error: unknown) {
-      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
-      toast.error(code === 'split_already_paid' ? tOrders('unsplitBlocked') : tOrders('unsplitFailed'));
-    } finally {
-      setGeneratingBill(null);
-    }
-  };
-
-  const handleSplitCheck = async () => {
-    setGeneratingBill(order.id);
-    try {
-      const bill = order.bill || (await api.post('/bills/generate', { order_id: order.id })).data.bill;
-      setSplitBill(bill);
-    } catch {
-      toast.error(tOrders('generateBillFailed'));
-    } finally {
-      setGeneratingBill(null);
-    }
-  };
-
   const handleSendToKitchen = async () => {
     setSendingToKitchen(true);
     try {
@@ -775,23 +720,16 @@ export function OrderPanel({
             const payStatus = paymentStatusOf(order);
             const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
             const bill = order.bill;
-            // With a split in place there is no bill that stands for the whole
-            // table: the original became the first share. Reading the summary
-            // off it put one guest's check where the order's own figures
-            // belong — 42,00 of food and 3,01 of cover for a table that ate
-            // 111,50 and sat four — and the shares listed underneath then added
-            // up to more than the total printed above them.
-            const fromOrder = splitBills.length > 0 || !bill;
+            // A preconto nobody has generated yet has no bill row behind it;
+            // the panel then shows the order’s own figures, which are the
+            // same numbers the bill would carry.
+            const fromOrder = !bill;
             const discount = fromOrder ? Number(order.discount_amount) : Number(bill.discount_amount);
             const subtotal = fromOrder ? Number(order.subtotal) : Number(bill.subtotal);
             const coverCharge = Number(fromOrder ? order.cover_charge || 0 : bill.cover_charge || 0);
             const total = fromOrder ? Number(order.total) : Number(bill.total);
-            const paidSoFar = splitBills.length > 0
-              ? splitBills.reduce((sum, entry) => sum + Number(entry.paid_amount || 0), 0)
-              : Number(bill?.paid_amount || 0);
-            const stillOwed = splitBills.length > 0
-              ? splitBills.reduce((sum, entry) => sum + Number(entry.balance || 0), 0)
-              : Number(bill?.balance || 0);
+            const paidSoFar = Number(bill?.paid_amount || 0);
+            const stillOwed = Number(bill?.balance || 0);
 
   return (
     <>
@@ -1032,35 +970,6 @@ export function OrderPanel({
             )}
           </div>
 
-          {splitBills.length > 0 && (
-            <div className="mt-3 space-y-1.5">
-              {splitBills.map((entry) => (
-                <div key={entry.id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{entry.split_label}</p>
-                    <p className="text-xs text-gray-500">
-                      <Ltr>{fmt(Number(entry.total))}</Ltr>
-                      {' · '}{tOrders(paymentStatusBadge[entry.payment_status === 'paid' ? 'paid' : 'unpaid'].labelKey)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => { setPrintWholeOrder(false); setConfirmPrintBillId(entry.id); }}
-                      className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
-                      title={tOrders('printBillAction')}
-                    >
-                      <Printer size={14} />
-                    </button>
-                    {entry.payment_status !== 'paid' && (
-                      <Button size="sm" onClick={() => setPaymentBill(entry)}>{tOrders('checkout')}</Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* Cancelled items */}
           {cancelledItems.length > 0 && isOwnerOrManager && (
             <div className="mt-2 pt-2 border-t border-gray-50">
@@ -1186,22 +1095,10 @@ export function OrderPanel({
                     {tOrders('orderDiscountAction')}
                   </DropdownMenuItem>
                 )}
-                {order.type === 'dine_in' && splitBills.length === 0 && (
+                {order.type === 'dine_in' && (
                   <DropdownMenuItem onClick={() => setGuestEdit(String(order.guest_count || 1))}>
                     <Users size={14} className="me-2" />
                     {tOrders('changeGuests')}
-                  </DropdownMenuItem>
-                )}
-                {splitBills.length > 0 && !splitBills.some((entry) => Number(entry.paid_amount || 0) > 0) && (
-                  <DropdownMenuItem onClick={handleUnsplit} disabled={generatingBill === order.id}>
-                    <Users size={14} className="me-2" />
-                    {tOrders('unsplitCheck')}
-                  </DropdownMenuItem>
-                )}
-                {splitChecksEnabled && order.type === 'dine_in' && !paid && splitBills.length === 0 && (
-                  <DropdownMenuItem onClick={handleSplitCheck} disabled={generatingBill === order.id}>
-                    <Users size={14} className="me-2" />
-                    {tPos('splitCheck')}
                   </DropdownMenuItem>
                 )}
                 {order.type === 'dine_in' && takeawayEnabled && (
@@ -1281,7 +1178,7 @@ export function OrderPanel({
               </Button>
               <Button
                 size="sm"
-                onClick={() => handlePrint(confirmPrintBillId, printWholeOrder)}
+                onClick={() => handlePrint(confirmPrintBillId)}
                 disabled={printingBillId === confirmPrintBillId}
               >
                 <Printer size={14} className="me-1.5" />
@@ -1608,15 +1505,6 @@ placeholder={tOrders('managerPin')}
             )}
           </div>
         </div>
-      )}
-
-      {splitBill && (
-        <SplitCheckModal
-          bill={splitBill}
-          order={order}
-          onClose={() => setSplitBill(null)}
-          onSplit={() => { setSplitBill(null); onChanged(); }}
-        />
       )}
 
       {/* How many are at the table. Its own little window because it changes

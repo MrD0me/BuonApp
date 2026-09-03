@@ -241,46 +241,6 @@ async function runTests() {
   }
 
 
-  // ── Test 9: a split check can still print the whole thing ───────────────
-  // Splitting turns the original bill into the first share, so nothing left in
-  // the database stands for the whole check. A floor that divides only to
-  // record who paid what still carries one bill to the table.
-  console.log('\nTest 9: printing the whole check after it has been split');
-  {
-    const splitOrderRes = db.prepare(
-      `INSERT INTO orders (order_number, status, type, subtotal, total, created_at, updated_at)
-       VALUES ('ORD-SPLITPRINT-1', 'pending', 'dine_in', 300, 300, datetime('now'), datetime('now'))`
-    ).run();
-    const splitOrderId = Number(splitOrderRes.lastInsertRowid);
-    const itemOne = db.prepare(
-      `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, created_at, updated_at)
-       VALUES (?, 'prod-split-a', 'Amatriciana', 200, 1, 200, 200, datetime('now'), datetime('now'))`
-    ).run(splitOrderId);
-    const itemTwo = db.prepare(
-      `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, created_at, updated_at)
-       VALUES (?, 'prod-split-b', 'Tiramisu', 100, 1, 100, 100, datetime('now'), datetime('now'))`
-    ).run(splitOrderId);
-
-    const shareOne = db.prepare(
-      `INSERT INTO bills (bill_number, order_id, subtotal, total, balance, payment_status, split_group_id, split_label, created_at, updated_at)
-       VALUES ('BILL-SPLIT-A', ?, 200, 200, 200, 'unpaid', 'group-print-1', 'Guest 1', datetime('now'), datetime('now'))`
-    ).run(splitOrderId);
-    const shareTwo = db.prepare(
-      `INSERT INTO bills (bill_number, order_id, subtotal, total, balance, payment_status, split_group_id, split_label, created_at, updated_at)
-       VALUES ('BILL-SPLIT-B', ?, 100, 100, 100, 'unpaid', 'group-print-1', 'Guest 2', datetime('now'), datetime('now'))`
-    ).run(splitOrderId);
-    db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, 1)').run(Number(shareOne.lastInsertRowid), Number(itemOne.lastInsertRowid));
-    db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, 1)').run(Number(shareTwo.lastInsertRowid), Number(itemTwo.lastInsertRowid));
-
-    const sharePrint = await request(app).post('/api/printers/print-bill').send({ billId: Number(shareOne.lastInsertRowid), preview: true });
-    assert(sharePrint.status === 200, 'a share prints on its own');
-    assert(sharePrint.body.text.includes('Amatriciana'), 'the share prints the dish it was allocated');
-    assert(!sharePrint.body.text.includes('Tiramisu'), 'and not the dish that went to the other guest');
-
-    const wholePrint = await request(app).post('/api/printers/print-bill').send({ billId: Number(shareOne.lastInsertRowid), preview: true, wholeOrder: true });
-    assert(wholePrint.status === 200, 'the whole check prints from any of its shares');
-    assert(wholePrint.body.text.includes('Amatriciana') && wholePrint.body.text.includes('Tiramisu'), 'the whole check lists every dish on the table');
-  }
   console.log('\n' + '='.repeat(50));
   console.log(`${passed}/${passed + failed} passed, ${failed} failed`);
 

@@ -57,7 +57,6 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   bill_template: 'classic',
   bill_footer_message: '',
   printer_trim_decimals: 'false',
-  split_checks_enabled: 'false',
   // Unset means every type, so a database from before the setting existed
   // keeps offering the same three buttons it always did.
   [ORDER_TYPES_SETTING_KEY]: DEFAULT_ORDER_TYPES,
@@ -539,7 +538,6 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'printer_method', 'paper_size', 'bill_template', 'bill_footer_message', 'printer_trim_decimals',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',
   'customers_enabled',
-  'split_checks_enabled',
   ORDER_TYPES_SETTING_KEY,
   COVER_CHARGE_SETTING_KEY,
   'currency_display', 'number_digits', 'calendar',

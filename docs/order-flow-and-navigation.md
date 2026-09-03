@@ -269,16 +269,15 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   finestra serve ad attaccare a un tavolo aperto quello che si è battuto al banco, e basta. Il
   conto e l'incasso si fanno dalla Sala o dalla Giornata — un ordine si chiude da un posto solo —
   e per asporto e delivery dalla sola Giornata. I due pulsanti di incasso sono spariti da lì.
-  Anche la divisione del conto è poi passata nel pannello (2026-08-29), dietro il menu "Altro" e
-  sempre dietro `split_checks_enabled`: i sotto-conti si elencano accanto ai totali e si incassano da
-  lì. Ordina non ha più nessuna azione di cassa.
-- **Dopo una divisione, il pannello parlava per il primo ospite.** Il conto originale diventa la
-  quota del Guest 1, e il riquadro dei totali lo leggeva da lì: un tavolo da 111,50 mostrava 42,00
-  di cibo e il suo totale, con sotto le quote che sommate davano piu' del totale scritto sopra. Ora
-  quando c'e' una divisione i totali si leggono dall'ordine, e pagato/residuo sommano le quote.
-  Stessa cosa per la stampigliante in alto a destra, che stampava quella prima quota mentre il
-  pulsante "Stampa preconto" a fondo pannello stampava il conto intero: ora passano dalla stessa
-  porta.
+  Ordina non ha più nessuna azione di cassa.
+- **La divisione del conto è stata poi tolta del tutto** (migrazione v91). Era arrivata nel
+  pannello il 2026-08-29 dietro `split_checks_enabled`, e da lì ha continuato a costare: un ordine
+  smetteva di essere un conto solo, ogni importo andava ripartito fra le quote, il coperto diviso
+  per testa invece che per piatto, e sei rotte dell'ordine portavano una guardia per non farsi
+  modificare dopo la divisione. Quello che va al tavolo è un preconto: chi paga cosa si sistema
+  alla cassa, che è una macchina a parte. Via l'impostazione, la finestra, le rotte
+  `/bills/:id/split-check` e `/bills/:id/unsplit`, le colonne `split_group_id`/`split_label` e la
+  tabella `bill_items`; i gruppi già divisi sono stati ricompattati in un conto solo.
 - **La finestra di pagamento ha perso lo sconto e ha guadagnato i pulsanti.** Lo sconto si fa prima,
   sull'ordine o sulla riga, così compare sul preconto che va al tavolo: scontarlo dopo la stampa
   vorrebbe dire che la carta in mano al cliente non dice quello che paga. E il metodo di pagamento

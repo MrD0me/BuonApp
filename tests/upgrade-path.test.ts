@@ -137,11 +137,16 @@ function main() {
     'migrated old install reaches the same schema version as a fresh install');
   ideal.close();
   assert.equal(
-    (db.prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as { value: string }).value,
-    'false',
-    'existing stores receive the opt-in split-check default during upgrade',
+    db.prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get(),
+    undefined,
+    'upgrading takes the split-check setting away with the feature',
   );
-  console.log('   ✓ existing stores receive split checks disabled by default');
+  assert.equal(
+    (db.prepare('PRAGMA table_info(bills)').all() as { name: string }[]).filter((column) => column.name.startsWith('split_')).length,
+    0,
+    'and the split columns are gone from bills',
+  );
+  console.log('   ✓ upgrading removes split checks, setting and columns');
   assert.equal(
     (db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as { value: string }).value,
     'classic',
@@ -261,16 +266,18 @@ function main() {
     console.log('   ✓ the backfilled columns are readable and writable');
   }
 
-  db.prepare("UPDATE settings SET value = 'true' WHERE key = 'split_checks_enabled'").run();
+  db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('split_checks_enabled', 'true', datetime('now'))").run();
   db.pragma('user_version = 37');
   closeDatabase();
   initDatabase();
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
   assert.equal(runHealthCheck().findings.length, 0);
+  // A rewound database walks v59/v60 again, so the columns come back and the
+  // setting is reinserted; v91 has to sweep up on every pass, not just once.
   assert.equal(
-    (getDatabase().prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as { value: string }).value,
-    'true',
-    'v60 preserves an existing split-check choice',
+    getDatabase().prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get(),
+    undefined,
+    'replaying the migrations removes the split-check setting again',
   );
   // Replaying from an older stamp must land in the same place: a rewound
   // database walks the cloud migrations again and v80 has to sweep up after

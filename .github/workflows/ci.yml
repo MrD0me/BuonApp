@@ -141,9 +141,9 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Payment method split checks (npm pretest)
+      - name: Payment methods (npm pretest)
         if: matrix.shard == 0
-        run: bash tests/run-test.sh npm run test:payment-methods-split
+        run: bash tests/run-test.sh npm run test:payment-methods
 
       - name: Core test suite (shard ${{ matrix.shard }})
         # The suite list is derived from package.json's "test" script at run

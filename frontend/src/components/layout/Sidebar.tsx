@@ -72,7 +72,7 @@ export default function AppSidebar() {
   const { user, currentTenant, logout } = useAuthStore();
   // The flags are still read here for the whole app: other screens act on
   // them even though the bar itself only filters on two.
-  const { tablesRequired, customersEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes, setSplitChecksEnabled } = usePosSettingsStore();
+  const { tablesRequired, customersEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes } = usePosSettingsStore();
   const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
@@ -103,9 +103,6 @@ export default function AppSidebar() {
     api.get('/settings/customers_enabled')
       .then((res) => setCustomersEnabled(res.data.setting?.value !== 'false'))
       .catch(() => { });
-    api.get('/settings/split_checks_enabled')
-      .then((res) => setSplitChecksEnabled(res.data.setting?.value === 'true'))
-      .catch(() => { });
     // Which order types the POS may offer. Read here, like the other
     // business-level flags, so every screen that renders after login already
     // knows what this tenant takes.
@@ -119,7 +116,7 @@ export default function AppSidebar() {
     api.get('/whatsapp/status')
       .then((res) => setWhatsappEnabled(!!res.data?.enabled))
       .catch(() => { });
-  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes, setSplitChecksEnabled]);
+  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes]);
 
   return (
     <Sidebar collapsible="icon">

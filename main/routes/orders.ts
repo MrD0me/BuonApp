@@ -670,9 +670,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         if (replayResponse) return { replayResponse };
       }
 
-      if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-        throw Object.assign(new Error('Items cannot be changed after a check has been split'), { statusCode: 409 });
-      }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
       }
@@ -788,10 +785,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
       // `subtotal` at whatever it was when the bill was drawn up: add a dish to
       // an order whose preconto had already been printed and the reprint said
       // "Subtotale 90,00 ... TOTALE 118,00", two numbers that do not add up on
-      // the paper in the guest's hand. Splitting that check then divided the
-      // stale 90 while weighing the shares against the real 110, so the shares
-      // came to less than the total. A split check cannot be here — items are
-      // refused above once one exists — so this takes the plain branch.
+      // the paper in the guest's hand.
       syncUnpaidBillsForOrder(db, String(req.params.id), {
         subtotal,
         discountAmount: newDiscountAmount,
@@ -1060,9 +1054,6 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole('owner
       if (['completed', 'cancelled'].includes(order.status)) {
         throw Object.assign(new Error('Cannot convert a completed or cancelled order'), { statusCode: 400 });
       }
-      if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-        throw Object.assign(new Error('A split dine-in check cannot be converted to takeaway'), { statusCode: 409 });
-      }
 
       db.prepare("UPDATE orders SET type = 'takeaway', table_id = NULL, updated_at = ? WHERE id = ?")
         .run(nowStr, req.params.id);
@@ -1092,9 +1083,6 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
-    }
-    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-      return res.status(409).json({ error: 'Discounts cannot be changed after a check has been split' });
     }
 
     // Cannot apply discount to completed or cancelled orders
@@ -1280,9 +1268,6 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole('ow
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-      return res.status(409).json({ error: 'Discounts cannot be changed after a check has been split' });
-    }
 
     // Cannot apply discount to completed or cancelled orders
     if (['completed', 'cancelled'].includes(order.status)) {
@@ -1400,9 +1385,6 @@ router.patch('/:id/items/:itemId/price', orderWriteRateLimit, requireRole('owner
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-      return res.status(409).json({ error: 'Prices cannot be changed after a check has been split' });
-    }
     if (['completed', 'cancelled'].includes(order.status)) {
       return res.status(400).json({ error: 'Cannot change a price on a completed or cancelled order' });
     }
@@ -1489,9 +1471,6 @@ router.patch('/:id/guests', orderWriteRateLimit, requireRole('owner', 'manager',
     }
     if (['completed', 'cancelled'].includes(order.status)) {
       return res.status(400).json({ error: 'Cannot change the covers on a completed or cancelled order' });
-    }
-    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-      return res.status(409).json({ error: 'Covers cannot be changed after a check has been split' });
     }
 
     const { guest_count } = req.body || {};
