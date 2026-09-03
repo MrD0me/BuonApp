@@ -967,11 +967,15 @@ export default function POSPage() {
 
   const cartPanelProps = {
     tables,
+    products,
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
     onShowTablePicker: () => setShowTablePicker(true),
-    onEditItem: setEditingCartItem,
+    // A menu is edited course by course, not add-on by add-on: sending it to
+    // the add-on window would have shown an empty one and then rebuilt the
+    // line's identity without its menu, losing the choices.
+    onEditItem: (item: CartItem) => (item.menu_selection ? setEditingMenuItem(item) : setEditingCartItem(item)),
     existingOrder: pendingOrder,
   };
 

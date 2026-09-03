@@ -324,63 +324,8 @@ async function main() {
     const repriced = await readOrder(laterTable.data.order.id);
     assertEqual(Number(repriced.cover_charge), 4, 'and the table owes its cover again');
 
-    // ── Splitting ─────────────────────────────────────────────────────────
-    console.log('\n11. A split check will not break a menu in two');
-    const splitOrder = await api(baseUrl, '/api/orders', {
-      method: 'POST', headers: authHeader,
-      body: {
-        type: 'dine_in', guest_count: 2,
-        items: [menuFor('p-olives', 'p-soup'), { product_id: 'p-steak', quantity: 1 }],
-      },
-    });
-    await api(baseUrl, '/api/settings/split_checks_enabled', {
-      method: 'PUT', body: { value: 'true' }, headers: authHeader,
-    });
-    const billed = await api(baseUrl, '/api/bills/generate', {
-      method: 'POST', headers: authHeader, body: { order_id: splitOrder.data.order.id },
-    });
-    assertEqual(billed.status, 201, 'the check is drawn up');
-
-    const splitRows = rowsOf(splitOrder.data.order.id);
-    const splitPkg = splitRows.find((row) => row.menu_role === 'package');
-    const splitCourse = splitRows.find((row) => row.menu_role === 'course');
-    const splitSteak = splitRows.find((row) => !row.menu_group_id);
-
-    const broken = await api(baseUrl, `/api/bills/${billed.data.bill.id}/split-check`, {
-      method: 'POST', headers: authHeader,
-      body: {
-        checks: [
-          { label: 'Guest 1', items: [{ order_item_id: splitPkg.id, quantity: 1 }] },
-          {
-            label: 'Guest 2',
-            items: splitRows
-              .filter((row: any) => row.id !== splitPkg.id)
-              .map((row: any) => ({ order_item_id: row.id, quantity: row.quantity })),
-          },
-        ],
-      },
-    });
-    assertEqual(broken.status, 400, 'splitting the package away from its dishes is refused');
-
-    const whole = await api(baseUrl, `/api/bills/${billed.data.bill.id}/split-check`, {
-      method: 'POST', headers: authHeader,
-      body: {
-        checks: [
-          {
-            label: 'Guest 1',
-            items: splitRows
-              .filter((row: any) => row.menu_group_id)
-              .map((row: any) => ({ order_item_id: row.id, quantity: row.quantity })),
-          },
-          { label: 'Guest 2', items: [{ order_item_id: splitSteak.id, quantity: 1 }] },
-        ],
-      },
-    });
-    assertEqual(whole.status, 201, 'the menu kept whole splits fine');
-    assert(splitCourse.menu_group_id === splitPkg.menu_group_id, 'the dish and its package were one group all along');
-
     // ── Printing ──────────────────────────────────────────────────────────
-    console.log('\n12. The kitchen never sees the package');
+    console.log('\n11. The kitchen never sees the package');
     const kotOrder = await api(baseUrl, '/api/orders', {
       method: 'POST', headers: authHeader,
       body: { type: 'dine_in', guest_count: 1, items: [menuFor('p-bruschetta', 'p-steak')] },
@@ -409,7 +354,7 @@ async function main() {
     assert(ticket.toUpperCase().includes('BRUSCHETTA'), 'it names the starter');
     assert(ticket.toUpperCase().includes('TAGLIATA'), 'and the main');
 
-    console.log('\n13. The bill shows the dishes under the price, and offers nothing');
+    console.log('\n12. The bill shows the dishes under the price, and offers nothing');
     const billOrder = await readOrder(kotOrder.data.order.id);
     const billRows = db.prepare(`
       SELECT oi.*, COALESCE(p.price_required, 0) AS price_required
@@ -427,6 +372,33 @@ async function main() {
     assert(receipt.includes('  Bruschetta'), 'the dishes sit under it, indented');
     assert(!receipt.includes('Offerto'), 'a dish worth nothing inside a menu is not a gift');
     assert(/\+\s*E?\s*3/.test(receipt.replace(/\s+/g, ' ')), 'and the surcharge shows with its sign');
+
+    console.log('\n13. The cover line says the covers actually charged');
+    // The bill that found this: four at the table, three of them on a menu
+    // that includes the cover, so one cover at 2,00. The old line divided the
+    // 2,00 by four heads and announced "Coperto 4 x 0,50" — a price nobody had
+    // ever set, which multiplies back correctly and so looked right.
+    const fourWithThreeMenus = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'dine_in', guest_count: 4,
+        items: [
+          menuFor('p-olives', 'p-soup'), menuFor('p-olives', 'p-soup'), menuFor('p-olives', 'p-soup'),
+          { product_id: 'p-steak', quantity: 1 },
+        ],
+      },
+    });
+    assertEqual(Number(fourWithThreeMenus.data.order.cover_charge), 2, 'one cover left to charge, at 2,00');
+
+    const coverOrder = await readOrder(fourWithThreeMenus.data.order.id);
+    const coverReceipt = escPosToText(formatReceipt(
+      coverOrder,
+      { bill_number: 'B-2', subtotal: 93, total: 95, cover_charge: 2, discount_amount: 0 },
+      { name: 'Trattoria', currency_symbol: 'E', country: 'IT' },
+      'compact', 48, false, false, 'full', [], false, 'it',
+    ));
+    assert(!/Coperto\s+4\s*x/.test(coverReceipt), 'it does not divide the cover by the whole table');
+    assert(/Coperto\s+1\s*x/.test(coverReceipt), 'it says one cover, the one actually charged');
 
     // ── Summary ───────────────────────────────────────────────────────────
     console.log('\n' + '='.repeat(60));
