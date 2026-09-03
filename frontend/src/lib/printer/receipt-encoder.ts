@@ -320,11 +320,13 @@ export function buildClassicReceiptBytes(
     enc.text(padRow('Discount', `-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}`, cols)).newline();
   }
   if (Number(bill.cover_charge) > 0) {
-    const heads = Number(bill.order?.guest_count || 0);
-    const perHead = heads > 0 ? Number((Number(bill.cover_charge) / heads).toFixed(2)) : 0;
-    const divides = heads > 0 && !bill.split_group_id && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
-    const coverLabel = divides ? `Cover ${heads} x ${formatAmount(perHead, currency, locale, trimDecimals)}` : 'Cover';
-    enc.text(padRow(coverLabel, formatAmount(Number(bill.cover_charge), currency, locale, trimDecimals), cols)).newline();
+    // The amount and nothing else. Spelling out "4 x 2,00" needs the price per
+    // cover, which is a server setting this fallback encoder never sees:
+    // dividing the amount by the head count instead is what made a table of
+    // four with three guests on a menu print "4 x 0,50", a price nobody set.
+    // The thermal path reads the setting and does say the arithmetic — see
+    // coverChargeLabel() in main/printers/thermal.ts.
+    enc.text(padRow('Cover', formatAmount(Number(bill.cover_charge), currency, locale, trimDecimals), cols)).newline();
   }
   if (Number(bill.delivery_charge) > 0) {
     enc.text(padRow('Delivery', formatAmount(bill.delivery_charge, currency, locale, trimDecimals), cols)).newline();

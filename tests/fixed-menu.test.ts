@@ -428,6 +428,33 @@ async function main() {
     assert(!receipt.includes('Offerto'), 'a dish worth nothing inside a menu is not a gift');
     assert(/\+\s*E?\s*3/.test(receipt.replace(/\s+/g, ' ')), 'and the surcharge shows with its sign');
 
+    console.log('\n14. The cover line says the covers actually charged');
+    // The bill that found this: four at the table, three of them on a menu
+    // that includes the cover, so one cover at 2,00. The old line divided the
+    // 2,00 by four heads and announced "Coperto 4 x 0,50" — a price nobody had
+    // ever set, which multiplies back correctly and so looked right.
+    const fourWithThreeMenus = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'dine_in', guest_count: 4,
+        items: [
+          menuFor('p-olives', 'p-soup'), menuFor('p-olives', 'p-soup'), menuFor('p-olives', 'p-soup'),
+          { product_id: 'p-steak', quantity: 1 },
+        ],
+      },
+    });
+    assertEqual(Number(fourWithThreeMenus.data.order.cover_charge), 2, 'one cover left to charge, at 2,00');
+
+    const coverOrder = await readOrder(fourWithThreeMenus.data.order.id);
+    const coverReceipt = escPosToText(formatReceipt(
+      coverOrder,
+      { bill_number: 'B-2', subtotal: 93, total: 95, cover_charge: 2, discount_amount: 0 },
+      { name: 'Trattoria', currency_symbol: 'E', country: 'IT' },
+      'compact', 48, false, false, 'full', [], false, 'it',
+    ));
+    assert(!/Coperto\s+4\s*x/.test(coverReceipt), 'it does not divide the cover by the whole table');
+    assert(/Coperto\s+1\s*x/.test(coverReceipt), 'it says one cover, the one actually charged');
+
     // ── Summary ───────────────────────────────────────────────────────────
     console.log('\n' + '='.repeat(60));
     const results = getResults();

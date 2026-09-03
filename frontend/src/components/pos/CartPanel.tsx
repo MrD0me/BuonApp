@@ -13,12 +13,14 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
-import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
+import type { Table, Order, OrderItem, CartItem, Product } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { cartLineUnitPrice, courseSurcharge } from '@/lib/fixed-menu';
 
 interface Props {
   tables: Table[];
+  /** The catalogue, so a menu line can name the dishes chosen inside it. */
+  products: Product[];
   currency: string;
   submitting: boolean;
   onPlaceOrder: () => void;
@@ -34,7 +36,7 @@ const orderTypeIcons = {
   delivery: Truck,
 };
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, products, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -178,11 +180,15 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               // can read back what was chosen without reopening the window.
               const menuCourses = (item.menu_selection || []).map((choice) => {
                 const course = (item.product.courses || []).find((entry) => entry.id === choice.course_id);
-                const dish = cart.items.find((other) => other.product.id === choice.product_id)?.product;
+                // Looked up in the catalogue, not among the cart's own lines:
+                // a dish is only a line of its own when somebody also ordered
+                // it separately, and the rest were printing their raw id.
+                const dish = products.find((candidate) => candidate.id === choice.product_id);
                 return {
                   key: `${choice.course_id}:${choice.product_id}`,
-                  label: course?.label ?? '',
-                  name: dish?.name ?? choice.product_id,
+                  // A dish taken off the menu after being chosen leaves the
+                  // course showing, unnamed — better than an id nobody reads.
+                  name: dish?.name ?? '—',
                   surcharge: course ? courseSurcharge(course, choice.product_id) : 0,
                 };
               });
