@@ -1,7 +1,8 @@
 # Coperto e menu fisso
 
 **Stato:** CURRENT. Decisioni prese con l'utente il 2026-08-30, il menu fisso il 2026-08-31.
-**Fatto tutto**: il coperto con le migrazioni v88-v90, il menu fisso con la v91.
+**Fatto tutto**: il coperto con le migrazioni v88-v90, il menu fisso con la v92. Nata come v91,
+ha preso il numero dopo perché nel frattempo la v91 è servita a togliere la divisione del conto.
 
 ## Contesto
 
@@ -59,7 +60,7 @@ poter dire "coperto incluso".
   `orderCharges()` (`main/money.ts`), chiamata da tutti i punti che ricostruiscono un totale. Erano
   sei formule scritte a mano, e il coperto sarebbe stata la settima occasione di dimenticarne una.
 - `PATCH /orders/:id/guests` corregge i coperti a ordine aperto e riprezza; rifiutata su ordine
-  chiuso o conto diviso, come le altre modifiche che spostano denaro.
+  chiuso, come le altre modifiche che spostano denaro.
 - Sul conto la riga dice il conto della serva: `Coperto 4 x 2,00`.
 
 **Corretto subito dopo (v89).** Cambiare i coperti riprezzava l'ordine e il totale del conto, ma
@@ -73,11 +74,11 @@ col menu fisso, dove il coperto non si divide più per il numero di commensali. 
 
 **Il coperto si divide a testa (v90).** Dividendo il conto veniva spartito col cibo, a peso: quattro
 coperti da 2,00 diventavano 3,01 sulla quota di chi aveva preso la tagliata e 1,89 su chi aveva
-preso la zuppa. Ma il coperto e' tanto a testa, e una quota e' una testa: ora si divide in parti
-uguali, il centesimo dispari alle prime quote. Il totale di ogni quota si ricompone dalle sue righe
-invece di essere spartito per conto suo, cosi' il conto in mano al cliente torna riga per riga. E
-sulla quota di un conto diviso la stampa scrive `Coperto` e basta: il numero di teste del tavolo non
-descrive quella quota.
+preso la zuppa. Il coperto invece è tanto a testa, e una quota era una testa. La v91 ha poi tolto
+la divisione del conto del tutto (vedi [order-flow-and-navigation.md](order-flow-and-navigation.md)),
+quindi di quel lavoro resta solo la parte che vale ancora: il totale di un conto si ricompone dalle
+sue righe invece di essere calcolato per conto suo, così la carta in mano al cliente torna riga per
+riga.
 
 **Trovato mentre lo facevo, non sistemato:** la stampa termica non ha mai stampato consegna e
 imballo — solo l'encoder del browser lo fa. Su un conto con consegna, le righe non tornano col
@@ -149,12 +150,6 @@ di scrivere una riga:
   lo paga il pulsante **"Un altro uguale"**, che riapre la finestra con le scelte dell'ultimo menu.
   Nel carrello un menu non si fonde mai con un altro (`cart-identity.ts`) e non ha il selettore di
   quantità.
-- **Il conto diviso muove il menu intero.** Nella finestra di divisione un menu è una riga sola —
-  pacchetto col prezzo, piatti elencati sotto — e si assegna a un commensale con un tocco. Il
-  backend rifiuta comunque un'allocazione che spezza un gruppo: nascondere la cosa nella griglia
-  non è un controllo. Senza questa regola, il pacchetto a una quota e i piatti all'altra danno una
-  quota che paga 25,00 senza aver mangiato e una che mangia gratis, **con entrambe le quote che
-  tornano** — nessuno se ne accorgerebbe mai.
 - **Il coperto incluso vale un coperto per menu, mai più dei commensali.** Tre menu a un tavolo di
   due non fanno coperto negativo: `computeCoverCharge` taglia a zero. Il ricalcolo sta in
   `orderCoverCharge()` (`routes/orders.ts`), chiamata da tutti i punti che cambiano le righe:
@@ -181,7 +176,7 @@ Trovato e sistemato strada facendo:
   che costruivano il payload delle righe in Ordina sono diventati `cartItemToPayload()`, e un menu
   che avesse raggiunto tre di loro avrebbe perso le scelte sul quarto.
 - **L'indice su `order_items(menu_group_id)` non può stare in `createSchema()`.** Quella funzione
-  gira anche su un'installazione che non è ancora arrivata alla v91, dove la colonna non esiste:
+  gira anche su un'installazione che non è ancora arrivata alla v92, dove la colonna non esiste:
   `test:upgrade-path` l'ha preso al primo giro. Sta solo nella migrazione, come
   `idx_order_items_kot_batch`.
 - **La finestra di scelta non importa il client API.** Prende catalogo e menu come props e
@@ -199,11 +194,11 @@ Tutti e quattro i passi sono fatti.
 
 1. ~~**Coperto**~~ — impostazione, colonna, totale, voce sul preconto, correzione dei coperti a
    ordine aperto. Migrazioni v88-v90.
-2. ~~**Struttura del menu fisso**~~ — migrazione v91, `services/fixed-menu.ts`,
+2. ~~**Struttura del menu fisso**~~ — migrazione v92, `services/fixed-menu.ts`,
    `routes/fixed-menus.ts`, scheda "Menu fissi" dentro Menu.
 3. ~~**La scelta in Ordina**~~ — `components/pos/FixedMenuPicker.tsx` e l'espansione lato backend.
 4. ~~**Stampa**~~ — comanda e KDS che saltano i pacchetti, preconto che rientra i piatti,
-   esclusione dalla regola dell'*Offerto*. In più: divisione del conto e annullamenti.
+   esclusione dalla regola dell'*Offerto*. In più: gli annullamenti.
 
 ## Verifica
 
@@ -218,8 +213,7 @@ Tutti e quattro i passi sono fatti.
 La suite del menu fisso è `npm run test:fixed-menu` (52 controlli), ed è dentro la catena di
 `npm test`. Copre composizione, supplementi, portata facoltativa, prezzo forgiato dal client,
 tre menu = tre gruppi, coperto incluso che non va sotto zero, riprezzamento su aggiunta e annullo,
-annullo di gruppo, divisione rifiutata e accettata, comanda senza pacchetto, preconto rientrato.
+annullo di gruppo, comanda senza pacchetto, preconto rientrato.
 
 **Resta da fare a mano, con la stampante vera:** due menu completi allo stesso tavolo devono uscire
-in cucina come piatti in sezioni e sul conto come due pacchetti coi piatti sotto; e quel conto
-diviso in due deve dare a ogni quota il suo menu intero.
+in cucina come piatti in sezioni e sul conto come due pacchetti coi piatti sotto.
