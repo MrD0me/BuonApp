@@ -21,6 +21,13 @@ interface KdsClient {
   authTimeout?: NodeJS.Timeout;
 }
 
+/**
+ * The package line of a fixed menu is a price, not a dish: the kitchen screen
+ * shows the courses it wrote, on their own categories, and never the package.
+ * Same rule as the printed ticket (see cookableItems in routes/printers.ts).
+ */
+export const NOT_A_MENU_PACKAGE = "AND (oi.menu_role IS NULL OR oi.menu_role != 'package')";
+
 export const KDS_AUTH_TIMEOUT_MS = 5_000;
 export const MAX_KDS_CLIENTS = 100;
 export const MAX_UNAUTHENTICATED_KDS_CLIENTS = 25;
@@ -524,7 +531,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     const rawItems = db.prepare(`
       SELECT oi.*, p.category_id
       FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
-      WHERE oi.order_id IN (${placeholders}) ORDER BY oi.order_id, oi.id
+      WHERE oi.order_id IN (${placeholders}) ${NOT_A_MENU_PACKAGE} ORDER BY oi.order_id, oi.id
     `).all(...orderIds) as any[];
     for (const item of rawItems) {
       if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
@@ -573,6 +580,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     WHERE ${activeOrdersCondition()}
       AND oi.status NOT IN ('completed', 'cancelled', 'void_adjustment')
       AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
+      ${NOT_A_MENU_PACKAGE}
   `;
   const countParams: any[] = [voidedCutoff];
 

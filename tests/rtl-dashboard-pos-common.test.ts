@@ -64,9 +64,11 @@ const SCREEN_FILES = [
   'frontend/src/components/pos/TablePickerModal.tsx',
   'frontend/src/components/pos/TableCheckoutModal.tsx',
   'frontend/src/components/pos/AddonModal.tsx',
+  'frontend/src/components/pos/FixedMenuPicker.tsx',
   'frontend/src/components/pos/CustomerSearch.tsx',
   'frontend/src/components/pos/EditCustomerModal.tsx',
   'frontend/src/components/pos/PrinterStatus.tsx',
+  'frontend/src/components/products/FixedMenuEditor.tsx',
   'frontend/src/components/orders/OrderHistoryGrid.tsx',
   'frontend/src/components/products/ImageUploader.tsx',
 ];

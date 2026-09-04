@@ -5,6 +5,7 @@ import * as path from 'path';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
+import { COVER_CHARGE_SETTING_KEY, parseCoverChargeAmount } from '../money';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
 import { correlationId, type FloErrorCode } from '../errors';
@@ -819,6 +820,47 @@ function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' {
   return 'classic';
 }
 
+/**
+ * The cover line, spelled out only when it can be spelled out honestly.
+ *
+ * "Coperto 4 x 2,00" is owed to a guest charged for the table being laid, but
+ * the count has to be the covers actually charged, not the heads at the table.
+ * Dividing the amount by the head count looked right for years and then lied
+ * the moment a fixed menu carried the cover for part of the table: three of
+ * four guests on a menu leaves one cover at 2,00, and the old arithmetic
+ * announced "4 x 0,50" — a price nobody has ever set, which multiplies back
+ * correctly and so passes every check except a guest reading it.
+ *
+ * So the covers are derived from the configured price instead. When that does
+ * not come out whole — a share of a split check, a price changed since the
+ * order — the line says "Coperto" and the amount, and no arithmetic at all.
+ */
+function coverChargeLabel(
+  bill: any, order: any, label: string,
+  prefix: string, locale: string, trimDecimals: boolean,
+): string {
+  let perCover = 0;
+  try {
+    perCover = parseCoverChargeAmount(getSettingValue(COVER_CHARGE_SETTING_KEY));
+  } catch {
+    // No database (unit tests calling the formatters directly): no arithmetic.
+    return label;
+  }
+
+  // Counted in cents, so the division is exact rather than nearly exact.
+  const chargedCents = Math.round(Number(bill.cover_charge) * 100);
+  const perCoverCents = Math.round(perCover * 100);
+  if (perCoverCents <= 0 || chargedCents <= 0 || chargedCents % perCoverCents !== 0) return label;
+
+  const covers = chargedCents / perCoverCents;
+  const heads = Number(order?.guest_count || 0);
+  // More covers than there were people means the price has moved since this
+  // bill was struck, and the sum on the paper would not check out.
+  if (heads > 0 && covers > heads) return label;
+
+  return `${label} ${covers} x ${formatCurrency(perCover, prefix, locale, trimDecimals)}`;
+}
+
 function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language: string = 'en', codePage?: number): Buffer {
   const lines: string[] = [];
   const date = parseDbTimestamp(order.created_at);
@@ -868,19 +910,10 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   if (bill.discount_amount > 0) {
     lines.push(...financialRows(L.discount, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
   }
-  // So much a head. Printed only when there is one, and it says the arithmetic
-  // out loud — "Coperto 4 x 2,00" — because a guest who is charged for the
-  // table being laid is owed the reason.
+  // So much a head, and it says the arithmetic out loud when it honestly can —
+  // see coverChargeLabel().
   if (Number(bill.cover_charge) > 0) {
-    const heads = Number(order?.guest_count || 0);
-    // Only spell out "4 x 2,00" when it multiplies back to the amount printed
-    // beside it, as the guest at the table will check it. It will not once a
-    // fixed menu carries the cover for part of the table.
-    const perHead = heads > 0 ? Number((Number(bill.cover_charge) / heads).toFixed(2)) : 0;
-    const divides = heads > 0 && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
-    const coverLabel = divides
-      ? `${L.cover} ${heads} x ${formatCurrency(perHead, prefix, locale, trimDecimals)}`
-      : L.cover;
+    const coverLabel = coverChargeLabel(bill, order, L.cover, prefix, locale, trimDecimals);
     lines.push(...financialRows(coverLabel, formatCurrency(bill.cover_charge, prefix, locale, trimDecimals), cols));
   }
   lines.push(...financialRows(L.total, formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
@@ -971,19 +1004,10 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   if (bill.discount_amount > 0) {
     lines.push(...financialRows(L.discount, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
   }
-  // So much a head. Printed only when there is one, and it says the arithmetic
-  // out loud — "Coperto 4 x 2,00" — because a guest who is charged for the
-  // table being laid is owed the reason.
+  // So much a head, and it says the arithmetic out loud when it honestly can —
+  // see coverChargeLabel().
   if (Number(bill.cover_charge) > 0) {
-    const heads = Number(order?.guest_count || 0);
-    // Only spell out "4 x 2,00" when it multiplies back to the amount printed
-    // beside it, as the guest at the table will check it. It will not once a
-    // fixed menu carries the cover for part of the table.
-    const perHead = heads > 0 ? Number((Number(bill.cover_charge) / heads).toFixed(2)) : 0;
-    const divides = heads > 0 && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
-    const coverLabel = divides
-      ? `${L.cover} ${heads} x ${formatCurrency(perHead, prefix, locale, trimDecimals)}`
-      : L.cover;
+    const coverLabel = coverChargeLabel(bill, order, L.cover, prefix, locale, trimDecimals);
     lines.push(...financialRows(coverLabel, formatCurrency(bill.cover_charge, prefix, locale, trimDecimals), cols));
   }
   lines.push(...financialRows(L.total, formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
@@ -1071,14 +1095,25 @@ function itemAmountWidth(
 
 function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, offeredLabel?: string): string[] {
   const qtyW = 4;
-  const name = truncate(item.product_name, nameLen).padEnd(nameLen);
+  // A dish chosen inside a fixed menu sits under its package, indented and
+  // silent about money: the package is what costs, and this is the guest
+  // reading back what was counted for it. Only a surcharge shows, with the
+  // sign on it, so `Menu completo 25,00` and `  Tagliata +3,00` add up in the
+  // head to the total at the bottom.
+  const isCourse = item.menu_role === 'course';
+  const name = truncate(isCourse ? `  ${item.product_name}` : item.product_name, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
+  if (isCourse && !(Number(item.total) > 0)) return [label.trimEnd()];
   // A row worth nothing was given away — say so, rather than printing a 0,00
   // the guest has to interpret. A row whose price is simply not set yet is a
-  // different thing and keeps its zero, so the omission stays visible.
-  const offered = offeredLabel && Number(item.total) === 0 && !item.price_required;
-  const amount = offered ? offeredLabel : formatCurrency(item.total, prefix, locale, trimDecimals);
+  // different thing and keeps its zero, so the omission stays visible. A menu
+  // course is a third thing again: it is worth nothing by construction and
+  // nobody offered anybody anything, so it never says "on the house".
+  const offered = offeredLabel && Number(item.total) === 0 && !item.price_required && !item.menu_group_id;
+  const amount = offered
+    ? offeredLabel
+    : (isCourse ? '+' : '') + formatCurrency(item.total, prefix, locale, trimDecimals);
   const inlineWidth = Math.max(1, cols - label.length - 1);
   if (amount.length <= inlineWidth) return [label + rightAlign(amount, cols - label.length)];
   return [label.trimEnd(), ...wrapValue(amount, cols)];

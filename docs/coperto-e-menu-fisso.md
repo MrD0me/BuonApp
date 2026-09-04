@@ -1,7 +1,8 @@
 # Coperto e menu fisso
 
-**Stato:** ACTIVE DESIGN. Decisioni prese con l'utente il 2026-08-30. **Il passo 1, il coperto, è
-fatto** (migrazione v88); restano i passi 2-4, il menu fisso.
+**Stato:** CURRENT. Decisioni prese con l'utente il 2026-08-30, il menu fisso il 2026-08-31.
+**Fatto tutto**: il coperto con le migrazioni v88-v90, il menu fisso con la v92. Nata come v91,
+ha preso il numero dopo perché nel frattempo la v91 è servita a togliere la divisione del conto.
 
 ## Contesto
 
@@ -59,7 +60,7 @@ poter dire "coperto incluso".
   `orderCharges()` (`main/money.ts`), chiamata da tutti i punti che ricostruiscono un totale. Erano
   sei formule scritte a mano, e il coperto sarebbe stata la settima occasione di dimenticarne una.
 - `PATCH /orders/:id/guests` corregge i coperti a ordine aperto e riprezza; rifiutata su ordine
-  chiuso o conto diviso, come le altre modifiche che spostano denaro.
+  chiuso, come le altre modifiche che spostano denaro.
 - Sul conto la riga dice il conto della serva: `Coperto 4 x 2,00`.
 
 **Corretto subito dopo (v89).** Cambiare i coperti riprezzava l'ordine e il totale del conto, ma
@@ -73,11 +74,11 @@ col menu fisso, dove il coperto non si divide più per il numero di commensali. 
 
 **Il coperto si divide a testa (v90).** Dividendo il conto veniva spartito col cibo, a peso: quattro
 coperti da 2,00 diventavano 3,01 sulla quota di chi aveva preso la tagliata e 1,89 su chi aveva
-preso la zuppa. Ma il coperto e' tanto a testa, e una quota e' una testa: ora si divide in parti
-uguali, il centesimo dispari alle prime quote. Il totale di ogni quota si ricompone dalle sue righe
-invece di essere spartito per conto suo, cosi' il conto in mano al cliente torna riga per riga. E
-sulla quota di un conto diviso la stampa scrive `Coperto` e basta: il numero di teste del tavolo non
-descrive quella quota.
+preso la zuppa. Il coperto invece è tanto a testa, e una quota era una testa. La v91 ha poi tolto
+la divisione del conto del tutto (vedi [order-flow-and-navigation.md](order-flow-and-navigation.md)),
+quindi di quel lavoro resta solo la parte che vale ancora: il totale di un conto si ricompone dalle
+sue righe invece di essere calcolato per conto suo, così la carta in mano al cliente torna riga per
+riga.
 
 **Trovato mentre lo facevo, non sistemato:** la stampa termica non ha mai stampato consegna e
 imballo — solo l'encoder del browser lo fa. Su un conto con consegna, le righe non tornano col
@@ -99,9 +100,14 @@ si appendono le portate.
   sola: è esattamente il caso "frutta o dolce a seconda della disponibilità".
 - `fixed_menu_course_surcharges` — il supplemento di un singolo piatto dentro una portata (il
   secondo di pesce che costa 3 € in più). Presente solo per i piatti che ce l'hanno.
-- `fixed_menus.includes_cover` — se il coperto è compreso nel prezzo.
+- `products.fixed_menu_includes_cover` — se il coperto è compreso nel prezzo. Il disegno diceva
+  `fixed_menus.includes_cover`, una tabella testata che il resto non aveva: appesa al prodotto come
+  tutto il resto, non serve.
 - `order_items.menu_group_id` — lega i piatti scelti alla riga del pacchetto che li ha generati.
   Due menu allo stesso tavolo sono due gruppi distinti, ognuno con le sue scelte.
+- `order_items.menu_role` — `package` o `course`. Serve perché ogni riga sappia dire da sola cosa
+  è, senza join a `products` e senza dipendere dal fatto che il prodotto sia ancora spuntato come
+  menu: la stessa ragione per cui `product_name` è già una copia sulla riga.
 
 ### Cosa finisce nell'ordine
 
@@ -133,17 +139,66 @@ per ogni piatto scelto** (senza prezzo, o con il solo supplemento), tutte legate
 Chi non prende il menu completo paga tutto singolarmente: è il comportamento di sempre e non cambia
 niente. Il menu fisso è un prodotto in più nel catalogo, non un modo diverso di ordinare.
 
+### Le decisioni prese il 2026-08-31, e come è venuto
+
+Il piano lasciava aperti quattro punti che il documento non aveva visto. Decisi con l'utente prima
+di scrivere una riga:
+
+- **Un menu è un gruppo, di quantità uno.** Sei menu uguali sono sei righe da 25,00, ognuna coi suoi
+  piatti sotto. Non è una scelta estetica: è l'unica forma in cui il blocco unico della divisione
+  regge, perché un blocco da sei non si può spartire fra sei quote. Il costo — battere sei volte —
+  lo paga il pulsante **"Un altro uguale"**, che riapre la finestra con le scelte dell'ultimo menu.
+  Nel carrello un menu non si fonde mai con un altro (`cart-identity.ts`) e non ha il selettore di
+  quantità.
+- **Il coperto incluso vale un coperto per menu, mai più dei commensali.** Tre menu a un tavolo di
+  due non fanno coperto negativo: `computeCoverCharge` taglia a zero. Il ricalcolo sta in
+  `orderCoverCharge()` (`routes/orders.ts`), chiamata da tutti i punti che cambiano le righe:
+  creazione, aggiunta, ricalcolo, annullo, ripristino. Le quattro formule scritte a mano che
+  c'erano prima erano quattro occasioni di riprezzarne una e non le altre — che è esattamente il
+  difetto che la v89 ha dovuto riparare.
+- **Il menu si annulla intero**, da qualunque riga si parta, con una conferma che lo dice. Mezzo
+  menu — il pacchetto senza piatti, o i piatti senza niente di prezzato — non è una cosa che
+  qualcuno abbia ordinato.
+
+Trovato e sistemato strada facendo:
+
+- **Il KDS vedeva il pacchetto.** Il documento dettava la regola solo per la comanda, ma il KDS
+  legge le stesse righe: "Menu completo" sarebbe comparso in cucina come piatto da cuocere. Escluso
+  con `NOT_A_MENU_PACKAGE` (`services/kds.ts`), condiviso con le rotte.
+- **Il filtro della comanda va in `routeItemsToStations`, non nella selezione delle righe.** La riga
+  pacchetto deve restare in `getPendingKotItems` per ricevere il timbro `kot_batch`: escluderla
+  prima la lascerebbe pendente per sempre, e ogni invio successivo se la ritroverebbe davanti.
+  Quando una stazione fallisce, il pacchetto torna in coda insieme ai suoi piatti
+  (`withMenuPackages`), altrimenti resterebbe timbrato su una comanda mai uscita.
+- **Il ciclo che scrive le righe era copiato due volte** (creazione ordine e aggiunta righe).
+  Unificato in `insertOrderItemRows()` prima di toccarlo, altrimenti l'espansione del menu sarebbe
+  stata la prossima cosa da tenere allineata a mano. Stessa cosa lato interfaccia: i quattro mapper
+  che costruivano il payload delle righe in Ordina sono diventati `cartItemToPayload()`, e un menu
+  che avesse raggiunto tre di loro avrebbe perso le scelte sul quarto.
+- **L'indice su `order_items(menu_group_id)` non può stare in `createSchema()`.** Quella funzione
+  gira anche su un'installazione che non è ancora arrivata alla v92, dove la colonna non esiste:
+  `test:upgrade-path` l'ha preso al primo giro. Sta solo nella migrazione, come
+  `idx_order_items_kot_batch`.
+- **La finestra di scelta non importa il client API.** Prende catalogo e menu come props e
+  restituisce la selezione con una callback, sul modello di `AddonModal`. È quello che la rende
+  montabile nel Server App dei palmari quando arriverà il suo rifacimento — che è dove all'utente
+  il menu fisso serve davvero.
+
+**Non fatto, per scelta:** il menu fisso non è stato montato nel Server App. Il palmare non sa fare
+nemmeno gli aggiuntivi e va rifatto per intero; la finestra è pronta per allora. E cambiare una
+scelta a menu già battuto non esiste: si annulla il gruppo e si rifà.
+
 ## Ordine dei lavori
 
-1. **Coperto** — impostazione, colonna, totale, voce sul preconto, e la correzione dei coperti a
-   ordine aperto. Mezza giornata.
-2. **Struttura del menu fisso** — tabelle, migrazione, API di configurazione, e la scheda per
-   costruirlo dentro Menu.
-3. **La scelta in Ordina** — la finestra portata per portata che scrive le righe.
-4. **Stampa** — comanda che salta i pacchetti, preconto che rientra i piatti, esclusione dalla
-   regola dell'*Offerto*.
+Tutti e quattro i passi sono fatti.
 
-Da 2 a 3 giornate in tutto, il pezzo più grosso affrontato finora su questo fork.
+1. ~~**Coperto**~~ — impostazione, colonna, totale, voce sul preconto, correzione dei coperti a
+   ordine aperto. Migrazioni v88-v90.
+2. ~~**Struttura del menu fisso**~~ — migrazione v92, `services/fixed-menu.ts`,
+   `routes/fixed-menus.ts`, scheda "Menu fissi" dentro Menu.
+3. ~~**La scelta in Ordina**~~ — `components/pos/FixedMenuPicker.tsx` e l'espansione lato backend.
+4. ~~**Stampa**~~ — comanda e KDS che saltano i pacchetti, preconto che rientra i piatti,
+   esclusione dalla regola dell'*Offerto*. In più: gli annullamenti.
 
 ## Verifica
 
@@ -154,3 +209,11 @@ Da 2 a 3 giornate in tutto, il pezzo più grosso affrontato finora su questo for
 | 4 | `npm run test:printer`, `test:kot-batch`, `test:receipt-printing`, più una prova a mano con la stampante vera: due menu completi allo stesso tavolo devono uscire in cucina come piatti in sezioni, e sul conto come due pacchetti con i piatti sotto |
 
 `npm test` al termine, e un giro a mano in sala prima di usarlo di sera.
+
+La suite del menu fisso è `npm run test:fixed-menu` (52 controlli), ed è dentro la catena di
+`npm test`. Copre composizione, supplementi, portata facoltativa, prezzo forgiato dal client,
+tre menu = tre gruppi, coperto incluso che non va sotto zero, riprezzamento su aggiunta e annullo,
+annullo di gruppo, comanda senza pacchetto, preconto rientrato.
+
+**Resta da fare a mano, con la stampante vera:** due menu completi allo stesso tavolo devono uscire
+in cucina come piatti in sezioni e sul conto come due pacchetti coi piatti sotto.
