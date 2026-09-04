@@ -37,7 +37,10 @@ test('Batch 5C Pages (Orders, Tables, Customers, OrderHistoryGrid) render correc
   // 1b. Orders (EN)
   await page.goto(`${BASE}/orders`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Orders');
+  // The orders list is the service day now, not a ledger of everything ever
+  // taken: an evening that runs past midnight stays one evening, so the page
+  // is titled for the day it is showing.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Today');
   await expect(page.getByPlaceholder('Search by order number…')).toBeVisible();
   await captureScreenshot(page, 'orders-en.png');
 
@@ -75,7 +78,7 @@ test('Batch 5C Pages (Orders, Tables, Customers, OrderHistoryGrid) render correc
     // 2b. Orders (FA)
     await page.goto(`${BASE}/orders`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('سفارش‌ها');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('روز کاری');
     await expect(page.getByPlaceholder('بر پایه شماره سفارش جستجو کنید…')).toBeVisible();
     await captureScreenshot(page, 'orders-fa.png');
 
