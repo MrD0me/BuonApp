@@ -67,6 +67,8 @@ export interface Product {
   cost_price: number | null;
   cb_percent?: number | null;
   track_inventory: boolean;
+  /** Priced only once ordered — the off-menu dish agreed at the table. */
+  price_required?: boolean;
   stock_quantity: number;
   low_stock_threshold: number | null;
   is_active: boolean;
@@ -242,6 +244,8 @@ export interface Order {
   discount_amount: number;
   delivery_charge: number;
   packaging_charge?: number;
+  /** So much a head for laying the table; zero when the house charges none. */
+  cover_charge?: number;
   total: number;
   guest_count: number | null;
   special_instructions: string | null;
@@ -269,6 +273,10 @@ export interface OrderItem {
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided' | 'void_adjustment';
   /** Kitchen-ticket round this row went out on. null = still waiting to be sent. */
   kot_batch?: number | null;
+  /** Its product is one whose price is only settled once ordered. */
+  price_required?: boolean | number;
+  /** Someone has settled what this row costs — saving a price, zero included. */
+  price_confirmed?: boolean | number;
 }
 
 export interface Bill {
@@ -284,13 +292,13 @@ export interface Bill {
   service_charge: number;
   delivery_charge: number;
   packaging_charge?: number;
+  /** So much a head for laying the table; zero when the house charges none. */
+  cover_charge?: number;
   total: number;
   paid_amount: number;
   balance: number;
   payment_status: 'unpaid' | 'partial' | 'paid';
   payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string }[] | null;
-  split_group_id?: string | null;
-  split_label?: string | null;
   order?: Order;
   /** Loyalty points credited for this bill (sum of loyalty_ledger credits). Only populated by /orders endpoints. */
   points_earned?: number;

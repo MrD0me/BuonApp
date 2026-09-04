@@ -141,9 +141,9 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Payment method split checks (npm pretest)
+      - name: Payment methods (npm pretest)
         if: matrix.shard == 0
-        run: bash tests/run-test.sh npm run test:payment-methods-split
+        run: bash tests/run-test.sh npm run test:payment-methods
 
       - name: Core test suite (shard ${{ matrix.shard }})
         # The suite list is derived from package.json's "test" script at run
@@ -238,10 +238,14 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
+      # No install here. The fixture asks for the Pester module, which the
+      # Windows runner already carries, and the script that drives it opens
+      # node:path and node:child_process and nothing else — the Pester step
+      # itself takes ten seconds. `npm ci` was fetching the whole tree,
+      # Electron's binary and the native rebuild included, for a job that opens
+      # none of it: 165s of a five-minute budget while the runner was quick,
+      # and past the budget once it was not, which cancelled the entire run
+      # over a download nothing here reads.
       - name: Run Windows uninstaller Pester tests
         run: npm run test:windows-uninstaller

@@ -77,6 +77,7 @@ export default function ProductsPage() {
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [globalCashbackPercent, setGlobalCashbackPercent] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -90,7 +91,7 @@ export default function ProductsPage() {
   const [form, setForm] = useState({
     name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
     description: '',
-    track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
+    track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true, price_required: false,
     tags: [] as string[],
     customTag: '',
     addon_group_ids: [] as string[],
@@ -197,7 +198,7 @@ export default function ProductsPage() {
     setForm({
       name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
       description: '',
-      track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
+      track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true, price_required: false,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
     });
     setImageTouched(false);
@@ -222,6 +223,7 @@ export default function ProductsPage() {
       barcode: product.barcode || '',
       description: product.description || '',
       track_inventory: product.track_inventory,
+      price_required: Boolean(product.price_required),
       stock_quantity: String(product.stock_quantity || '0'),
       low_stock_threshold: String(product.low_stock_threshold ?? '5'),
       is_active: product.is_active,
@@ -255,6 +257,7 @@ export default function ProductsPage() {
         barcode: form.barcode || null,
         description: form.description || null,
         track_inventory: form.track_inventory,
+        price_required: form.price_required,
         stock_quantity: Number(form.stock_quantity),
         low_stock_threshold: Number(form.low_stock_threshold),
         is_active: form.is_active,
@@ -279,6 +282,25 @@ export default function ProductsPage() {
       fetchData();
     } catch {
       toast.error(t('failedToSave'));
+    }
+  };
+
+  /**
+   * Takes a dish off the menu, or puts it back, from the list itself. Running
+   * out of amatriciana happens mid-service; opening the edit form to untick a
+   * box at the bottom is three clicks too many for something that urgent.
+   * Rows already ordered are unaffected — they carry their own name and price.
+   */
+  const toggleActive = async (product: Product) => {
+    setTogglingId(product.id);
+    try {
+      await api.put(`/products/${product.id}`, { is_active: !product.is_active });
+      toast.success(!product.is_active ? t('activated') : t('deactivated'));
+      fetchData();
+    } catch {
+      toast.error(tCommon('failedToSave'));
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -550,11 +572,19 @@ export default function ProductsPage() {
                   )}
                 </td>
                 <td className="p-4 text-center">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    product.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                  }`}>
+                  <button
+                    type="button"
+                    onClick={() => isOwnerOrManager && toggleActive(product)}
+                    disabled={!isOwnerOrManager || togglingId === product.id}
+                    title={isOwnerOrManager ? (product.is_active ? t('deactivate') : t('activate')) : undefined}
+                    className={`px-2 py-1 rounded-full text-xs font-medium transition-colors disabled:opacity-60 ${
+                      product.is_active
+                        ? 'bg-green-100 text-green-800 enabled:hover:bg-green-200'
+                        : 'bg-gray-100 text-gray-600 enabled:hover:bg-gray-200'
+                    }`}
+                  >
                     {product.is_active ? tCommon('active') : tCommon('inactive')}
-                  </span>
+                  </button>
                   {product.is_active && isCategoryInactive && (
                     <span className="text-[10px] text-amber-600 font-medium block mt-1">{t('hiddenOnPos')}</span>
                   )}
@@ -774,6 +804,17 @@ export default function ProductsPage() {
                   <span className="text-sm text-gray-700">{t('fieldActive')}</span>
                 </label>
               </div>
+              {/* The off-menu placeholder. Its rows stay flagged until someone
+                  prices them — a price of zero cannot be that signal, because
+                  in a place that offers the coffee zero means "on the house". */}
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={form.price_required} onChange={(e) => setForm({ ...form, price_required: e.target.checked })}
+                  className="mt-0.5 rounded border-gray-300 text-brand focus:ring-brand" />
+                <span>
+                  <span className="block text-sm text-gray-700">{t('priceRequired')}</span>
+                  <span className="block text-xs text-gray-500">{t('priceRequiredHint')}</span>
+                </span>
+              </label>
               {!!form.track_inventory && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>

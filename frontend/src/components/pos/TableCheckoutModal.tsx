@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart, Users, ChefHat } from 'lucide-react';
+import { X, ShoppingCart, ChefHat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import toast from 'react-hot-toast';
-import type { Table, Order, Bill, OrderItem } from '@/lib/types';
-import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
+import type { Table, Order, OrderItem } from '@/lib/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
 
 interface Props {
@@ -17,7 +16,6 @@ interface Props {
   cartItemCount: number;
   onClose: () => void;
   onAddItems: (table: Table, order: Order) => void;
-  onPayment: (bill: Bill) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
   onSendToKitchen?: (order: Order) => Promise<void>;
 }
@@ -28,7 +26,6 @@ export default function TableCheckoutModal({
   cartItemCount,
   onClose,
   onAddItems,
-  onPayment,
   onAddCartToOrder,
   onSendToKitchen
 }: Props) {
@@ -42,10 +39,7 @@ export default function TableCheckoutModal({
   };
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
   const [addingItems, setAddingItems] = useState(false);
-  const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
-  const [splitBill, setSplitBill] = useState<Bill | null>(null);
   const [sendingToKitchen, setSendingToKitchen] = useState(false);
   const { kotPrintingEnabled } = usePosSettingsStore();
 
@@ -70,39 +64,6 @@ export default function TableCheckoutModal({
     fetchOrder();
     return () => controller.abort();
   }, [table.id, t]);
-
-  useEffect(() => {
-    api.get('/settings/split_checks_enabled').then((res) => setSplitChecksEnabled(res.data?.setting?.value === 'true')).catch(() => setSplitChecksEnabled(false));
-  }, []);
-
-  const handleCheckout = async () => {
-    if (!order) return;
-    setGenerating(true);
-    try {
-      if (order.bill) {
-        onPayment(order.bill);
-        return;
-      }
-      const { data } = await api.post('/bills/generate', { order_id: order.id });
-      onPayment(data.bill);
-    } catch {
-      toast.error(t('generateBillFailed'));
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const handleSplitCheck = async () => {
-    if (!order) return;
-    setGenerating(true);
-    try {
-      const bill = order.bill || (await api.post('/bills/generate', { order_id: order.id })).data.bill;
-      setSplitBill(bill);
-    } catch {
-      toast.error(t('generateBillFailed'));
-    }
-    finally { setGenerating(false); }
-  };
 
   const handleSendToKitchen = async () => {
     if (!order || !onSendToKitchen) return;
@@ -158,7 +119,6 @@ export default function TableCheckoutModal({
   const pendingKotItems = activeItems.filter(
     (item: OrderItem) => item.status !== 'voided' && (item.kot_batch === null || item.kot_batch === undefined),
   );
-  const splitBills = (order.bills || []).filter((bill) => Boolean(bill.split_group_id));
 
   return (
     <>
@@ -228,7 +188,6 @@ export default function TableCheckoutModal({
             </div>
           )}
 
-          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-gray-500">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pay')}</Button>}</div>)}</div>}
 
           {/* Sending to the kitchen is its own step, separate from billing:
               it carries the rows that have never been on a ticket. */}
@@ -245,38 +204,29 @@ export default function TableCheckoutModal({
           )}
 
           {/* Show different buttons based on cart state */}
-          {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}
+          {/* What this window is for: putting food on a table that is already
+              working. The bill and the payment live where the table lives —
+              the floor plan, or the day's orders — so that an order is only
+              ever closed from one place. */}
           {cartItemCount > 0 ? (
-            // Cart has items - show "Add items to order" option
-            <div className="space-y-2">
-              <Button 
-                onClick={handleAddCartToOrder} 
-                disabled={addingItems}
-                className="w-full"
-                size="lg"
-              >
-                <ShoppingCart size={16} className="me-2" />
-                {addingItems ? t('adding') : t('addToOrder', { count: cartItemCount })}
-              </Button>
-              <Button onClick={handleCheckout} variant="outline" className="w-full" disabled={generating}>
-                {generating ? t('generating') : t('checkoutInstead')}
-              </Button>
-            </div>
-          ) : splitBills.length === 0 ? (
-            // Cart empty - show both options
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" onClick={() => onAddItems(table, order)}>
-                {t('addItems')}
-              </Button>
-              <Button onClick={handleCheckout} disabled={generating}>
-                {generating ? t('generating') : t('checkout')}
-              </Button>
-            </div>
-          ) : null}
+            <Button
+              onClick={handleAddCartToOrder}
+              disabled={addingItems}
+              className="w-full"
+              size="lg"
+            >
+              <ShoppingCart size={16} className="me-2" />
+              {addingItems ? t('adding') : t('addToOrder', { count: cartItemCount })}
+            </Button>
+          ) : (
+            <Button variant="outline" className="w-full" onClick={() => onAddItems(table, order)}>
+              {t('addItems')}
+            </Button>
+          )}
+          <p className="text-xs text-gray-500 text-center">{t('billingLivesElsewhere')}</p>
         </div>
       </div>
     </div>
-    {splitBill && <SplitCheckModal bill={splitBill} order={order} onClose={() => setSplitBill(null)} onSplit={(bills) => { setOrder({ ...order, bill: bills[0], bills }); setSplitBill(null); }} />}
     </>
   );
 }

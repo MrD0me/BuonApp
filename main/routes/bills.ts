@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
   attachEffectiveAddons,
@@ -17,34 +17,9 @@ import { asyncHandler } from '../middleware/async-handler';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { requireRole } from '../middleware/security';
-import { roundMoney } from '../money';
+import { orderCharges, roundMoney } from '../money';
 
 const router = Router();
-
-// A split check shows only the share of each line it was allocated. Amounts
-// scale with the allocated quantity; a line nobody split is returned untouched
-// so an unsplit bill reads exactly as it was stored.
-export function projectOrderItems(
-  order: any,
-  rawItemRows: any[],
-  allocations: any[] = [],
-): any[] {
-  const allocated = new Map(allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]));
-  return rawItemRows
-    .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))
-    .map((item) => {
-      const quantity = allocated.get(Number(item.id));
-      if (quantity === undefined) return item;
-      const originalQuantity = Number(item.quantity);
-      const quantityRatio = originalQuantity <= 0 ? 1 : quantity / originalQuantity;
-      return {
-        ...item,
-        quantity,
-        subtotal: roundMoney(Number(item.subtotal) * quantityRatio),
-        total: roundMoney(Number(item.total) * quantityRatio),
-      };
-    });
-}
 
 function selectRowsByIds<T>(
   db: ReturnType<typeof getDatabase>,
@@ -59,14 +34,19 @@ function selectRowsByIds<T>(
   return rows;
 }
 
-export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number, billId?: number): any {
+export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number): any {
   const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId));
   if (!order) return order;
-  const allocations = billId === undefined ? [] : db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ?').all(billId) as any[];
-  const itemRows = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[];
+  // price_required rides along so the printed bill can tell an intentional
+  // freebie from a row nobody has priced yet: both are zero.
+  const itemRows = db.prepare(`
+    SELECT oi.*, COALESCE(p.price_required, 0) AS price_required
+    FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+    WHERE oi.order_id = ?
+  `).all(orderId) as any[];
   return {
     ...order,
-    items: attachEffectiveAddons(db, projectOrderItems(order, itemRows, allocations).map(parseItemJson)),
+    items: attachEffectiveAddons(db, itemRows.map(parseItemJson)),
   };
 }
 
@@ -87,23 +67,12 @@ export function getOrdersWithItemsForBills(
     itemsByOrder.set(Number(item.order_id), items);
   }
 
-  const billIds = bills.map((bill) => Number(bill.id));
-  const reportBillItems = selectRowsByIds<any>(db, billIds, (count) => `SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${new Array(count).fill('?').join(',')})`);
-  const billItemsByBill = new Map<number, any[]>();
-  for (const row of reportBillItems) {
-    const rows = billItemsByBill.get(Number(row.bill_id)) || [];
-    rows.push(row);
-    billItemsByBill.set(Number(row.bill_id), rows);
-  }
-
   const projected = new Map<number, any>();
   const addonItems = new Map<number, any>();
   for (const bill of bills) {
     const order = orders.get(Number(bill.order_id));
     if (!order) continue;
-    const allocations = billItemsByBill.get(Number(bill.id)) || [];
-    const rawItems = itemsByOrder.get(Number(bill.order_id)) || [];
-    const items = projectOrderItems(order, rawItems, allocations).map(parseItemJson);
+    const items = (itemsByOrder.get(Number(bill.order_id)) || []).map(parseItemJson);
     items.forEach((item) => addonItems.set(Number(item.id), item));
     projected.set(Number(bill.id), { ...order, items });
   }
@@ -222,7 +191,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier'), (req: Request, re
       return res.status(404).json({ error: 'Bill not found' });
     }
 
-    const order = getOrderWithItems(db, (bill as any).order_id, Number((bill as any).id));
+    const order = getOrderWithItems(db, (bill as any).order_id);
     const customer = (bill as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id) : null;
 
     res.json({ bill: { ...bill, order, customer } });
@@ -241,7 +210,7 @@ router.get('/order/:orderId', requireRole('owner', 'manager', 'cashier'), (req: 
       return res.status(404).json({ error: 'Bill not found for this order' });
     }
 
-    const order = getOrderWithItems(db, (bill as any).order_id, Number((bill as any).id));
+    const order = getOrderWithItems(db, (bill as any).order_id);
     const customer = (bill as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id) : null;
 
     res.json({ bill: { ...bill, order, customer } });
@@ -268,7 +237,6 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
     const result = withTxn(() => {
       const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order_id) as any;
       if (existingBill) {
-        if (existingBill.split_group_id) return { bill: parseRowJson(existingBill), isNew: false };
         // Re-sync bill totals from the order in case discount/adjustments were applied
         // after the bill was first generated (e.g. discount applied → then checkout clicked).
         // Only sync if the bill is still unpaid (partial or full payments must not be changed).
@@ -276,6 +244,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
         const orderDiscountAmt   = order.discount_amount || 0;
         const orderDelivery      = order.delivery_charge || 0;
         const orderPackaging     = order.packaging_charge|| 0;
+        const orderCover         = order.cover_charge    || 0;
         const orderTotal         = order.total           || 0;
 
         const roundedOrderTotal = roundMoney(orderTotal);
@@ -298,6 +267,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
                 discount_reason= ?,
                 delivery_charge= ?,
                 packaging_charge= ?,
+                cover_charge   = ?,
                 total          = ?,
                 balance        = ?,
                 updated_at     = ?
@@ -305,7 +275,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
           `).run(
             orderSubtotal,
             orderDiscountAmt, order.discount_type, order.discount_value, order.discount_reason,
-            orderDelivery, orderPackaging,
+            orderDelivery, orderPackaging, orderCover,
             roundedOrderTotal, newBalance, now(),
             existingBill.id
           );
@@ -323,17 +293,18 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
       const discountAmount = order.discount_amount || 0;
       const deliveryCharge = order.delivery_charge || 0;
       const packagingCharge = order.packaging_charge || 0;
+      const coverCharge = order.cover_charge || 0;
       const total = roundMoney(order.total || 0);
 
       const runResult = db.prepare(`
         INSERT INTO bills (bill_number, order_id, customer_id, subtotal,
           discount_amount, discount_type, discount_value, discount_reason,
-          delivery_charge, packaging_charge, total, paid_amount, balance, payment_status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
+          delivery_charge, packaging_charge, cover_charge, total, paid_amount, balance, payment_status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
       `).run(
         billNumber, order_id, order.customer_id, subtotal,
         discountAmount, order.discount_type, order.discount_value, order.discount_reason,
-        deliveryCharge, packagingCharge, total, 0, total, now(), now()
+        deliveryCharge, packagingCharge, coverCharge, total, 0, total, now(), now()
       );
 
       const newBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(runResult.lastInsertRowid));
@@ -348,78 +319,13 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
   }
 });
 
-function allocateMinorUnits(sourceMinor: number, weights: number[]): number[] {
-  const n = weights.length;
-  if (n === 0) return [];
-  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-  const effectiveWeights = totalWeight === 0 ? Array(n).fill(1) : weights;
-  const effectiveTotalWeight = effectiveWeights.reduce((sum, w) => sum + w, 0);
-
-  const base: number[] = new Array(n);
-  const remainders: { index: number; remainder: number }[] = new Array(n);
-  let used = 0;
-
-  for (let i = 0; i < n; i++) {
-    const exact = (sourceMinor * effectiveWeights[i]) / effectiveTotalWeight;
-    const b = Math.floor(exact);
-    base[i] = b;
-    used += b;
-    remainders[i] = { index: i, remainder: exact - b };
-  }
-
-  let left = sourceMinor - used;
-  remainders.sort((a, b) => {
-    if (Math.abs(b.remainder - a.remainder) > 1e-9) {
-      return b.remainder - a.remainder;
-    }
-    return a.index - b.index;
-  });
-
-  for (let i = 0; i < left; i++) {
-    base[remainders[i].index] += 1;
-  }
-
-  return base;
-}
-
 interface OrderBillSyncValues {
   subtotal: number;
   discountAmount: number;
   deliveryCharge: number;
   packagingCharge: number;
+  coverCharge: number;
   total: number;
-}
-
-// Each check's share of the order, weighted by the value of the lines it was
-// allocated. Everything money-related on a split check is apportioned with
-// these weights.
-function getSplitBillAllocationWeights(
-  db: ReturnType<typeof getDatabase>,
-  orderId: number | string,
-  bills: any[],
-): number[] {
-  const items = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(orderId) as any[];
-  const billIds = bills.map((bill) => Number(bill.id));
-  const billItems = billIds.length === 0
-    ? []
-    : db.prepare(`SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${billIds.map(() => '?').join(',')})`).all(...billIds) as any[];
-  const quantities = new Map<number, Map<number, number>>();
-  for (const row of billItems) {
-    const byItem = quantities.get(Number(row.bill_id)) || new Map<number, number>();
-    byItem.set(Number(row.order_item_id), Number(row.quantity));
-    quantities.set(Number(row.bill_id), byItem);
-  }
-
-  return bills.map((bill) => {
-    const byItem = quantities.get(Number(bill.id)) || new Map<number, number>();
-    return items
-      .filter((item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status))
-      .reduce((sum, item) => {
-        const quantity = byItem.get(Number(item.id)) || 0;
-        if (quantity <= 0 || Number(item.quantity) <= 0) return sum;
-        return sum + Number(item.total || item.subtotal || 0) * quantity / Number(item.quantity);
-      }, 0);
-  });
 }
 
 export function syncUnpaidBillsForOrder(
@@ -427,144 +333,22 @@ export function syncUnpaidBillsForOrder(
   orderId: number | string,
   source: OrderBillSyncValues,
 ): void {
-  const bills = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(orderId) as any[];
-  const splitBills = bills.some((bill) => bill.split_group_id);
-  if (splitBills && bills.some((bill) => bill.payment_status !== 'unpaid' || Number(bill.paid_amount || 0) > 0)) {
-    throw Object.assign(new Error('Cannot modify an order after a split check is paid'), { statusCode: 409 });
-  }
-  const unpaidBills = bills.filter((bill) => bill.payment_status !== 'paid');
+  const unpaidBills = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid' ORDER BY id").all(orderId) as any[];
   if (unpaidBills.length === 0) return;
 
   const billTotal = roundMoney(source.total);
-
-  if (!splitBills) {
-    const update = db.prepare(`
-      UPDATE bills SET subtotal = ?, total = ?, balance = ?,
-        discount_amount = ?, delivery_charge = ?, packaging_charge = ?, updated_at = ?
-      WHERE id = ?
-    `);
-    for (const bill of unpaidBills) {
-      update.run(
-        source.subtotal, billTotal, Math.max(0, billTotal - Number(bill.paid_amount || 0)),
-        source.discountAmount, source.deliveryCharge, source.packagingCharge, now(), bill.id,
-      );
-    }
-    return;
-  }
-
-  const weights = getSplitBillAllocationWeights(db, orderId, bills);
-  const fields = {
-    subtotal: Math.round(source.subtotal * 100),
-    discountAmount: Math.round(source.discountAmount * 100),
-    deliveryCharge: Math.round(source.deliveryCharge * 100),
-    packagingCharge: Math.round(source.packagingCharge * 100),
-    total: Math.round(billTotal * 100),
-  };
-  const allocations = Object.fromEntries(Object.entries(fields).map(([field, value]) => [
-    field,
-    allocateMinorUnits(value, weights).map((minor) => minor / 100),
-  ])) as Record<keyof typeof fields, number[]>;
   const update = db.prepare(`
-    UPDATE bills SET subtotal = ?, discount_amount = ?,
-      delivery_charge = ?, packaging_charge = ?, total = ?, balance = ?, updated_at = ?
+    UPDATE bills SET subtotal = ?, total = ?, balance = ?,
+      discount_amount = ?, delivery_charge = ?, packaging_charge = ?, cover_charge = ?, updated_at = ?
     WHERE id = ?
   `);
-
-  bills.forEach((bill, index) => {
-    if (bill.payment_status === 'paid') return;
-    const total = allocations.total[index];
+  for (const bill of unpaidBills) {
     update.run(
-      allocations.subtotal[index], allocations.discountAmount[index],
-      allocations.deliveryCharge[index], allocations.packagingCharge[index],
-      total, Math.max(0, total - Number(bill.paid_amount || 0)), now(), bill.id,
+      source.subtotal, billTotal, Math.max(0, billTotal - Number(bill.paid_amount || 0)),
+      source.discountAmount, source.deliveryCharge, source.packagingCharge, source.coverCharge, now(), bill.id,
     );
-  });
-}
-
-// Divide one unpaid dine-in bill into independently payable guest checks.
-// The kitchen order and inventory rows remain singular; bill_items stores only
-// the whole-unit quantity allocated to each resulting check.
-router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    if (getSettingValue('split_checks_enabled') !== 'true') return res.status(403).json({ error: 'Split checks are not enabled' });
-    const checks = req.body?.checks;
-    if (!Array.isArray(checks) || checks.length < 2 || checks.length > 20) return res.status(400).json({ error: 'Create between 2 and 20 guest checks' });
-
-    const result = withTxn(() => {
-      const txnSource = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
-      if (!txnSource) throw Object.assign(new Error('Bill not found'), { statusCode: 404 });
-      const txnOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(txnSource.order_id) as any;
-      if (txnOrder?.type !== 'dine_in') throw Object.assign(new Error('Only dine-in checks can be split'), { statusCode: 400 });
-      if (txnSource.payment_status !== 'unpaid' || Number(txnSource.paid_amount || 0) !== 0 || txnSource.payment_details) {
-        throw Object.assign(new Error('A check can only be split before any payment is recorded'), { statusCode: 409 });
-      }
-      if (txnSource.split_group_id || Number((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(txnSource.order_id) as any).n) > 1) {
-        throw Object.assign(new Error('This check has already been split'), { statusCode: 409 });
-      }
-      const txnActiveItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment') ORDER BY id").all(txnSource.order_id) as any[];
-      const txnItemById = new Map(txnActiveItems.map((item) => [Number(item.id), item]));
-      const txnAssigned = new Map<number, number>();
-
-      const txnNormalized = checks.map((check: any, index: number) => {
-        const label = String(check?.label || `Guest ${index + 1}`).trim().slice(0, 40) || `Guest ${index + 1}`;
-        if (!Array.isArray(check?.items) || check.items.length === 0) throw Object.assign(new Error(`${label} must contain at least one item`), { statusCode: 400 });
-        const seenItems = new Set<number>();
-        const items = check.items.map((entry: any) => {
-          const itemId = Number(entry?.order_item_id);
-          const quantity = Number(entry?.quantity);
-          const item = txnItemById.get(itemId);
-          if (!item || !Number.isSafeInteger(quantity) || quantity < 1) throw Object.assign(new Error(`Invalid item allocation in ${label}`), { statusCode: 400 });
-          if (seenItems.has(itemId)) throw Object.assign(new Error(`${label} contains the same item more than once`), { statusCode: 400 });
-          seenItems.add(itemId);
-          txnAssigned.set(itemId, (txnAssigned.get(itemId) || 0) + quantity);
-          return { item, quantity };
-        });
-        return { label, items };
-      });
-
-      for (const item of txnActiveItems) {
-        if ((txnAssigned.get(Number(item.id)) || 0) !== Number(item.quantity)) {
-          throw Object.assign(new Error(`Allocate all ${item.quantity} × ${item.product_name}`), { statusCode: 400 });
-        }
-      }
-
-      const groupId = randomUUID();
-      const weights = txnNormalized.map((check: { items: { item: any; quantity: number }[] }) =>
-        check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)
-      );
-
-      const fields = ['subtotal', 'discount_amount', 'delivery_charge', 'packaging_charge', 'total'] as const;
-      const allocations: Record<string, number[]> = {};
-      for (const field of fields) {
-        const totalMinor = Math.round(Number(txnSource[field] || 0) * 100);
-        allocations[field] = allocateMinorUnits(totalMinor, weights).map((minor) => minor / 100);
-      }
-
-      const billIds: number[] = [];
-      txnNormalized.forEach((check, index) => {
-        let billId: number;
-        if (index === 0) {
-          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?`)
-            .run(groupId, check.label, allocations.subtotal[index], allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.total[index], allocations.total[index], now(), txnSource.id);
-          billId = Number(txnSource.id);
-        } else {
-          const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)`)
-            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
-          billId = Number(inserted.lastInsertRowid);
-        }
-        billIds.push(billId);
-        const insertItem = db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, ?)');
-        for (const entry of check.items) insertItem.run(billId, entry.item.id, entry.quantity);
-      });
-      return billIds.map((id) => parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(id)));
-    });
-    notifyOrderUpdated();
-    res.status(201).json({ bills: result });
-  } catch (error: any) {
-    res.status(error.statusCode || 500).json({ error: error.message || 'Unable to split check' });
   }
-});
+}
 
 interface PaymentInput {
   method: string;
@@ -827,10 +611,7 @@ function calculateCashback(db: ReturnType<typeof getDatabase>, bill: any, custom
     const rate = item.cb_percent !== null ? item.cb_percent : globalRate;
     return sum + (rate > 0 ? Math.floor(Math.max(0, item.subtotal - discountShare) * rate / 100) * LOYALTY_REDEMPTION_RATE : 0);
   }, 0);
-  const splitRatio = Number(order?.subtotal || 0) > 0 && bill.split_group_id
-    ? Math.min(1, Number(bill.subtotal || 0) / Number(order.subtotal))
-    : 1;
-  return Math.floor(fullOrderCashback * splitRatio);
+  return fullOrderCashback;
 }
 
 function applyPaymentBatch(
@@ -1010,9 +791,6 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
     if (bill.payment_status === 'paid') {
       return res.status(400).json({ error: 'Cannot apply discount to a paid bill' });
     }
-    if (bill.split_group_id) {
-      return res.status(409).json({ error: 'Apply discounts before splitting a bill' });
-    }
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -1086,7 +864,7 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
     // discounted total: editing 10% to 20% must not compound the first cut.
     const discountedSubtotal = Math.max(0, bill.subtotal - discountAmount);
     const newTotal = roundMoney(discountedSubtotal
-      + (bill.delivery_charge || 0) + (bill.packaging_charge || 0) + (bill.service_charge || 0));
+      + orderCharges(bill));
     const newBalance = Math.max(0, newTotal - (bill.paid_amount || 0));
 
     const updatedBill = withTxn(() => {

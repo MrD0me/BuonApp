@@ -781,3 +781,60 @@ export function clearAppendAttempt(
     return false;
   }
 }
+
+/**
+ * The browser storage pair append retries are kept in, built once per tab.
+ *
+ * Both the order panel (which writes an attempt before appending) and the
+ * day's list (which retries a leftover one on load) need the same storage, and
+ * two independently built wrappers would each carry their own in-memory
+ * fallback — an attempt written through one would be invisible to the other.
+ */
+let sharedAppendAttemptStorage: AppendAttemptStorage | null = null;
+
+export function getAppendAttemptStorage(): AppendAttemptStorage {
+  if (sharedAppendAttemptStorage) return sharedAppendAttemptStorage;
+  let browserStorage: AppendAttemptStorage | null = null;
+  let sessionStorage: AppendAttemptStorage | null = null;
+  try {
+    if (typeof window !== 'undefined') browserStorage = window.localStorage;
+  } catch {
+    browserStorage = null;
+  }
+  try {
+    if (typeof window !== 'undefined') sessionStorage = window.sessionStorage;
+  } catch {
+    sessionStorage = null;
+  }
+  sharedAppendAttemptStorage = createSafeAppendAttemptStorage(browserStorage, sessionStorage);
+  return sharedAppendAttemptStorage;
+}
+
+/**
+ * Whether a refused append is refused for good.
+ *
+ * The order was closed, or its check was split, and no amount of retrying will
+ * change that. A stored retry that can never succeed nags on every load and,
+ * worse, makes the floor believe the order will not take items at all — which
+ * is how a table ends up looking stuck.
+ */
+/**
+ * Whether the refusal will still be a refusal the next time it is tried.
+ *
+ * Saying yes throws the rows away and tells the floor the order would not
+ * take them, which is the right answer for an order already closed or a role
+ * that may not append. The whole 4xx range used to count, and the append
+ * route is rate limited at sixty writes a minute: a busy service could hand
+ * back a 429 and lose a waiter’s course with a message saying the order had
+ * been closed. A wait is not a refusal — a timeout, an "too early", a rate
+ * limit and a token that has just expired all turn into an acceptance once
+ * tried again, so the attempt is kept: it goes again on the next load and
+ * expires on its own after a day (APPEND_ATTEMPT_MAX_AGE_MS).
+ */
+const RETRYABLE_APPEND_STATUSES = new Set([401, 408, 425, 429]);
+
+export function isPermanentAppendRefusal(error: unknown): boolean {
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  if (typeof status !== 'number' || status < 400 || status >= 500) return false;
+  return !RETRYABLE_APPEND_STATUSES.has(status);
+}

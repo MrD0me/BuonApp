@@ -159,6 +159,31 @@ async function main() {
     const orderAfterAdd = addItemsRes.data.order;
     assert(orderAfterAdd.total > orderBTotal, `order total increased (₹${orderBTotal} → ₹${orderAfterAdd.total})`);
 
+    // ── Scenario C: the bill follows a late item on its own ───────────────
+    // Read here, BEFORE anyone regenerates: regenerating repairs the bill, so
+    // checking after it would have proved nothing. The floor does not
+    // regenerate — it adds a dish and reprints, or adds a dish and splits.
+    //
+    // Adding items synced the total and left `subtotal` at whatever it was
+    // when the bill was drawn up. Nothing complained, because the printed
+    // preconto reads its subtotal and its total from the same bill: a reprint
+    // after a late dish said "Subtotal 90 ... TOTAL 118", two figures that do
+    // not add up in the hand of the guest checking them. Splitting that check
+    // then divided the stale subtotal while weighing the shares against the
+    // real one, so the shares came to less than the total.
+    console.log('\n── Scenario C: the bill follows a late item, unprompted ──');
+    const billRowAfterAdd = getDatabase()
+      .prepare('SELECT subtotal, total FROM bills WHERE id = ?')
+      .get(billB.data.bill.id) as any;
+    assertEqual(
+      Number(billRowAfterAdd.subtotal), Number(orderAfterAdd.subtotal),
+      `bill subtotal (${billRowAfterAdd.subtotal}) matches order subtotal (${orderAfterAdd.subtotal})`,
+    );
+    assertEqual(
+      Number(billRowAfterAdd.total), Number(orderAfterAdd.total),
+      'and so does the total',
+    );
+
     // Re-generate bill — it should sync with the updated order total
     const billAfterAdd = await api(baseUrl, '/api/bills/generate', {
       method: 'POST',

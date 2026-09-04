@@ -6,7 +6,7 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { parseDbTimestamp } from '@/lib/utils';
 import { Ltr } from '@/components/layout/Ltr';
-import { Flame, Link2 } from 'lucide-react';
+import { CircleDollarSign, Flame, Link2 } from 'lucide-react';
 
 /**
  * The dining room, drawn to scale (phase 2 of docs/table-management.md).
@@ -72,6 +72,11 @@ function TableTile({
   const pendingKot = (order?.items || []).some(
     (item) => item.kot_batch == null && item.status !== 'cancelled' && item.status !== 'voided',
   );
+  // A row of an off-menu dish that nobody has priced yet. Worth the same glance
+  // as an unsent course: the bill cannot be closed honestly until it is filled.
+  const unpriced = (order?.items || []).some(
+    (item) => Boolean(item.price_required) && !item.price_confirmed && item.status !== 'cancelled',
+  );
   const compact = height < 100 || width < 120;
   // A table being held shows who it is being held for; that is the whole point
   // of marking it reserved rather than just colouring it.
@@ -113,6 +118,11 @@ function TableTile({
       {pendingKot && (
         <span className="absolute top-1 end-1 text-orange-600" title={tTables('kotPending')}>
           <Flame size={13} />
+        </span>
+      )}
+      {unpriced && (
+        <span className={`absolute top-1 ${pendingKot ? 'end-6' : 'end-1'} text-orange-600`} title={tTables('unpricedRow')}>
+          <CircleDollarSign size={13} />
         </span>
       )}
 

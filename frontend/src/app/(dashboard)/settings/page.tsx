@@ -7,7 +7,15 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { LANGUAGES, type Language } from '@/lib/i18n';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
-import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, CloudOff, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
+import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, CloudOff, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown, ShoppingBag } from 'lucide-react';
+import { StaffSettings } from '@/components/settings/StaffSettings';
+import {
+  ORDER_TYPES_SETTING_KEY,
+  parseOrderTypes,
+  SELECTABLE_ORDER_TYPES,
+  serializeOrderTypes,
+  type SelectableOrderType,
+} from '@/lib/order-types';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -107,6 +115,14 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
     </button>
   );
 }
+
+// The POS already names these three; naming them a second time here would be
+// three more strings to keep in step across five locales.
+const ORDER_TYPE_SETTING_LABELS = {
+  dine_in: 'orderTypeDineIn',
+  takeaway: 'orderTypeTakeaway',
+  delivery: 'orderTypeDelivery',
+} as const satisfies Record<SelectableOrderType, keyof AppConfig['Messages']['pos']>;
 
 type InvoiceResetPeriod = 'never' | 'daily' | 'monthly' | 'financial_year';
 
@@ -252,11 +268,18 @@ export default function SettingsPage() {
   const locale = useLocale();
   const sortedCountries = sortCountriesByLocalizedName(COUNTRIES, locale);
   const tRestore = useTranslations('restore');
+  const tPos = useTranslations('pos');
+  const tNav = useTranslations('nav');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const language = posSettings.language;
   const setLanguage = posSettings.setLanguage;
   const { formatDateTime } = useFormatDate();
   const isAdmin = currentTenant?.role === 'admin' || currentTenant?.role === 'owner';
+  // A business without tables never offers dine-in, so a switch for it would
+  // promise something the POS would not show.
+  const orderTypeChoices = SELECTABLE_ORDER_TYPES.filter(
+    (type) => (currentTenant?.business_type ?? 'restaurant') === 'restaurant' || type !== 'dine_in',
+  );
   const { confirm, ConfirmDialog } = useConfirm();
 
   // Whether this business keeps a customer book at all. Saved on the spot
@@ -264,6 +287,11 @@ export default function SettingsPage() {
   // loyalty off server-side, and a pending "unsaved" toggle would hide that.
   const [customersEnabledSetting, setCustomersEnabledSetting] = useState(true);
   const [savingCustomersEnabled, setSavingCustomersEnabled] = useState(false);
+  const [orderTypesSetting, setOrderTypesSetting] = useState<SelectableOrderType[]>([...SELECTABLE_ORDER_TYPES]);
+  const [coverCharge, setCoverCharge] = useState('0');
+  const [savedCoverCharge, setSavedCoverCharge] = useState('0');
+  const [savingCoverCharge, setSavingCoverCharge] = useState(false);
+  const [savingOrderTypes, setSavingOrderTypes] = useState(false);
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [savedLoyaltyEnabled, setSavedLoyaltyEnabled] = useState(false);
@@ -1304,6 +1332,18 @@ export default function SettingsPage() {
       posSettings.setCustomersEnabled(enabled);
     }).catch(() => {});
 
+    api.get('/settings/cover_charge_amount').then((res) => {
+      const amount = String(res.data.setting?.value ?? '0');
+      setCoverCharge(amount);
+      setSavedCoverCharge(amount);
+    }).catch(() => {});
+
+    api.get(`/settings/${ORDER_TYPES_SETTING_KEY}`).then((res) => {
+      const types = parseOrderTypes(res.data.setting?.value);
+      setOrderTypesSetting(types);
+      posSettings.setOrderTypes(types);
+    }).catch(() => {});
+
     api.get('/settings/kot_printing_enabled').then((res) => {
       const enabled = res.data.setting?.value !== 'false';
       setKotPrintingEnabledSetting(enabled);
@@ -1488,6 +1528,61 @@ export default function SettingsPage() {
    * the backend does the same on its side, so the local state follows rather
    * than asking a second time.
    */
+  /**
+   * Which order types the POS offers. One has to stay on — a tenant with none
+   * enabled could not take an order at all — so the last one refuses here
+   * instead of coming back as a failed save.
+   */
+  /**
+   * So much a head for laying the table. Zero — the default — means the house
+   * charges none, and the line disappears from every bill.
+   */
+  const saveCoverCharge = async () => {
+    if (savingCoverCharge) return;
+    const parsed = Number(coverCharge.replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      toast.error(t('coverChargeInvalid'));
+      return;
+    }
+    setSavingCoverCharge(true);
+    try {
+      const { data } = await api.put('/settings/cover_charge_amount', { value: String(parsed) });
+      const stored = String(data.setting?.value ?? parsed);
+      setCoverCharge(stored);
+      setSavedCoverCharge(stored);
+      toast.success(t('coverChargeSaved'));
+    } catch {
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingCoverCharge(false);
+    }
+  };
+
+  const saveOrderTypes = async (type: SelectableOrderType, enabled: boolean) => {
+    if (savingOrderTypes) return;
+    const next = enabled
+      ? SELECTABLE_ORDER_TYPES.filter((entry) => entry === type || orderTypesSetting.includes(entry))
+      : orderTypesSetting.filter((entry) => entry !== type);
+    if (next.length === 0) {
+      toast.error(t('orderTypesLastOne'));
+      return;
+    }
+    const previous = orderTypesSetting;
+    setOrderTypesSetting(next);
+    posSettings.setOrderTypes(next);
+    setSavingOrderTypes(true);
+    try {
+      await api.put(`/settings/${ORDER_TYPES_SETTING_KEY}`, { value: serializeOrderTypes(next) });
+      toast.success(t('orderTypesSaved'));
+    } catch {
+      setOrderTypesSetting(previous);
+      posSettings.setOrderTypes(previous);
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingOrderTypes(false);
+    }
+  };
+
   const saveCustomersEnabled = async (enabled: boolean) => {
     const previous = customersEnabledSetting;
     setCustomersEnabledSetting(enabled);
@@ -1809,6 +1904,7 @@ export default function SettingsPage() {
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupAccount')}</p>
             </div>
+            <SettingsNavItem label={tNav('staff')} value="staff" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabUpdates')} value="updates" active={activeTab} onClick={handleSettingsTabChange} />
 
@@ -2245,6 +2341,52 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* Order types — what this place actually takes. A type switched
+                off disappears from the POS selector and from the day's
+                filters, and the API refuses it. */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <ShoppingBag size={20} className="text-gray-500" />
+                <h2 className="font-semibold text-gray-900">{t('orderTypes')}</h2>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">{t('orderTypesHint')}</p>
+              <div className="space-y-4">
+                {orderTypeChoices.map((type) => (
+                  <div key={type} className="flex items-center justify-between gap-4">
+                    <p className="flex-1 min-w-0 font-medium text-gray-900">{tPos(ORDER_TYPE_SETTING_LABELS[type])}</p>
+                    <Toggle
+                      value={orderTypesSetting.includes(type)}
+                      onChange={(v) => saveOrderTypes(type, v)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* The cover charge, so much a head. It belongs with the order
+                types: both decide what the table is charged for before a
+                single dish is chosen. */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <Users size={20} className="text-gray-500" />
+                <h2 className="font-semibold text-gray-900">{t('coverCharge')}</h2>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">{t('coverChargeHint')}</p>
+              <div className="flex items-center gap-2 max-w-xs">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={coverCharge}
+                  onChange={(e) => setCoverCharge(e.target.value)}
+                  className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  dir="ltr"
+                />
+                <Button type="button" onClick={saveCoverCharge} disabled={savingCoverCharge || coverCharge === savedCoverCharge}>
+                  {t('save')}
+                </Button>
+              </div>
+            </div>
+
             {/* POS Workflow */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
@@ -2406,6 +2548,20 @@ export default function SettingsPage() {
                   <p className="text-xs text-amber-800">
                     {t('kitchenWorkflowBothOffNote')}
                   </p>
+                </div>
+              )}
+              {/* The kitchen screen itself. The nav used to carry an entry
+                  called KDS that opened this settings tab instead — the screen
+                  had no link anywhere. */}
+              {kdsEnabledSetting && (
+                <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900">{t('openKdsScreen')}</p>
+                    <p className="text-sm text-gray-500">{t('openKdsScreenHint')}</p>
+                  </div>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/kds">{t('openKdsScreenAction')}</Link>
+                  </Button>
                 </div>
               )}
             </div>
@@ -2947,6 +3103,12 @@ export default function SettingsPage() {
 
               </div>
             </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="staff">
+          <div className="pb-6">
+            <StaffSettings />
           </div>
         </TabsContent>
 

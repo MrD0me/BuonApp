@@ -240,6 +240,7 @@ async function runTests() {
     assert(directPrintRes.ok === false && directPrintRes.detail === 'No printer configured', 'direct printReceipt without printers fails fast');
   }
 
+
   console.log('\n' + '='.repeat(50));
   console.log(`${passed}/${passed + failed} passed, ${failed} failed`);
 

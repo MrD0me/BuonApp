@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Wallet, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send, ChevronDown } from 'lucide-react';
+import { X, Wallet, ArrowLeftRight, CheckCircle2, Sparkles, User, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
-import { useConfirm } from '@/hooks/use-confirm';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -16,13 +15,6 @@ import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
-import {
-  defaultDiscountTypeForMode,
-  isDiscountTypeAllowed,
-  normalizeDiscountMode,
-  type DiscountMode,
-  type DiscountType,
-} from '@/lib/discount-settings';
 
 interface Props {
   bill: Bill;
@@ -55,7 +47,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const cartCustomerId = useCartStore((s) => s.customerId);
   const cartCustomer = useCartStore((s) => s.customer);
   const effectiveCustomerId = bill.customer_id || cartCustomerId || null;
-  const { confirm, ConfirmDialog } = useConfirm();
   const t = useTranslations('pos');
   const locale = useLocale();
   const tCommon = useTranslations('common');
@@ -97,46 +88,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const [walletAmount, setWalletAmount] = useState('');
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
 
-  // Discount state
-  const [showDiscount, setShowDiscount] = useState(false);
-  const [discountType, setDiscountType] = useState<DiscountType>('percentage');
-  const [discountValue, setDiscountValue] = useState('');
-  const [discountReason, setDiscountReason] = useState('');
-
-  const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
-  const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
-  const [discountPin, setDiscountPin] = useState('');
-  const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
-
-  // Sync state with active bill discount on load or update. Read directly during render
-  // (React's recommended pattern for "adjusting state when a prop changes") instead of an
-  // effect, since this must run before paint and would otherwise cause a flash of stale values.
-  const [syncedBill, setSyncedBill] = useState(bill);
-  if (bill !== syncedBill) {
-    setSyncedBill(bill);
-    if (bill && Number(bill.discount_amount) > 0) {
-      const nextType = (bill.discount_type === 'percentage' || bill.discount_type === 'amount')
-        ? bill.discount_type
-        : defaultDiscountTypeForMode(discountMode);
-      setDiscountType(isDiscountTypeAllowed(discountMode, nextType) ? nextType : defaultDiscountTypeForMode(discountMode));
-      setDiscountValue(String(nextType === 'amount' ? toDisplayUnit(Number(bill.discount_value || 0)) : (bill.discount_value || '')));
-      setDiscountReason(bill.discount_reason || '');
-      setShowDiscount(true);
-    } else {
-      setDiscountType('percentage');
-      setDiscountValue('');
-      setDiscountReason('');
-      setShowDiscount(false);
-    }
-  }
-
-  if (!isDiscountTypeAllowed(discountMode, discountType)) {
-    setDiscountType(defaultDiscountTypeForMode(discountMode));
-    setDiscountValue('');
-    setDiscountReason('');
-    setDiscountPin('');
-  }
 
   // Dynamically update payment inputs when remaining balance changes, but only until the
   // cashier manually edits an amount — after that, discount/wallet edits must not silently
@@ -166,12 +118,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     api.get('/settings/loyalty')
       .then((res) => setLoyaltySettings(res.data))
       .catch(() => {});
-    api.get('/settings/discount')
-      .then((res) => {
-        setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
-        setDiscountRequiresApproval(!!res.data.discount_requires_approval);
-      })
-      .catch(() => {});
     api.get('/payment-methods')
       .then((res) => {
         const methods: CustomPaymentMethod[] = res.data.payment_methods || [];
@@ -192,12 +138,20 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
   };
 
+  /**
+   * "Pay it all with this." The other methods are cleared, so tapping cash and
+   * then changing your mind to card does not leave the card at nothing with
+   * the cash still filled in — which meant deleting a figure by hand to pick
+   * the other one. A bill settled with two methods is still built by typing
+   * the amounts into the boxes.
+   */
   const allocateRemainingTo = (idx: number) => {
-    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt);
-    const dueStored = Math.max(0, remaining - allocatedElsewhere);
+    const dueStored = Math.max(0, remaining - walletAmt);
     const dueDisplay = toDisplayUnit(dueStored);
     setPaymentsTouched(true);
-    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' } : payment));
+    setPayments(payments.map((payment, index) => index === idx
+      ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' }
+      : { ...payment, amount: '' }));
   };
 
   const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
@@ -208,53 +162,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   const currencyFmt = useFormatCurrency();
   const fmtNum = useFormatNumber();
-
-  const handleApplyDiscount = async (customVal?: number) => {
-    if (applyingDiscount) return;
-    const val = customVal !== undefined ? customVal : parseFloat(discountValue);
-    if (customVal === undefined && (isNaN(val) || val < 0)) {
-      toast.error(t('discountInvalid'));
-      return;
-    }
-    // Check if PIN is required
-    if (discountRequiresApproval && val > 0 && !discountPin) {
-      toast.error(t('managerPinRequired'));
-      return;
-    }
-    if (val > 0 && !isDiscountTypeAllowed(discountMode, discountType)) {
-      toast.error(t('discountInvalid'));
-      return;
-    }
-    setApplyingDiscount(true);
-    try {
-      const storedDiscountValue = discountType === 'amount' && customVal === undefined ? toStoredUnit(val) : val;
-      await api.patch(`/orders/${bill.order_id}/discount`, {
-        discount_type: discountType,
-        discount_value: storedDiscountValue,
-        discount_reason: val > 0 ? discountReason || undefined : undefined,
-        override_pin: discountRequiresApproval && val > 0 ? discountPin : undefined,
-      });
-      toast.success(val === 0 ? t('discountRemoved') : t('discountUpdated'));
-      setDiscountPin('');
-      if (val === 0) {
-        setShowDiscount(false);
-        setDiscountValue('');
-        setDiscountReason('');
-      }
-      // Refresh bill without closing modal
-      const { data } = await api.get(`/bills/order/${bill.order_id}`);
-      if (data.bill && onBillUpdate) {
-        onBillUpdate(data.bill);
-      }
-    } catch {
-      toast.error(t('failedToUpdateDiscount'));
-      // Clear the PIN on any failure (wrong PIN or rate-limited) so a stale/rejected
-      // PIN doesn't sit in the field looking like it might still work on retry.
-      setDiscountPin('');
-    } finally {
-      setApplyingDiscount(false);
-    }
-  };
 
   const handlePay = async () => {
     const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,4})?$/.test(value.trim());
@@ -379,7 +286,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-white w-full sm:max-w-xl rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
@@ -459,91 +366,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             </div>
           )}
 
-          {/* Discount */}
-          {!bill.split_group_id && <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <button type="button" onClick={() => setShowDiscount((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 text-start">
-              <span className="text-sm font-medium text-gray-700">
-                {Number(bill.discount_amount) > 0
-                  ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}`
-                  : t('applyDiscount')}
-              </span>
-              <ChevronDown size={16} className={`text-gray-400 transition-transform ${showDiscount ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showDiscount && (
-              <div className="bg-purple-50 border-t border-purple-200 p-3 space-y-2">
-                <div className="flex rounded-lg overflow-hidden border border-purple-200">
-                  {isDiscountTypeAllowed(discountMode, 'percentage') && (
-                    <button
-                      onClick={() => { setDiscountType('percentage'); }}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                    >
-                      <Percent size={14} />
-                      {t('percentage')}
-                    </button>
-                  )}
-                  {isDiscountTypeAllowed(discountMode, 'amount') && (
-                    <button
-                      onClick={() => { setDiscountType('amount'); }}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                    >
-                      {t('flatAmount')}
-                    </button>
-                  )}
-                </div>
-                <div className="relative">
-                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                    {discountType === 'percentage' ? '%' : inputCurrencyLabel}
-                  </span>
-                  <input
-                    type="number"
-                    value={discountValue}
-                    onChange={(e) => setDiscountValue(e.target.value)}
-                    placeholder={discountType === 'percentage' ? '0' : '0.00'}
-                    min="0"
-                    max={discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))}
-                    step={discountType === 'percentage' ? 1 : inputCurrencyStep}
-                    className="w-full ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
-                  />
-                </div>
-                <input
-                  type="text"
-                  value={discountReason}
-                  onChange={(e) => setDiscountReason(e.target.value)}
-                  placeholder={t('discountReasonPlaceholder')}
-                  className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
-                />
-                {discountRequiresApproval && parseFloat(discountValue) > 0 && (
-                  <input
-                    type="password"
-                    value={discountPin}
-                    onChange={(e) => setDiscountPin(e.target.value)}
-                    placeholder={t('managerPin')}
-                    maxLength={6}
-                    className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
-                  />
-                )}
-                <Button
-                  size="sm"
-                  onClick={() => handleApplyDiscount()}
-                  disabled={applyingDiscount || discountValue === '' || isNaN(parseFloat(discountValue))}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                >
-                  {applyingDiscount
-                    ? t('applyingDiscount')
-                    : Number(bill.discount_amount) > 0 ? t('updateDiscount') : t('applyDiscount')}
-                </Button>
-                {Number(bill.discount_amount) > 0 && (
-                  <Button variant="outline" size="sm" className="w-full" onClick={async () => {
-                    if (await confirm(t('removeDiscountConfirm'), { destructive: true, confirmLabel: t('remove') })) void handleApplyDiscount(0);
-                  }}>
-                    {t('remove')}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>}
-
           <div className="space-y-2">
             {payments.map((payment, idx) => {
               const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
@@ -551,12 +373,22 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
               const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : custom?.name || tCommon('unknown');
               const Icon = builtIn?.icon;
               const active = (parseFloat(payment.amount) || 0) > 0;
-              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex h-11">
-                <button type="button" title={label} onClick={() => allocateRemainingTo(idx)} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-brand hover:text-brand'}`}>
-                  {Icon && <Icon size={15} />}
+              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex h-14">
+                {/* Tapping the method fills in what is still owed: the till is
+                    not a place to retype a number the screen already knows.
+                    The box beside it stays for the two cases that need one —
+                    cash handed over for change, and a bill settled with more
+                    than one method. */}
+                <button
+                  type="button"
+                  title={t('payAllWith', { method: label })}
+                  onClick={() => allocateRemainingTo(idx)}
+                  className={`w-44 shrink-0 rounded-s-xl border-2 px-3 flex items-center justify-center gap-2 text-base font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-white text-gray-800 border-gray-300 hover:border-brand hover:bg-brand/5 hover:text-brand active:bg-brand/10'}`}
+                >
+                  {Icon && <Icon size={18} />}
                   <span className="truncate">{label}</span>
                 </button>
-                <div className="flex flex-1 items-center border border-s-0 border-gray-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
+                <div className="flex flex-1 items-center border-2 border-s-0 border-gray-300 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
                   <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
                   <input
                     type="number"
@@ -605,7 +437,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
           {/* Loyalty Wallet Section */}
           {loyaltySettings?.loyalty_enabled && effectiveCustomerId && walletBalance !== null && (
             <div className="space-y-1">
-              <div className="flex h-11">
+              <div className="flex h-14">
                 <button type="button" disabled={walletBalance <= 0} onClick={() => {
                   const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
                   const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
@@ -678,7 +510,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
           )}
         </div>
       </div>
-      {ConfirmDialog}
     </div>
   );
 }

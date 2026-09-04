@@ -9,7 +9,7 @@
  *   - POS ordering, cart, product grid, customer search, held orders
  *   - products/categories (and the product image uploader)
  *   - customers, tables
- *   - orders / bills / order detail (incl. split check)
+ *   - orders / bills / order detail
  *   - checkout / payment flows (payment + prepaid checkout modals)
  *   - shared operational components
  *
@@ -67,7 +67,6 @@ const SCREEN_FILES = [
   'frontend/src/components/pos/CustomerSearch.tsx',
   'frontend/src/components/pos/EditCustomerModal.tsx',
   'frontend/src/components/pos/PrinterStatus.tsx',
-  'frontend/src/components/pos/SplitCheckModal.tsx',
   'frontend/src/components/orders/OrderHistoryGrid.tsx',
   'frontend/src/components/products/ImageUploader.tsx',
 ];

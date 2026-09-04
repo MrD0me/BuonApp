@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, Map as MapIcon, PenLine, LayoutGrid } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Pencil, Trash2, Map as MapIcon, PenLine, LayoutGrid, CalendarCheck } from 'lucide-react';
 import type { Room, Table, Order, Reservation } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { useTranslations } from 'use-intl';
@@ -15,6 +16,7 @@ import { RoomFormModal, DeleteRoomModal } from '@/components/tables/RoomFormModa
 import { TableDetailModal } from '@/components/tables/TableDetailModal';
 import { MergeTablesModal } from '@/components/tables/MergeTablesModal';
 import { LayoutsModal } from '@/components/tables/LayoutsModal';
+import { normalizeDiscountMode, type DiscountMode } from '@/lib/discount-settings';
 
 /**
  * The dining room as a map (phase 2 of docs/table-management.md).
@@ -26,6 +28,7 @@ import { LayoutsModal } from '@/components/tables/LayoutsModal';
  */
 export default function TablesPage() {
   const tTables = useTranslations('tables');
+  const tNav = useTranslations('nav');
   const role = useAuthStore((state) => state.currentTenant?.role) || 'cashier';
   const canEdit = role === 'owner' || role === 'manager';
 
@@ -45,6 +48,10 @@ export default function TablesPage() {
   const [mergingTable, setMergingTable] = useState<Table | null>(null);
   const [showLayouts, setShowLayouts] = useState(false);
   const [unassigned, setUnassigned] = useState<Reservation[]>([]);
+  // The order panel in the table card offers discounts, and those follow the
+  // tenant's rules: read them once here rather than per opened table.
+  const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
+  const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   // A booking picked up from the strip, waiting for a table to be tapped.
   const [armedBooking, setArmedBooking] = useState<Reservation | null>(null);
 
@@ -100,6 +107,15 @@ export default function TablesPage() {
     const interval = setInterval(() => { loadMap(); loadOrders(); loadUnassigned(); }, 10000);
     return () => clearInterval(interval);
   }, [loadMap, loadOrders, loadUnassigned]);
+
+  useEffect(() => {
+    api.get('/settings/discount')
+      .then((res) => {
+        setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
+        setDiscountRequiresApproval(!!res.data.discount_requires_approval);
+      })
+      .catch(() => { /* the panel falls back to percentage-only */ });
+  }, []);
 
   // Derived rather than synced: no effect has to chase the room list.
   const activeRoom = rooms.find((room) => room.id === selectedRoomId) ?? rooms[0] ?? null;
@@ -169,6 +185,13 @@ export default function TablesPage() {
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <h1 className="text-2xl font-bold text-gray-900">{tTables('title')}</h1>
         <div className="flex items-center gap-2">
+          {/* Bookings belong to the room, so they are reached from it rather
+              than from a bar entry of their own. */}
+          <Button variant="outline" asChild>
+            <Link href="/reservations">
+              <CalendarCheck size={16} className="me-1" /> {tNav('reservations')}
+            </Link>
+          </Button>
           {canEdit && (
             <Button variant={editing ? 'default' : 'outline'} onClick={() => setEditing((value) => !value)}>
               {editing ? <><MapIcon size={16} className="me-1" /> {tTables('serviceMode')}</>
@@ -292,6 +315,8 @@ export default function TablesPage() {
           order={ordersByTable.get(detailTable.id) ?? null}
           onClose={() => setDetailTable(null)}
           onChanged={reload}
+          discountMode={discountMode}
+          discountRequiresApproval={discountRequiresApproval}
           groupMembers={allTables.filter((row) => row.merged_into === detailTable.id)}
           onEdit={() => { setTableForm({ table: detailTable }); setDetailTable(null); }}
           onReserve={() => { setReservingTable(detailTable); setDetailTable(null); }}

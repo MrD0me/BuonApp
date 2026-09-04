@@ -32,7 +32,7 @@ import { heldOrderRoutes } from './held-orders';
 import { whatsappRoutes } from './whatsapp';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
-import { roundMoney } from '../money';
+import { orderCharges, roundMoney } from '../money';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import expressRateLimit from 'express-rate-limit';
 
@@ -313,8 +313,7 @@ export function registerRoutes(app: Express): void {
         const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
 
         // BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
-        const total = roundMoney(discountedSubtotal
-          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0));
+        const total = roundMoney(discountedSubtotal + orderCharges(currentOrder));
 
         // #132 FIX: cancelling the last active item leaves nothing to serve or
         // bill — treat it as the whole order being cancelled, the same way the
@@ -342,6 +341,7 @@ export function registerRoutes(app: Express): void {
           discountAmount: newDiscountAmount,
           deliveryCharge: order.delivery_charge || 0,
           packagingCharge: order.packaging_charge || 0,
+          coverCharge: order.cover_charge || 0,
           total,
         });
 
@@ -449,8 +449,7 @@ export function registerRoutes(app: Express): void {
         const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
 
         // BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
-        const total = roundMoney(discountedSubtotal
-          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0));
+        const total = roundMoney(discountedSubtotal + orderCharges(currentOrder));
 
         db.prepare(`
           UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
@@ -461,6 +460,7 @@ export function registerRoutes(app: Express): void {
           discountAmount: newDiscountAmount,
           deliveryCharge: order.delivery_charge || 0,
           packagingCharge: order.packaging_charge || 0,
+          coverCharge: order.cover_charge || 0,
           total,
         });
 

@@ -414,7 +414,7 @@ exit 0
     'linux-tests matrix must include 1-indexed shard_number mappings',
   );
 
-  assert.ok(ciWorkflow.includes('if: matrix.shard == 0'), 'Payment method split check must run only on shard 0');
+  assert.ok(ciWorkflow.includes('if: matrix.shard == 0'), 'The payment-methods pretest must run only on shard 0');
   assert.ok(ciWorkflow.includes('working-directory: frontend'), 'linux-tests must include frontend dependencies installation step');
   assert.match(ciWorkflow, /SHARD_TOTAL=2\s+SHARD_INDEX=\${{\s*matrix\.shard\s*}}\s+node\s+scripts\/ci\/run-test-shard\.cjs/);
 

@@ -10,6 +10,7 @@ import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
 import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
   Drawer, DrawerContent, DrawerTrigger,
@@ -26,6 +27,7 @@ import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from 
 import PosTopbar from '@/components/pos/PosTopbar';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
+import { useSendKot } from '@/hooks/useSendKot';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -39,6 +41,7 @@ import {
   LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY,
   getPostpaidOrderAttemptStorageKey,
   migrateLegacyAppendAttempt,
+  isPermanentAppendRefusal,
   readAppendAttempt,
   type AppendAttempt,
   type AppendAttemptStorage,
@@ -74,7 +77,7 @@ export default function POSPage() {
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
-  const { customerMandatory, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, customersEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
+  const { customerMandatory, autoPrintBill, billingType, tablesRequired, customersEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const currencyFmt = useFormatCurrency();
@@ -241,7 +244,7 @@ export default function POSPage() {
     : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
-  const { printBill, printKot } = usePrinterStore();
+  const { printBill } = usePrinterStore();
   const billingIsPrepaid = billingType === 'prepaid';
   const shouldTakePaymentNow = billingIsPrepaid;
 
@@ -250,43 +253,10 @@ export default function POSPage() {
    * which those are and stamps them with a round number, so calling this after
    * an append prints the new dishes only — never the whole check again.
    *
-   * Placing or extending an order IS the act of firing the ticket, the same as
-   * on a handheld, so this is not gated on a preference: a send that silently
-   * does nothing leaves the kitchen unaware of food the floor believes it
-   * ordered. `kot_printing_enabled` remains the one switch, for businesses
-   * that print no kitchen tickets at all (issue #133).
-   *
-   * `auto` only decides how talkative the result is: calls that fire on their
-   * own after an order write stay quiet on success, while the explicit "send
-   * to kitchen" button confirms what it did.
+   * Shared with the order panel, so the floor map sends a round the same way
+   * the till does; the POS passes its support banner in.
    */
-  const sendKotToKitchen = async (order: Order, { auto }: { auto: boolean }) => {
-    if (!kotPrintingEnabled) return;
-
-    try {
-      const result = await printKot(order);
-      showPrintWarningsToast(result.warnings);
-      if (!result.printed) {
-        // Nothing pending is a normal outcome (double tap, or every dish has
-        // already gone out) — say so instead of implying a ticket printed.
-        if (!auto) toast(t('kotNothingPending'), { icon: 'ℹ️' });
-        return;
-      }
-      if (!auto) {
-        toast.success(result.batch ? t('kotSentBatch', { batch: result.batch }) : t('kotSent'));
-      }
-    } catch (err) {
-      console.error('[POS] KOT print failed:', err);
-      const msg = err instanceof Error ? err.message : 'print failed';
-      const code = `print.kot.${msg.toLowerCase().includes('spool') ? 'spooler_timeout' : 'failed'}`;
-      setSupportError({
-        code,
-        message: t('kotPrintFailed'),
-        payload: { event_code: code, message: msg, category: 'printer', diagnostics: { order_id: order.id, stage: 'kot_print' } },
-      });
-      toast.error(t('kotPrintFailed'));
-    }
-  };
+  const sendKotToKitchen = useSendKot(setSupportError);
 
   const printKotIfEnabled = async (order: Order) => sendKotToKitchen(order, { auto: true });
 
@@ -355,7 +325,15 @@ export default function POSPage() {
       // recovery was in flight. A reload starts empty; any current UI is newer.
       toast.success(t('itemsAddedToOrder', { number: pendingAttempt!.orderNumber || pendingAttempt!.orderId }));
       refreshTables();
-    }).catch(() => {
+    }).catch((error: unknown) => {
+      if (isPermanentAppendRefusal(error)) {
+        // Refused for good: drop the retry instead of raising it again on every
+        // load, which is what made the order look impossible to add to.
+        clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!);
+        addItemsAttemptRef.current = null;
+        toast.error(t('appendAttemptDropped'));
+        return;
+      }
       toast.error(t('addItemsFailed'));
     });
   // The recovery runs once per authenticated renderer and intentionally uses
@@ -542,8 +520,25 @@ export default function POSPage() {
       await refreshTables();
 
       await printKotIfEnabled(orderForKot);
-    } catch {
-      toast.error(t('placeOrderFailed'));
+
+      // An order on a table goes on being worked where the table is: the floor
+      // plan is where it gets sent again, priced, printed and closed. Staying
+      // here would leave the screen on an empty cart with nothing to do.
+      if (orderForKot.type === 'dine_in' && orderForKot.table_id && tablesRequired) {
+        router.push('/tables');
+      }
+    } catch (error: unknown) {
+      // Same reasoning as the recovery above: a refusal that will never turn
+      // into an acceptance must not be left in the retry store.
+      if (pendingOrder && isPermanentAppendRefusal(error)) {
+        const attempt = addItemsAttemptRef.current;
+        if (attempt) clearAppendAttempt(getAppendAttemptStorage(), attempt);
+        addItemsAttemptRef.current = null;
+        setPendingOrder(null);
+        toast.error(t('appendAttemptDropped'));
+      } else {
+        toast.error(t('placeOrderFailed'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -821,10 +816,24 @@ export default function POSPage() {
     }
   };
 
-  const handleAddItemsToOrder = (table: Table, order: Order) => {
+  /**
+   * Points the cart at an order that already exists: whatever is sent next is
+   * appended to it instead of opening a new one.
+   *
+   * The table only sets the context — the append itself goes by order id — so
+   * a takeaway order, which has no table, works the same way. This is where
+   * the floor plan and the day's list land when they say "add items": there is
+   * one screen where an order is composed, and it is this one, because it is
+   * the only one with the catalogue and the add-on choices.
+   */
+  const startAppendToOrder = (order: Order, table?: Table | null) => {
     setCheckoutTable(null);
-    cart.setTableId(table.id);
-    cart.setOrderType('dine_in');
+    const orderType = order.type === 'takeaway' || order.type === 'delivery' ? order.type : 'dine_in';
+    cart.setOrderType(orderType);
+    if (orderType === 'dine_in') {
+      const tableId = table?.id ?? (order.table_id != null ? String(order.table_id) : null);
+      if (tableId) cart.setTableId(tableId);
+    }
     cart.setGuestCount(order.guest_count || 1);
     cart.setOrderNotes(order.special_instructions || '');
     setPendingOrder(order);
@@ -832,6 +841,59 @@ export default function POSPage() {
   };
 
   // Add cart items directly to existing order
+  /**
+   * `?append=<orderId>` is how the floor plan and the day's list hand an order
+   * over: they know which order, this screen knows how to compose for it. The
+   * parameter is cleared as soon as it is read — carrying "append to order 123"
+   * in the saved cart instead would leave it stuck there for days.
+   */
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const appendOrderId = searchParams?.get('append') ?? null;
+  const takeOrderTableId = searchParams?.get('table') ?? null;
+  useEffect(() => {
+    if (!appendOrderId) return;
+    let cancelled = false;
+    api.get(`/orders/${appendOrderId}`)
+      .then(({ data }) => {
+        if (cancelled || !data?.order) return;
+        startAppendToOrder(data.order as Order);
+      })
+      .catch(() => toast.error(t('loadOrderFailed')))
+      .finally(() => { if (!cancelled) router.replace('/pos'); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appendOrderId]);
+
+  /**
+   * `?table=<id>` is the floor plan asking for a first order on a free table.
+   *
+   * It checks first: a handheld may have opened one in the seconds since the
+   * panel was drawn, and two open orders on the same table means two bills for
+   * one party. If there is already an order, this becomes an append to it.
+   */
+  useEffect(() => {
+    if (!takeOrderTableId) return;
+    let cancelled = false;
+    api.get('/orders', {
+      params: { table_id: takeOrderTableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
+    })
+      .then(({ data }) => {
+        if (cancelled) return;
+        const existing = (data?.orders || [])[0] as Order | undefined;
+        if (existing) {
+          startAppendToOrder(existing);
+          return;
+        }
+        cart.setOrderType('dine_in');
+        cart.setTableId(takeOrderTableId);
+      })
+      .catch(() => toast.error(t('loadOrderFailed')))
+      .finally(() => { if (!cancelled) router.replace('/pos'); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [takeOrderTableId]);
+
   const handleAddCartToOrder = async (table: Table, order: Order) => {
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
@@ -1015,8 +1077,7 @@ export default function POSPage() {
           currency={currency}
           cartItemCount={cart.itemCount()}
           onClose={() => setCheckoutTable(null)}
-          onAddItems={handleAddItemsToOrder}
-          onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
+          onAddItems={(table, order) => startAppendToOrder(order, table)}
           onAddCartToOrder={handleAddCartToOrder}
           onSendToKitchen={(order) => sendKotToKitchen(order, { auto: false })}
         />

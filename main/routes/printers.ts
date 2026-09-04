@@ -443,8 +443,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Fetch order items
-    order.items = getOrderWithItems(db, Number(bill.order_id), Number(bill.id))?.items || [];
+    order.items = getOrderWithItems(db, Number(bill.order_id))?.items || [];
 
     // Fetch table info. Falls back to the label the order captured when it was
     // placed, so reprinting a bill still names the table after the room has been

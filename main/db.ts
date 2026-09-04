@@ -9,6 +9,8 @@ import * as crypto from 'crypto';
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, defaultTableSize, createGridPlacer } from './lib/table-geometry';
+import { DEFAULT_ORDER_TYPES, ORDER_TYPES_SETTING_KEY } from './lib/order-types';
+import { COVER_CHARGE_SETTING_KEY } from './money';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -4190,6 +4192,283 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[MIGRATION v82] plugin print templates removed; ${reset} template selection(s) reset`);
     },
   },
+  {
+    version: 83,
+    name: 'add_order_types_setting',
+    up: () => {
+      // Existing installs have been offering all three types all along, so the
+      // upgrade leaves them on; a restaurant that only serves at the table
+      // switches the other two off in settings.
+      insertSettingIfMissing(ORDER_TYPES_SETTING_KEY, DEFAULT_ORDER_TYPES);
+    },
+  },
+  {
+    version: 84,
+    name: 'add_product_price_required',
+    up: () => {
+      if (!getColumns(db, 'products').includes('price_required')) {
+        db.exec(`ALTER TABLE products ADD COLUMN price_required INTEGER DEFAULT 0`);
+      }
+    },
+  },
+  {
+    version: 85,
+    name: 'settle_zero_value_split_checks',
+    up: () => {
+      // A split share worth nothing could never be closed: the payment route
+      // refuses a zero balance, so the share stayed unpaid and dragged its
+      // whole order along with it — paid in the till, unpaid on the screen.
+      // New ones are settled as they are created; these are already stranded.
+      const settled = db.prepare(`
+        UPDATE bills SET payment_status = 'paid', balance = 0, paid_at = COALESCE(paid_at, ?), updated_at = ?
+        WHERE split_group_id IS NOT NULL AND payment_status = 'unpaid'
+          AND COALESCE(total, 0) <= 0 AND COALESCE(paid_amount, 0) <= 0
+      `).run(now(), now()).changes;
+      if (settled > 0) console.log(`[MIGRATION v85] ${settled} zero-value split check(s) settled`);
+    },
+  },
+  {
+    version: 86,
+    name: 'close_orders_left_paid_but_open',
+    up: () => {
+      // The other half of the same accident. An order completes when its last
+      // bill is paid; the share that could never be paid meant that moment
+      // never came, so the order stayed open and its table stayed occupied —
+      // and no button on the floor will free a table that is still serving.
+      // v85 settled the shares; this closes what they were holding open.
+      const closed = db.prepare(`
+        UPDATE orders SET status = 'completed', completed_at = COALESCE(completed_at, ?), updated_at = ?
+        WHERE status NOT IN ('completed', 'cancelled')
+          AND EXISTS (SELECT 1 FROM bills WHERE bills.order_id = orders.id)
+          AND NOT EXISTS (SELECT 1 FROM bills WHERE bills.order_id = orders.id AND bills.payment_status != 'paid')
+      `).run(now(), now()).changes;
+
+      // A table is occupied because something is on it. With every order on it
+      // closed, it is just a table nobody cleared on the screen.
+      const freed = db.prepare(`
+        UPDATE tables SET status = 'available', updated_at = ?
+        WHERE status = 'occupied'
+          AND NOT EXISTS (
+            SELECT 1 FROM orders
+            WHERE orders.table_id = tables.id AND orders.status NOT IN ('completed', 'cancelled')
+          )
+      `).run(now()).changes;
+
+      if (closed > 0 || freed > 0) {
+        console.log(`[MIGRATION v86] ${closed} paid order(s) closed, ${freed} table(s) freed`);
+      }
+    },
+  },
+  {
+    version: 87,
+    name: 'add_order_item_price_confirmed',
+    up: () => {
+      if (!getColumns(db, 'order_items').includes('price_confirmed')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN price_confirmed INTEGER DEFAULT 0`);
+      }
+      // Rows already carrying a price nobody is going to revisit: an existing
+      // order should not light up orange the day this ships.
+      db.exec(`
+        UPDATE order_items SET price_confirmed = 1
+        WHERE COALESCE(price_confirmed, 0) = 0 AND COALESCE(unit_price, 0) > 0
+      `);
+    },
+  },
+  {
+    version: 88,
+    name: 'add_cover_charge',
+    up: () => {
+      // The covers were counted and never priced. Existing orders keep a zero
+      // cover: charging one after the fact would rewrite bills already handed
+      // to guests.
+      if (!getColumns(db, 'orders').includes('cover_charge')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN cover_charge REAL DEFAULT 0`);
+      }
+      if (!getColumns(db, 'bills').includes('cover_charge')) {
+        db.exec(`ALTER TABLE bills ADD COLUMN cover_charge REAL DEFAULT 0`);
+      }
+      insertSettingIfMissing(COVER_CHARGE_SETTING_KEY, '0');
+    },
+  },
+  {
+    version: 89,
+    name: 'resync_cover_charge_on_open_bills',
+    up: () => {
+      // Correcting the covers repriced the order and its bill's total, but left
+      // the bill's own cover line at the old figure. The printed bill then
+      // divided the stale charge by the new head count and quoted a price per
+      // cover nobody had ever set: "Coperto 5 x 1,60" under a total that
+      // correctly counted five at two euro. The bug is fixed at the source;
+      // this straightens the bills it already wrote, and only those still open,
+      // because a bill already paid is a bill already handed over.
+      const fixed = db.prepare(`
+        UPDATE bills SET cover_charge = (SELECT COALESCE(orders.cover_charge, 0) FROM orders WHERE orders.id = bills.order_id),
+                         updated_at = ?
+        WHERE payment_status != 'paid'
+          AND split_group_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM orders
+            WHERE orders.id = bills.order_id
+              AND COALESCE(orders.cover_charge, 0) != COALESCE(bills.cover_charge, 0)
+          )
+      `).run(new Date().toISOString());
+      if (fixed.changes > 0) {
+        console.log(`[DB] v89: cover charge resynced on ${fixed.changes} open bill(s)`);
+      }
+    },
+  },
+  {
+    version: 90,
+    name: 'resplit_cover_charge_per_head',
+    up: () => {
+      // Splitting a check divided the cover by what each guest ate, along with
+      // the food. But a cover is so much a head, and a share is a head: four
+      // covers at two euro came out as 3,01 on the share that took the steak
+      // and 1,89 on the one that took the soup, and each share's own line then
+      // announced a price per cover nobody had ever set. Now it splits evenly,
+      // and this re-divides the groups that were split under the old rule.
+      //
+      // Only groups where no share has taken money — the same condition under
+      // which the floor could unsplit and split again by hand, which is all
+      // this does for them.
+      const groups = db.prepare(`
+        SELECT split_group_id AS id FROM bills
+        WHERE split_group_id IS NOT NULL
+        GROUP BY split_group_id
+        HAVING SUM(CASE WHEN payment_status != 'unpaid' OR COALESCE(paid_amount, 0) > 0 THEN 1 ELSE 0 END) = 0
+      `).all() as { id: string }[];
+      if (groups.length === 0) return;
+
+      const readShares = db.prepare('SELECT * FROM bills WHERE split_group_id = ? ORDER BY id');
+      const readOrderCover = db.prepare('SELECT COALESCE(cover_charge, 0) AS cover FROM orders WHERE id = ?');
+      const writeShare = db.prepare('UPDATE bills SET cover_charge = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?');
+      let repaired = 0;
+
+      for (const group of groups) {
+        const shares = readShares.all(group.id) as any[];
+        if (shares.length === 0) continue;
+        const orderCover = Number((readOrderCover.get(shares[0].order_id) as any)?.cover || 0);
+
+        // Even to the cent, the odd cent to the first shares: the same
+        // largest-remainder rule the split itself uses.
+        const totalMinor = Math.round(orderCover * 100);
+        const base = Math.floor(totalMinor / shares.length);
+        const spare = totalMinor - base * shares.length;
+        const target = shares.map((_, index) => (base + (index < spare ? 1 : 0)) / 100);
+        if (shares.every((share, index) => Math.abs(Number(share.cover_charge || 0) - target[index]) < 0.005)) continue;
+
+        const stamp = new Date().toISOString();
+        shares.forEach((share, index) => {
+          const cover = target[index];
+          const total = Math.round((
+            Number(share.subtotal || 0) - Number(share.discount_amount || 0)
+            + Number(share.delivery_charge || 0) + Number(share.packaging_charge || 0) + cover
+          ) * 100) / 100;
+          writeShare.run(cover, total, Math.max(0, total), stamp, share.id);
+        });
+        repaired += 1;
+      }
+      if (repaired > 0) {
+        console.log(`[DB] v90: cover charge re-divided per head on ${repaired} split check(s)`);
+      }
+    },
+  },
+  {
+    version: 91,
+    name: 'remove_split_checks',
+    up: () => {
+      // Dividing a check between guests is gone from this fork. It was one
+      // screen, and behind it a second shape for the whole billing side: an
+      // order stopped being a single bill, every amount had to be apportioned
+      // across the shares, the cover had to be divided per head instead of
+      // per plate, and six order routes carried a guard against being edited
+      // once a check had been split. What the floor takes to the table is a
+      // preconto; which of the party pays what is settled at the till.
+      //
+      // Checks already divided cannot simply be left where they are: such an
+      // order holds one bill per guest, each with a slice of the total, and
+      // nothing reads them together any more. Every group is put back into a
+      // single bill first — the order's own totals, and the sum of whatever
+      // the shares had taken — and only then do the columns go.
+      db.prepare(`DELETE FROM settings WHERE key = 'split_checks_enabled'`).run();
+      if (!getColumns(db, 'bills').includes('split_group_id')) return;
+
+      const groups = db.prepare(`
+        SELECT split_group_id AS id FROM bills
+        WHERE split_group_id IS NOT NULL
+        GROUP BY split_group_id
+      `).all() as { id: string }[];
+
+      const readShares = db.prepare('SELECT * FROM bills WHERE split_group_id = ? ORDER BY id');
+      const readOrder = db.prepare('SELECT * FROM orders WHERE id = ?');
+      // Everything that points at a bill follows the survivor, so no row is
+      // left referring to a share this migration deletes. Some of these store
+      // the id as TEXT, hence the cast.
+      const dependants = [
+        'loyalty_ledger', 'print_logs', 'whatsapp_messages',
+        'payment_transaction_refs', 'payment_transaction_ref_conflicts', 'payment_idempotency',
+      ].filter((table) => getColumns(db, table).includes('bill_id'));
+      const money = (amount: number) => Math.round(amount * 100) / 100;
+      let merged = 0;
+
+      for (const group of groups) {
+        const shares = readShares.all(group.id) as any[];
+        if (shares.length === 0) continue;
+        const [keep, ...rest] = shares;
+        const order = readOrder.get(keep.order_id) as any;
+        const sum = (field: string) => money(shares.reduce((total, share) => total + Number(share[field] || 0), 0));
+
+        const total = money(Number(order?.total ?? sum('total')));
+        const paidAmount = sum('paid_amount');
+        const balance = Math.max(0, money(total - paidAmount));
+        // A guest who paid their share leaves a payment line behind; the
+        // rebuilt bill carries all of them, so the takings still add up.
+        const payments = shares.flatMap((share) => {
+          try {
+            const parsed = JSON.parse(share.payment_details || '[]');
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        });
+        const paidAt = shares.map((share) => share.paid_at).filter(Boolean).sort().pop() || null;
+        const status = balance <= 0 && (paidAmount > 0 || total <= 0)
+          ? 'paid'
+          : paidAmount > 0 ? 'partial' : 'unpaid';
+
+        for (const share of rest) {
+          for (const table of dependants) {
+            db.prepare(`UPDATE ${table} SET bill_id = ? WHERE CAST(bill_id AS INTEGER) = ?`).run(keep.id, share.id);
+          }
+          db.prepare('DELETE FROM bills WHERE id = ?').run(share.id);
+        }
+        db.prepare(`
+          UPDATE bills SET split_group_id = NULL, split_label = NULL,
+            subtotal = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, cover_charge = ?,
+            total = ?, paid_amount = ?, balance = ?, payment_status = ?,
+            payment_details = ?, paid_at = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+          money(Number(order?.subtotal ?? sum('subtotal'))),
+          money(Number(order?.discount_amount ?? sum('discount_amount'))),
+          money(Number(order?.delivery_charge ?? sum('delivery_charge'))),
+          money(Number(order?.packaging_charge ?? sum('packaging_charge'))),
+          money(Number(order?.cover_charge ?? sum('cover_charge'))),
+          total, paidAmount, balance, status,
+          payments.length > 0 ? JSON.stringify(payments) : null,
+          paidAt, now(), keep.id,
+        );
+        merged++;
+      }
+
+      // bill_items only ever recorded which units belonged to which share.
+      db.exec('DROP INDEX IF EXISTS idx_bills_split_group');
+      db.exec('DROP TABLE IF EXISTS bill_items');
+      db.exec('ALTER TABLE bills DROP COLUMN split_group_id');
+      if (getColumns(db, 'bills').includes('split_label')) db.exec('ALTER TABLE bills DROP COLUMN split_label');
+      console.log(`[DB] v91: split checks removed; ${merged} divided check(s) put back together`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4363,6 +4642,11 @@ function createSchema(): void {
       -- The tri-state does not depend on the default: every insert path passes
       -- cb_percent explicitly, and NULL is written as NULL.
       cb_percent REAL DEFAULT 0,
+      -- Set on a product whose price is only known once it is ordered — the
+      -- off-menu dish agreed at the table. Its rows are flagged until someone
+      -- puts a price on them. Zero is NOT that signal: in a place that offers
+      -- the coffee and the amaro, zero means 'on the house'.
+      price_required INTEGER DEFAULT 0,
       tags TEXT,
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -4518,6 +4802,9 @@ function createSchema(): void {
       special_instructions TEXT,
       packaging_charge REAL DEFAULT 0,
       delivery_charge REAL DEFAULT 0,
+      -- So much a head for laying the table. Computed from guest_count and the
+      -- configured price; zero when the house does not charge one.
+      cover_charge REAL DEFAULT 0,
       status TEXT DEFAULT 'pending',
       subtotal REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
@@ -4567,6 +4854,11 @@ function createSchema(): void {
       -- Sequential kitchen-ticket batch. NULL = not yet sent to the kitchen;
       -- 1 = first ticket for this order, 2 = the next round, and so on.
       kot_batch INTEGER,
+      -- Someone has settled what this row costs. Only meaningful on a row whose
+      -- product is priced when ordered: until it is set, the row is flagged as
+      -- waiting. Saving a price is the confirmation — zero included, because a
+      -- dish given away is a decision, not an omission.
+      price_confirmed INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id)
@@ -4587,6 +4879,7 @@ function createSchema(): void {
       discount_reason TEXT,
       delivery_charge REAL DEFAULT 0,
       packaging_charge REAL DEFAULT 0,
+      cover_charge REAL DEFAULT 0,
       round_off REAL DEFAULT 0,
       total REAL DEFAULT 0,
       paid_amount REAL DEFAULT 0,
@@ -4733,6 +5026,8 @@ function seedInstallDefaults(): void {
   insert('setup_profile', '');
   insert('kds_enabled', 'true');
   insert('customers_enabled', 'true');
+  insert(ORDER_TYPES_SETTING_KEY, DEFAULT_ORDER_TYPES);
+  insert(COVER_CHARGE_SETTING_KEY, '0');
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
   insert('printer_trim_decimals', 'false');

@@ -89,9 +89,34 @@ function col4Widths(cols: number): Col4Widths {
   return [14, 3, 7, 8];
 }
 
+// The backend formatter says "On the house" in the tenant’s own language
+// (see LABELS in main/printers/thermal.ts); this encoder has always printed
+// its labels in English, so it says it in English.
+const ON_THE_HOUSE = 'On the house';
+
+/**
+ * What belongs in the amount column of one row.
+ *
+ * A row worth nothing was given away — say so, rather than printing a 0,00
+ * the guest has to interpret. A row whose price is simply not set yet is a
+ * different thing and keeps its zero, so the omission stays visible. The
+ * ESC/POS formatter has drawn the same line since the price went on the row
+ * (itemRows in main/printers/thermal.ts); printing the same bill from the
+ * browser used to lose the distinction, and the two must not disagree.
+ */
+function itemAmountText(
+  item: { total?: number | string; price_required?: boolean | number },
+  currency: string,
+  locale: string,
+  trimDecimals: boolean,
+): string {
+  if (Number(item.total ?? 0) === 0 && !item.price_required) return ON_THE_HOUSE;
+  return formatAmount(item.total ?? 0, currency, locale, trimDecimals);
+}
+
 function resolveCol4Widths(
   cols: number,
-  items: Array<{ unit_price?: number | string; total?: number | string }>,
+  items: Array<{ unit_price?: number | string; total?: number | string; price_required?: boolean | number }>,
   currency: string,
   locale: string,
   trimDecimals: boolean,
@@ -102,7 +127,7 @@ function resolveCol4Widths(
 
   for (const item of items) {
     rateWidth = Math.max(rateWidth, formatAmount(item.unit_price ?? 0, currency, locale, trimDecimals).length);
-    amountWidth = Math.max(amountWidth, formatAmount(item.total ?? 0, currency, locale, trimDecimals).length);
+    amountWidth = Math.max(amountWidth, itemAmountText(item, currency, locale, trimDecimals).length);
   }
 
   const valueBudget = cols - qtyWidth - 4;
@@ -132,11 +157,12 @@ function col4Rows(
   currency: string,
   widths: Col4Widths,
   locale: string,
-  trimDecimals: boolean = false
+  trimDecimals: boolean = false,
+  amountText?: string
 ): string[] {
   const [nameWidth, qtyWidth, rateWidth, amountWidth] = widths;
   const rateStr = formatAmount(rate, currency, locale, trimDecimals);
-  const amtStr = formatAmount(amount, currency, locale, trimDecimals);
+  const amtStr = amountText ?? formatAmount(amount, currency, locale, trimDecimals);
   const qtyStr = String(qty);
 
   if (qtyStr.length > qtyWidth || rateStr.length > rateWidth || amtStr.length > amountWidth) {
@@ -263,7 +289,7 @@ export function buildClassicReceiptBytes(
   // Line items
   const items = order?.items ?? [];
   for (const item of items) {
-    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
+    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals, itemAmountText(item, currency, locale, trimDecimals))) {
       safePrinterText(enc, row, warnings).newline();
     }
 
@@ -294,8 +320,12 @@ export function buildClassicReceiptBytes(
   if (Number(bill.discount_amount) > 0) {
     enc.text(padRow('Discount', `-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}`, cols)).newline();
   }
-  if (Number(bill.service_charge) > 0) {
-    enc.text(padRow('Service Charge', formatAmount(bill.service_charge, currency, locale, trimDecimals), cols)).newline();
+  if (Number(bill.cover_charge) > 0) {
+    const heads = Number(bill.order?.guest_count || 0);
+    const perHead = heads > 0 ? Number((Number(bill.cover_charge) / heads).toFixed(2)) : 0;
+    const divides = heads > 0 && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
+    const coverLabel = divides ? `Cover ${heads} x ${formatAmount(perHead, currency, locale, trimDecimals)}` : 'Cover';
+    enc.text(padRow(coverLabel, formatAmount(Number(bill.cover_charge), currency, locale, trimDecimals), cols)).newline();
   }
   if (Number(bill.delivery_charge) > 0) {
     enc.text(padRow('Delivery', formatAmount(bill.delivery_charge, currency, locale, trimDecimals), cols)).newline();
@@ -409,10 +439,11 @@ export function buildCompactReceiptBytes(
   // Items — compact: one line per item with total, qty x rate below if qty > 1
   const items = order?.items ?? [];
   for (const item of items) {
-    const nameMax = cols - formatAmount(item.total, currency, locale, trimDecimals).length - 1;
+    const amountText = itemAmountText(item, currency, locale, trimDecimals);
+    const nameMax = cols - amountText.length - 1;
     safePrinterText(
       enc,
-      padRow(truncate(item.product_name, nameMax), formatAmount(item.total, currency, locale, trimDecimals), cols),
+      padRow(truncate(item.product_name, nameMax), amountText, cols),
       warnings
     ).newline();
 

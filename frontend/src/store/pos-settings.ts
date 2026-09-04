@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Language } from '@/lib/i18n';
+import { SELECTABLE_ORDER_TYPES, type SelectableOrderType } from '@/lib/order-types';
 
 export type PaperSize = 'thermal58' | 'thermal80';
 export type PrinterPrintMode = 'escpos' | 'browser';
@@ -16,6 +17,11 @@ export interface PosSettingsState {
   enforcePhoneLength: boolean;
   billingType: 'postpaid' | 'prepaid';
   tablesRequired: boolean;
+  // The order types this tenant takes. A restaurant that only serves at the
+  // table switches takeaway and delivery off, and they disappear from the POS
+  // selector and from the day's filters. Synced from the backend on auth load
+  // (see Sidebar.tsx) and updated by the settings page after a toggle.
+  orderTypes: SelectableOrderType[];
   // UI language for i18n routing. Synced from tenant on auth load.
   // Initial value reads the browser locale; persist middleware overrides
   // on reload, so user choices persist across sessions.
@@ -83,6 +89,7 @@ export interface PosSettingsState {
   setBillShowTableNumber: (v: boolean) => void;
   setBillingType: (v: 'postpaid' | 'prepaid') => void;
   setTablesRequired: (v: boolean) => void;
+  setOrderTypes: (v: SelectableOrderType[]) => void;
   setPrinterUseUnicode: (v: boolean) => void;
   setPrinterTrimDecimals: (v: boolean) => void;
   setKdsEnabled: (v: boolean) => void;
@@ -99,6 +106,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       enforcePhoneLength: false,
       billingType: 'postpaid',
       tablesRequired: true,
+      orderTypes: [...SELECTABLE_ORDER_TYPES],
       language: 'en',
       // Printer defaults
       printerPaperSize: 'thermal58',
@@ -156,6 +164,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillShowTableNumber: (v) => set({ billShowTableNumber: v }),
       setBillingType: (v) => set({ billingType: v }),
       setTablesRequired: (v) => set({ tablesRequired: v }),
+      setOrderTypes: (v) => set({ orderTypes: v }),
       setPrinterUseUnicode: (v) => set({ printerUseUnicode: v }),
       setPrinterTrimDecimals: (v) => set({ printerTrimDecimals: v }),
       setKdsEnabled: (v) => set({ kdsEnabled: v }),

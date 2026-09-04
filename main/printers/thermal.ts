@@ -851,7 +851,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
+      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals, L.offered));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
@@ -867,6 +867,21 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push(...financialRows(L.subtotal, formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
   if (bill.discount_amount > 0) {
     lines.push(...financialRows(L.discount, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
+  }
+  // So much a head. Printed only when there is one, and it says the arithmetic
+  // out loud — "Coperto 4 x 2,00" — because a guest who is charged for the
+  // table being laid is owed the reason.
+  if (Number(bill.cover_charge) > 0) {
+    const heads = Number(order?.guest_count || 0);
+    // Only spell out "4 x 2,00" when it multiplies back to the amount printed
+    // beside it, as the guest at the table will check it. It will not once a
+    // fixed menu carries the cover for part of the table.
+    const perHead = heads > 0 ? Number((Number(bill.cover_charge) / heads).toFixed(2)) : 0;
+    const divides = heads > 0 && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
+    const coverLabel = divides
+      ? `${L.cover} ${heads} x ${formatCurrency(perHead, prefix, locale, trimDecimals)}`
+      : L.cover;
+    lines.push(...financialRows(coverLabel, formatCurrency(bill.cover_charge, prefix, locale, trimDecimals), cols));
   }
   lines.push(...financialRows(L.total, formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
 
@@ -932,7 +947,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
+      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals, L.offered));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
@@ -955,6 +970,21 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push(...financialRows(L.subtotal, formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
   if (bill.discount_amount > 0) {
     lines.push(...financialRows(L.discount, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
+  }
+  // So much a head. Printed only when there is one, and it says the arithmetic
+  // out loud — "Coperto 4 x 2,00" — because a guest who is charged for the
+  // table being laid is owed the reason.
+  if (Number(bill.cover_charge) > 0) {
+    const heads = Number(order?.guest_count || 0);
+    // Only spell out "4 x 2,00" when it multiplies back to the amount printed
+    // beside it, as the guest at the table will check it. It will not once a
+    // fixed menu carries the cover for part of the table.
+    const perHead = heads > 0 ? Number((Number(bill.cover_charge) / heads).toFixed(2)) : 0;
+    const divides = heads > 0 && Math.abs(perHead * heads - Number(bill.cover_charge)) < 0.005;
+    const coverLabel = divides
+      ? `${L.cover} ${heads} x ${formatCurrency(perHead, prefix, locale, trimDecimals)}`
+      : L.cover;
+    lines.push(...financialRows(coverLabel, formatCurrency(bill.cover_charge, prefix, locale, trimDecimals), cols));
   }
   lines.push(...financialRows(L.total, formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
 
@@ -1039,12 +1069,16 @@ function itemAmountWidth(
   return Math.min(width, Math.max(1, cols - 5));
 }
 
-function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
+function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, offeredLabel?: string): string[] {
   const qtyW = 4;
   const name = truncate(item.product_name, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
-  const amount = formatCurrency(item.total, prefix, locale, trimDecimals);
+  // A row worth nothing was given away — say so, rather than printing a 0,00
+  // the guest has to interpret. A row whose price is simply not set yet is a
+  // different thing and keeps its zero, so the omission stays visible.
+  const offered = offeredLabel && Number(item.total) === 0 && !item.price_required;
+  const amount = offered ? offeredLabel : formatCurrency(item.total, prefix, locale, trimDecimals);
   const inlineWidth = Math.max(1, cols - label.length - 1);
   if (amount.length <= inlineWidth) return [label + rightAlign(amount, cols - label.length)];
   return [label.trimEnd(), ...wrapValue(amount, cols)];
@@ -1172,6 +1206,8 @@ interface ReceiptLabels {
   qtyCol: string;
   amountCol: string;
   note: string;
+  cover: string;
+  offered: string;
   pointsRedeemed: string;
   pointsEarned: string;
   pointsBalance: string;
@@ -1196,6 +1232,8 @@ const RECEIPT_LABELS: Record<string, ReceiptLabels> = {
     qtyCol: 'Qty',
     amountCol: 'Amount',
     note: 'Note: ',
+    cover: 'Cover',
+    offered: 'On the house',
     pointsRedeemed: 'Points Redeemed',
     pointsEarned: 'Points Earned',
     pointsBalance: 'Points Balance',
@@ -1218,6 +1256,8 @@ const RECEIPT_LABELS: Record<string, ReceiptLabels> = {
     qtyCol: 'Qta',
     amountCol: 'Importo',
     note: 'Nota: ',
+    cover: 'Coperto',
+    offered: 'Offerto',
     pointsRedeemed: 'Punti usati',
     pointsEarned: 'Punti accumulati',
     pointsBalance: 'Saldo punti',

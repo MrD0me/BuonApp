@@ -1,14 +1,16 @@
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate } from '../db';
-import { roundMoney } from '../money';
+import { COVER_CHARGE_SETTING_KEY, computeCoverCharge, orderCharges, parseCoverChargeAmount, roundMoney } from '../money';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
 import { resolveOrderTable } from './tables';
 import { tableLabelSource, tableGroupLeader } from '../services/tables';
-import { getOrOpenServiceDay } from '../services/service-day';
+import { getOpenServiceDay, getOrOpenServiceDay } from '../services/service-day';
+import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
 import { seatReservationForTable } from '../services/reservations';
+import { syncUnpaidBillsForOrder } from './bills';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -213,6 +215,23 @@ router.get('/', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', '
         params.push(utcDayBounds(endDate)[1]);
       }
     }
+    // The day's orders, by service day rather than by clock. A restaurant that
+    // closes at one in the morning is still working the same evening, and its
+    // orders must not slide into yesterday at midnight. `current` resolves to
+    // the open day — a GET must never open one — and with no day open the
+    // answer is empty, because nothing has been filed under a day that does
+    // not exist yet.
+    if (typeof req.query.service_day === 'string' && req.query.service_day) {
+      const dayId = req.query.service_day === 'current'
+        ? getOpenServiceDay(db)?.id ?? null
+        : req.query.service_day;
+      if (dayId === null) {
+        wheres.push('0 = 1');
+      } else {
+        wheres.push('service_day_id = ?');
+        params.push(dayId);
+      }
+    }
     if (req.query.table_id) {
       wheres.push('table_id = ?');
       params.push(req.query.table_id);
@@ -284,7 +303,13 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   const customerIds = Array.from(new Set(parsedOrders.map((o: any) => o.customer_id).filter(Boolean)));
 
   const orderIdsCsv = `(${ids.map(() => '?').join(',')})`;
-  const itemsRows = db.prepare(`SELECT * FROM order_items WHERE order_id IN ${orderIdsCsv} ORDER BY order_id, id`).all(...ids).map(parseItemJson);
+  // price_required rides along so a screen can tell a row nobody has priced
+  // yet from one that is genuinely free.
+  const itemsRows = db.prepare(`
+    SELECT oi.*, COALESCE(p.price_required, 0) AS price_required
+    FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+    WHERE oi.order_id IN ${orderIdsCsv} ORDER BY oi.order_id, oi.id
+  `).all(...ids).map(parseItemJson);
   // #208: a single call to attachEffectiveAddons batches all addons across
   // all items into one IN() query against order_item_addons. Re-group the
   // result back by order_id for the per-order payload below.
@@ -387,6 +412,12 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
     if (!type || !['dine_in', 'takeaway', 'delivery', 'online'].includes(type)) {
       return res.status(400).json({ error: 'Valid type is required (dine_in, takeaway, delivery, online)' });
     }
+    // The POS hides the types the owner switched off, but hiding a button is
+    // not enforcement: a handheld running an older screen must not be able to
+    // file a takeaway order in a place that does not do takeaway.
+    if (!isOrderTypeAllowed(getSettingValue(ORDER_TYPES_SETTING_KEY), type)) {
+      return res.status(400).json({ error: `Order type ${type} is disabled`, code: 'order_type_disabled' });
+    }
     if (table_id) {
       // A table folded into a group is not seated on its own: the party is on
       // the leader, and that is the only place its order can live.
@@ -410,6 +441,12 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
     }
 
     const db = getDatabase();
+
+    // So much a head, from the setting. A takeaway is not a laid table, so it
+    // pays no cover however many people are eating out of the bag.
+    const coverCharge = type === 'dine_in'
+      ? computeCoverCharge(guest_count, parseCoverChargeAmount(getSettingValue(COVER_CHARGE_SETTING_KEY)))
+      : 0;
 
     try {
       validateOrderNotes(db, special_instructions);
@@ -459,11 +496,11 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
       const orderResult = db.prepare(`
         INSERT INTO orders (order_number, table_id, table_label, room_label, service_day_id, customer_id, user_id, type,
-          guest_count, special_instructions, packaging_charge, delivery_charge, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          guest_count, special_instructions, packaging_charge, delivery_charge, cover_charge, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `).run(orderNumber, table_id || null, orderTableRow?.number ?? null, orderTableRow?.room ?? null,
         serviceDay.id, customer_id || null, authenticatedUserId, type, guest_count || null,
-        special_instructions || null, packaging_charge || 0, delivery_charge || 0, now(), now());
+        special_instructions || null, packaging_charge || 0, delivery_charge || 0, coverCharge, now(), now());
 
       const orderId = orderResult.lastInsertRowid;
 
@@ -534,7 +571,7 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
         }
       }
 
-      const total = roundMoney(subtotal + (delivery_charge || 0) + (packaging_charge || 0));
+      const total = roundMoney(subtotal + orderCharges({ delivery_charge, packaging_charge, cover_charge: coverCharge }));
 
       db.prepare('UPDATE orders SET subtotal = ?, total = ?, updated_at = ? WHERE id = ?')
         .run(subtotal, total, now(), orderId);
@@ -633,9 +670,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         if (replayResponse) return { replayResponse };
       }
 
-      if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-        throw Object.assign(new Error('Items cannot be changed after a check has been split'), { statusCode: 409 });
-      }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
       }
@@ -733,8 +767,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
       }
 
       const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
-      const total = roundMoney(discountedSubtotal
-        + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0));
+      const total = roundMoney(discountedSubtotal + orderCharges(currentOrder));
 
       // Update order totals and optionally update order-level notes
       if (special_instructions !== undefined) {
@@ -747,13 +780,20 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         `).run(subtotal, newDiscountAmount, total, now(), req.params.id);
       }
 
-      // BUG #4 FIX: Sync bill if it exists (add-items didn't update the bill)
-      const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
-      if (existingBill) {
-        const newBillBalance = Math.max(0, total - (existingBill.paid_amount || 0));
-        db.prepare('UPDATE bills SET total = ?, balance = ?, discount_amount = ?, updated_at = ? WHERE id = ?')
-          .run(total, newBillBalance, newDiscountAmount, now(), existingBill.id);
-      }
+      // Sync the bill through the shared path rather than by hand. The
+      // hand-rolled update wrote total, balance and discount and left
+      // `subtotal` at whatever it was when the bill was drawn up: add a dish to
+      // an order whose preconto had already been printed and the reprint said
+      // "Subtotale 90,00 ... TOTALE 118,00", two numbers that do not add up on
+      // the paper in the guest's hand.
+      syncUnpaidBillsForOrder(db, String(req.params.id), {
+        subtotal,
+        discountAmount: newDiscountAmount,
+        deliveryCharge: currentOrder.delivery_charge || 0,
+        packagingCharge: currentOrder.packaging_charge || 0,
+        coverCharge: currentOrder.cover_charge || 0,
+        total,
+      });
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const updatedItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
@@ -1008,11 +1048,11 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole('owner
       if (order.type !== 'dine_in') {
         throw Object.assign(new Error('Only dine-in orders can be converted to takeaway'), { statusCode: 400 });
       }
+      if (!isOrderTypeAllowed(getSettingValue(ORDER_TYPES_SETTING_KEY), 'takeaway')) {
+        throw Object.assign(new Error('Takeaway is disabled'), { statusCode: 400 });
+      }
       if (['completed', 'cancelled'].includes(order.status)) {
         throw Object.assign(new Error('Cannot convert a completed or cancelled order'), { statusCode: 400 });
-      }
-      if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-        throw Object.assign(new Error('A split dine-in check cannot be converted to takeaway'), { statusCode: 409 });
       }
 
       db.prepare("UPDATE orders SET type = 'takeaway', table_id = NULL, updated_at = ? WHERE id = ?")
@@ -1043,9 +1083,6 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
-    }
-    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-      return res.status(409).json({ error: 'Discounts cannot be changed after a check has been split' });
     }
 
     // Cannot apply discount to completed or cancelled orders
@@ -1139,8 +1176,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
       // The discount always applies to the stored subtotal, so calling this
       // endpoint repeatedly does not compound the reduction each time.
       const discountedSubtotal = Math.max(0, currentOrder.subtotal - discountAmount);
-      const newTotal = roundMoney(discountedSubtotal
-        + (currentOrder.packaging_charge || 0) + (currentOrder.delivery_charge || 0));
+      const newTotal = roundMoney(discountedSubtotal + orderCharges(currentOrder));
 
       db.prepare(`
         UPDATE orders SET discount_amount = ?, discount_type = ?, discount_value = ?,
@@ -1183,15 +1219,54 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
   }
 });
 
+/**
+ * Re-adds an order up after one of its rows changed, and follows the change
+ * through to a bill that has not been paid yet.
+ *
+ * Shared by the two row-level edits — the discount and the price — so the two
+ * cannot drift apart on how a total is reached.
+ */
+function recomputeOrderAfterItemChange(db: ReturnType<typeof getDatabase>, orderId: string, order: any): void {
+  // status != 'cancelled' — a cancelled item must not re-enter the order total
+  // here, the same filter every other recompute site in this file uses.
+  const allItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(orderId) as any[];
+  let orderSubtotal = 0;
+  for (const i of allItems) {
+    orderSubtotal += i.subtotal;
+  }
+
+  // An order-level discount was agreed against the old subtotal, so it moves
+  // with it rather than staying a fixed number of euros.
+  const existingDiscountAmount = order.discount_amount || 0;
+  let newOrderDiscount = existingDiscountAmount;
+  if (existingDiscountAmount > 0 && order.subtotal > 0) {
+    newOrderDiscount = Math.round(existingDiscountAmount * (orderSubtotal / order.subtotal) * 100) / 100;
+  }
+
+  const discountedSubtotal = Math.max(0, orderSubtotal - newOrderDiscount);
+  const orderTotal = roundMoney(discountedSubtotal + orderCharges(order));
+
+  db.prepare(`
+    UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
+  `).run(orderSubtotal, newOrderDiscount, orderTotal, now(), orderId);
+
+  const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
+  if (existingBill) {
+    const newBillBalance = Math.max(0, orderTotal - (existingBill.paid_amount || 0));
+    // The cover travels with the total, or the printed bill contradicts itself:
+    // the right amount at the bottom and yesterday's cover on its own line,
+    // with the per-head price back-calculated from the stale figure.
+    db.prepare('UPDATE bills SET total = ?, balance = ?, discount_amount = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
+      .run(orderTotal, newBillBalance, newOrderDiscount, Number(order.cover_charge || 0), now(), existingBill.id);
+  }
+}
+
 router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
-    }
-    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-      return res.status(409).json({ error: 'Discounts cannot be changed after a check has been split' });
     }
 
     // Cannot apply discount to completed or cancelled orders
@@ -1280,44 +1355,143 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole('ow
           subtotal = ?, total = ?, updated_at = ? WHERE id = ?
       `).run(discountAmount, newSubtotal, newSubtotal, now(), req.params.itemId);
 
-      // Update order totals (preserve existing order-level discount)
-      // Note: status != 'cancelled' — a cancelled item must not re-enter the
-      // order total here, same filter every other recompute site in this file
-      // already uses (BUG #3 FIX above, index.ts cancel/restore below).
-      const allItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(req.params.id) as any[];
-      let orderSubtotal = 0;
-      for (const i of allItems) {
-        orderSubtotal += i.subtotal;
-      }
-
-      // Recalculate order-level discount proportionally on new subtotal
-      const existingDiscountAmount = order.discount_amount || 0;
-      let newOrderDiscount = existingDiscountAmount;
-      if (existingDiscountAmount > 0 && order.subtotal > 0) {
-        // Scale discount proportionally to new subtotal
-        newOrderDiscount = Math.round(existingDiscountAmount * (orderSubtotal / order.subtotal) * 100) / 100;
-      }
-
-      const discountedSubtotal = Math.max(0, orderSubtotal - newOrderDiscount);
-      const orderTotal = roundMoney(discountedSubtotal
-        + (order.packaging_charge || 0) + (order.delivery_charge || 0));
-
-      db.prepare(`
-        UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, updated_at = ? WHERE id = ?
-      `).run(orderSubtotal, newOrderDiscount, orderTotal, now(), req.params.id);
-
-      // BUG #15 FIX: Sync item-level discount to bill
-      const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
-      if (existingBill) {
-        const newBillBalance = Math.max(0, orderTotal - (existingBill.paid_amount || 0));
-        db.prepare('UPDATE bills SET total = ?, balance = ?, discount_amount = ?, updated_at = ? WHERE id = ?')
-          .run(orderTotal, newBillBalance, newOrderDiscount, now(), existingBill.id);
-      }
+      recomputeOrderAfterItemChange(db, String(req.params.id), order);
 
       return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.itemId) as any;
     });
 
     res.json({ item: updatedItem });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+  }
+});
+
+
+/**
+ * Sets what a row actually costs.
+ *
+ * A dish agreed at the table has no price in the menu, and at the moment the
+ * waiter writes it down nobody knows what it is: the price arrives later, from
+ * whoever does know, and it can go up as well as down — which is why this is
+ * not a discount. Same guards as the row discount, because it moves the same
+ * money: owner or manager, the manager PIN when discounts ask for one, and
+ * never on an order that is finished or a check that has been split.
+ */
+router.patch('/:id/items/:itemId/price', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({ error: 'Cannot change a price on a completed or cancelled order' });
+    }
+
+    const item = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(req.params.itemId, req.params.id) as any;
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    const { unit_price } = req.body || {};
+    if (typeof unit_price !== 'number' || !Number.isFinite(unit_price) || unit_price < 0) {
+      return res.status(400).json({ error: 'unit_price must be a non-negative number' });
+    }
+    // A mistyped price is the likeliest way this goes wrong, so an absurd one
+    // is refused rather than printed on a guest's bill.
+    if (unit_price > 1_000_000) {
+      return res.status(400).json({ error: 'unit_price is out of range' });
+    }
+
+    const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
+    if (requiresApproval) {
+      const { override_pin } = req.body;
+      if (!override_pin) {
+        return res.status(403).json({ error: 'Manager PIN required to change a price', requiresApproval: true });
+      }
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+      const rateLimitKey = `pin:${clientIp}:item-price`;
+      if (!checkPinRateLimit(rateLimitKey)) {
+        return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+      }
+      const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+        .all()
+        .find((u: any) => verifyPin(u.pin_hash, override_pin));
+      if (!user) {
+        return res.status(403).json({ error: 'Invalid manager PIN' });
+      }
+    }
+
+    const newUnitPrice = roundMoney(unit_price);
+    const addonRows = db.prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?').all(item.id) as { price: number; quantity?: number }[];
+    const addonTotal = addonRows.reduce((sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * item.quantity, 0);
+    const itemBaseTotal = newUnitPrice * item.quantity + addonTotal;
+    // A discount agreed on the old price cannot exceed the new one, or the row
+    // would go negative and quietly pay the guest.
+    const discountAmount = Math.min(item.discount_amount || 0, itemBaseTotal);
+    const newSubtotal = Math.max(0, itemBaseTotal - discountAmount);
+
+    const updatedItem = withTxn(() => {
+      // Saving a price settles the row, whatever the number: a dish given away
+      // at zero has been decided on, and must stop asking to be priced.
+      db.prepare(`
+        UPDATE order_items SET unit_price = ?, discount_amount = ?,
+          subtotal = ?, total = ?, price_confirmed = 1, updated_at = ? WHERE id = ?
+      `).run(newUnitPrice, discountAmount, newSubtotal, newSubtotal, now(), req.params.itemId);
+
+      recomputeOrderAfterItemChange(db, String(req.params.id), order);
+
+      return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.itemId) as any;
+    });
+
+    notifyOrderUpdated();
+
+    res.json({ item: updatedItem });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+  }
+});
+
+/**
+ * Corrects how many people are actually eating.
+ *
+ * The number is picked when the order is taken and was never touchable again;
+ * with a cover charge on it that leaves the bill wrong the moment a friend
+ * turns up late. Changing it re-prices the cover and follows the change
+ * through to an unpaid bill, exactly like a row edit does.
+ */
+router.patch('/:id/guests', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({ error: 'Cannot change the covers on a completed or cancelled order' });
+    }
+
+    const { guest_count } = req.body || {};
+    if (!Number.isSafeInteger(guest_count) || guest_count < 1 || guest_count > 99) {
+      return res.status(400).json({ error: 'guest_count must be a whole number between 1 and 99' });
+    }
+
+    const coverCharge = order.type === 'dine_in'
+      ? computeCoverCharge(guest_count, parseCoverChargeAmount(getSettingValue(COVER_CHARGE_SETTING_KEY)))
+      : 0;
+
+    const updated = withTxn(() => {
+      db.prepare('UPDATE orders SET guest_count = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
+        .run(guest_count, coverCharge, now(), req.params.id);
+      recomputeOrderAfterItemChange(db, String(req.params.id), { ...order, cover_charge: coverCharge });
+      return parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id));
+    });
+
+    notifyOrderUpdated();
+
+    res.json({ order: updated });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
