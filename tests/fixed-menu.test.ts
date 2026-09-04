@@ -18,7 +18,6 @@
  *    never below zero however many menus a small table orders.
  *  - Adding or cancelling a menu re-prices the cover on an open order.
  *  - Cancelling any row of a menu takes the whole menu off the check.
- *  - A split check refuses to break a menu across two guests.
  *  - The kitchen ticket skips the package row and sections the dishes.
  *  - The printed bill indents the dishes, prices only surcharges, and never
  *    calls a menu course "on the house".

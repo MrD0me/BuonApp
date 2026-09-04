@@ -881,6 +881,41 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     );
   }
 
+  // A course inside a fixed menu prints no rate — the package holds the price —
+  // and no amount at all when the package covers it. Sizing those two columns on
+  // figures that never reach the paper took the width from the name column, and
+  // the row that paid for it was the dish beside them. So: the same bill with
+  // and without the course has to print that dish exactly the same way.
+  const dish = { product_name: 'Tagliata al rosmarino', quantity: 1, unit_price: 25, total: 25 };
+  const coveredCourse = { product_name: 'Zuppa del giorno', quantity: 1, unit_price: 1234.56, total: 0, menu_role: 'course' };
+  const renderDishLine = (items: unknown[]): string => {
+    const localWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const bytes = buildClassicReceiptBytes(
+      { id: 'b3', bill_number: 'INV-MENU-1', order: { ...irOrder, items }, subtotal: 25, discount_amount: 0, total: 25 },
+      frontendTenant,
+      { paperWidth: 58, useUnicode: false },
+      localWarnings,
+    );
+    return Buffer.from(bytes).toString('utf8')
+      .split('\n')
+      .filter((line: string) => line.includes('Tagliata'))
+      .join(' | ');
+  };
+  {
+    const alone = renderDishLine([dish]);
+    const beside = renderDishLine([dish, coveredCourse]);
+    assert(
+      '[frontend classic] a menu course does not squeeze the dish beside it',
+      alone === beside,
+      `senza: "${alone}" / con: "${beside}"`,
+    );
+    assert(
+      '[frontend classic] and the price the package covers never reaches the paper',
+      !beside.includes('1,234.56'),
+      beside,
+    );
+  }
+
   // The frontend classic template also needs to keep the three-character IRR
   // prefix inside the 58mm (42-column) raw layout.
   for (const useUnicode of [false, true]) {

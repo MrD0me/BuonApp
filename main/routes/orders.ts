@@ -175,14 +175,6 @@ function resolveItemAddons(
 }
 
 /**
- * Writes the rows of an order and returns what they add up to.
- *
- * One copy, called both by the route that opens an order and by the one that
- * appends to it. They were two identical loops that had to be kept in step by
- * hand, and the fixed menu would have made them two places to expand a package
- * into its dishes.
- */
-/**
  * So much a head, less the heads whose cover is already inside a fixed menu
  * they ordered.
  *
@@ -201,6 +193,14 @@ export function orderCoverCharge(db: ReturnType<typeof getDatabase>, orderId: st
   );
 }
 
+/**
+ * Writes the rows of an order and returns what they add up to.
+ *
+ * One copy, called both by the route that opens an order and by the one that
+ * appends to it. They were two identical loops that had to be kept in step by
+ * hand, and the fixed menu would have made them two places to expand a package
+ * into its dishes.
+ */
 function insertOrderItemRows(
   db: ReturnType<typeof getDatabase>,
   orderId: string | number | bigint,

@@ -121,7 +121,7 @@ function amountTextFor(
 
 function resolveCol4Widths(
   cols: number,
-  items: Array<{ unit_price?: number | string; total?: number | string; price_required?: boolean | number }>,
+  items: Array<{ unit_price?: number | string; total?: number | string; price_required?: boolean | number; menu_role?: string | null }>,
   currency: string,
   locale: string,
   trimDecimals: boolean,
@@ -131,8 +131,17 @@ function resolveCol4Widths(
   let amountWidth = minimumAmountWidth;
 
   for (const item of items) {
-    rateWidth = Math.max(rateWidth, formatAmount(item.unit_price ?? 0, currency, locale, trimDecimals).length);
-    amountWidth = Math.max(amountWidth, amountTextFor(item, currency, locale, trimDecimals).length);
+    // Measure what the row will actually print. A course inside a fixed menu
+    // leaves the rate column empty, and one the package covers prints no
+    // amount at all: sizing either column on a figure that never reaches the
+    // paper takes the width off the name, which is the column that needs it.
+    const course = menuCourseLine(item);
+    if (!course.indent) {
+      rateWidth = Math.max(rateWidth, formatAmount(item.unit_price ?? 0, currency, locale, trimDecimals).length);
+    }
+    if (!course.suppressAmount) {
+      amountWidth = Math.max(amountWidth, amountTextFor(item, currency, locale, trimDecimals).length);
+    }
   }
 
   const valueBudget = cols - qtyWidth - 4;
