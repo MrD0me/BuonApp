@@ -100,6 +100,8 @@ export interface KdsOrderItem {
   status?: string;
   addons?: KdsOrderItemAddon[] | null;
   special_instructions?: string | null;
+  /** Which wave of the meal this dish goes out in. */
+  service_run?: number | null;
   created_at?: string;
   updated_at?: string;
 }

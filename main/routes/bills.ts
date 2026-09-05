@@ -34,6 +34,28 @@ function selectRowsByIds<T>(
   return rows;
 }
 
+/**
+ * How the rows of a check are ordered.
+ *
+ * Insertion order, except that a menu's dishes stay under the menu that paid
+ * for them. Without this a dessert chosen half an hour after the menu was
+ * ordered gets a higher id and prints at the *bottom* of the bill — indented,
+ * priced at nothing, sitting under whatever dish happens to be last. The
+ * guest reads a stray "  Tiramisù" under someone else's steak.
+ *
+ * Sorting by the group's package row rather than by the group id keeps the
+ * menu where the table ordered it, and ordinary rows sort by their own id as
+ * they always have.
+ */
+const ITEM_ORDER = `
+  ORDER BY COALESCE((
+    SELECT MIN(pkg.id) FROM order_items pkg
+    WHERE pkg.order_id = oi.order_id AND pkg.menu_group_id = oi.menu_group_id AND pkg.menu_role = 'package'
+  ), oi.id),
+  CASE WHEN oi.menu_role = 'package' THEN 0 ELSE 1 END,
+  oi.id
+`;
+
 export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number): any {
   const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId));
   if (!order) return order;
@@ -43,6 +65,7 @@ export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: n
     SELECT oi.*, COALESCE(p.price_required, 0) AS price_required
     FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
     WHERE oi.order_id = ?
+    ${ITEM_ORDER}
   `).all(orderId) as any[];
   return {
     ...order,
@@ -59,7 +82,7 @@ export function getOrdersWithItemsForBills(
   const orderIds = Array.from(new Set(bills.map((bill) => Number(bill.order_id))));
   const orderRows = selectRowsByIds<any>(db, orderIds, (count) => `SELECT * FROM orders WHERE id IN (${new Array(count).fill('?').join(',')})`);
   const orders = new Map(orderRows.map((row) => [Number(row.id), parseRowJson(row)]));
-  const itemRows = selectRowsByIds<any>(db, orderIds, (count) => `SELECT * FROM order_items WHERE order_id IN (${new Array(count).fill('?').join(',')}) ORDER BY id`);
+  const itemRows = selectRowsByIds<any>(db, orderIds, (count) => `SELECT oi.* FROM order_items oi WHERE oi.order_id IN (${new Array(count).fill('?').join(',')}) ${ITEM_ORDER}`);
   const itemsByOrder = new Map<number, any[]>();
   for (const item of itemRows) {
     const items = itemsByOrder.get(Number(item.order_id)) || [];

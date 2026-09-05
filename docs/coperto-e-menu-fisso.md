@@ -1,8 +1,10 @@
 # Coperto e menu fisso
 
-**Stato:** CURRENT. Decisioni prese con l'utente il 2026-08-30, il menu fisso il 2026-08-31.
-**Fatto tutto**: il coperto con le migrazioni v88-v90, il menu fisso con la v92. Nata come v91,
-ha preso il numero dopo perché nel frattempo la v91 è servita a togliere la divisione del conto.
+**Stato:** CURRENT. Decisioni prese con l'utente il 2026-08-30, il menu fisso il 2026-08-31, il
+menu aperto e le uscite il 2026-09-05.
+**Fatto tutto**: il coperto con le migrazioni v88-v90, il menu fisso con la v92 (nata come v91,
+ha preso il numero dopo perché nel frattempo la v91 è servita a togliere la divisione del conto),
+le eccezioni per piatto con la v93, le uscite con la v94, il menu aperto con la v95.
 
 ## Contesto
 
@@ -158,7 +160,8 @@ di scrivere una riga:
   difetto che la v89 ha dovuto riparare.
 - **Il menu si annulla intero**, da qualunque riga si parta, con una conferma che lo dice. Mezzo
   menu — il pacchetto senza piatti, o i piatti senza niente di prezzato — non è una cosa che
-  qualcuno abbia ordinato.
+  qualcuno abbia ordinato. ~~Da qualunque riga si parta~~: dalla riga del pacchetto. Vedi la
+  sezione del 2026-09-05 qui sotto.
 
 Trovato e sistemato strada facendo:
 
@@ -185,8 +188,109 @@ Trovato e sistemato strada facendo:
   il menu fisso serve davvero.
 
 **Non fatto, per scelta:** il menu fisso non è stato montato nel Server App. Il palmare non sa fare
-nemmeno gli aggiuntivi e va rifatto per intero; la finestra è pronta per allora. E cambiare una
-scelta a menu già battuto non esiste: si annulla il gruppo e si rifà.
+nemmeno gli aggiuntivi e va rifatto per intero; la finestra è pronta per allora. ~~E cambiare una
+scelta a menu già battuto non esiste: si annulla il gruppo e si rifà.~~ Adesso esiste: vedi qui
+sotto.
+
+## Il menu aperto e le uscite (2026-09-05)
+
+Il menu fisso funzionava ma era un blocco chiuso: si compilava tutto dentro una finestra prima di
+aggiungerlo al carrello, e una volta battuto non si toccava più. In sala succede il contrario —
+si prende l'antipasto, si manda, e il secondo si decide mezz'ora dopo.
+
+**Scartata**: l'ipotesi di dichiarare solo *quanti* menu prende il tavolo e calcolare
+l'attribuzione al conto. Se due prendono la tagliatella dentro il menu e un terzo la ordina a
+parte, nessuna euristica sa quale pescare, e quando sbaglia **cambia la cifra che paga il
+cliente**. La parte buona dell'idea — ordinare dalla griglia invece che dentro una finestra — si
+tiene, ma con l'aggancio deciso dal cameriere con un tocco mentre ordina, non indovinato alla
+fine.
+
+### Il menu è un contenitore che si riempie (v95)
+
+- **Una portata obbligatoria può restare vuota.** Il rifiuto in `buildMenuRows` è tolto:
+  `is_required` non blocca più l'ordine, dice cosa manca. Il prezzo sta sul pacchetto, quindi un
+  menu incompleto costa già la cifra giusta.
+- **`order_items.menu_course_id`** dice quale portata soddisfa una riga. Prima si deduceva dalla
+  categoria, e smette di essere una risposta appena una portata prende un piatto da fuori le sue
+  categorie (v93) o due portate ne condividono una — "frutta o dolce" accanto a "dolce" è un menu
+  vero. La migrazione riempie all'indietro solo dove una sola portata combacia; l'ambiguo resta
+  NULL, che vuol dire quello che `menu_role='course'` ha sempre voluto dire da solo.
+- **`PUT /orders/:id/menu-groups/:groupId/courses/:courseId`** con `{ product_ids }`: la lista è
+  quello che la portata contiene *dopo*, non cosa farne. Un endpoint solo per aggiungere,
+  scambiare e svuotare, perché tre sarebbero stati tre posti dove sbagliare la politica degli
+  storni. Rigiocare la stessa lista non fa niente, quindi un ritentativo non raddoppia un piatto.
+  Le righe nuove nascono con `kot_batch` NULL e vanno nel giro successivo da sole.
+- **Un piatto che la cucina ha già preso in mano non si scavalca da qui**: 409
+  `course_in_progress` e non si scrive niente. Toglierlo dal conto resta affare dell'annullo, con
+  il PIN e lo storno che ha già.
+- **L'annullo si sdoppia.** La riga del pacchetto è il menu: toglierla toglie tutto. Una riga
+  piatto è solo sé stessa, così chi cambia idea sul secondo non perde l'antipasto che ha già
+  mangiato. `cancelTargetIds` decide, e vale anche per il ripristino.
+- **Agganciare dalla griglia**: battuto un piatto che entra in una portata ancora libera di un
+  menu aperto, il POS chiede "compreso nel menu?" con un tocco e *A parte* sempre disponibile.
+  Se non ci sono portate libere la finestra non si apre, quindi una casa senza menu fissi non
+  vede alcuna differenza.
+
+### Le eccezioni per piatto (v93)
+
+Una portata pescava categorie intere. `fixed_menu_course_products(course_id, product_id, mode)`
+aggiunge le eccezioni nei due versi: l'aragosta che sta nei Secondi e nel menu non c'è, il
+branzino che sta fuori dai Secondi e nel menu c'è. L'esplicito batte la categoria, e
+`courseAllowsDish` è l'unico posto che risponde — con `courseAllowsProduct` che gli fa da specchio
+sul till, così la cassa offre esattamente quello che il conto accetta.
+
+Tabella a parte e non una colonna sui sovrapprezzi: SQLite non sa aggiungere una colonna con
+`CHECK`, l'editor pota i sovrapprezzi quando una categoria esce dalla portata e cancellerebbe
+l'inclusione a ogni salvataggio, e un piatto può essere insieme incluso e più caro.
+
+### Le uscite (v94)
+
+Quando un piatto esce dalla cucina, che non è la stessa cosa di quando è stato mandato.
+`order_items.service_run` 1..9, con il valore preso da `categories.default_service_run`: antipasti
+1, primi 2, secondi 3, così su un tavolo ordinario nessuno tocca niente. Il cameriere sposta la
+singola riga con un tocco, prima e dopo l'invio.
+
+- **Il nome.** `course`/`portata` era già del menu fisso e `round` del giro comanda: in codice
+  `service_run`, sulla carta `1ª USCITA`.
+- **Un piatto dentro un menu prende l'uscita dalla sua categoria**, non dalla portata del menu:
+  un primo dentro un menu è un primo ed esce coi primi. È la stessa ragione per cui il menu
+  scrive righe vere.
+- **La comanda si sezione per uscita, e dentro l'uscita per categoria.** L'uscita dice *quando* e
+  va sopra; la categoria dice *cosa* e resta sotto. Con tutto in uscita 1 il codice prende lo
+  stesso ramo di prima e la comanda esce identica — asserito byte per byte in `test:printer`.
+- **Le uscite sono etichette, non cancelli.** Si preme Invia e parte tutto il pendente, come
+  sempre. Nessun "manda solo la prima uscita": sarebbe un secondo stato da tenere allineato con
+  `kot_batch`, e un'uscita dimenticata in coda.
+- **Il KDS la vede** (una stringa in `projectKdsItem`), il conto no: l'ordine di servizio è
+  coreografia di cucina.
+
+### Due difetti trovati e sistemati, perché stavano in mezzo
+
+- **Lo storno fantasma in coda comande.** `getPendingKotItems` non escludeva `void_adjustment`:
+  il tavolo mostrava un giro da mandare e la comanda dopo stampava `1 VOID: TAGLIATA`. Era già un
+  difetto; con l'annullo della singola scelta sarebbe stato quotidiano. I tre conteggi lato
+  interfaccia erano per giunta divergenti fra loro — mappa, pannello e scheda tavolo escludevano
+  cose diverse — e ora passano tutti da `isPendingKot` (`lib/kot.ts`).
+- **L'ordine delle righe sul conto.** `getOrderWithItems` non aveva `ORDER BY` e l'altra query
+  ordinava per `id`: un dolce scelto mezz'ora dopo ha un id più alto e sarebbe stampato in fondo
+  al conto, rientrato e senza importo, sotto un piatto che non c'entra. Adesso ogni gruppo resta
+  attaccato al suo pacchetto, sul conto e nel pannello (`menuAwareRowOrder`).
+
+### Cosa resta fuori, per scelta
+
+- **Agganciare a un menu una riga già battuta a parte.** La riga può avere un `kot_batch`, uno
+  stato `preparing`, aggiuntivi, uno sconto e il magazzino già scalato: riprezzarla sul posto
+  muterebbe una riga che il preconto stampato può già mostrare, senza nessuno storno che registri
+  che il cliente era stato caricato. La via pulita — annulla e rifai — rimanda il piatto in
+  cucina. Se servirà, la mezza misura onesta è un `absorb_item_id` sul `PUT`, accettato solo se la
+  riga è `pending`, senza `kot_batch`, senza aggiuntivi e senza sconto.
+- **Due camerieri sullo stesso menu.** Il `PUT` è ultimo-che-scrive-vince. Se morde, un
+  `expected_item_ids` che risponde 409.
+- **`is_required` smette in silenzio di significare "obbligatorio".** Chi lo usava come rete
+  contro le battiture sbagliate la perde: va nelle note di rilascio.
+- **Il Server App**, ancora. `AttachToMenuModal` e `ServiceRunPicker` sono nati con lo stesso
+  contratto della finestra del menu — props dentro, callback fuori, nessun client API — quindi
+  quando il palmare verrà rifatto si montano lì così come sono.
 
 ## Ordine dei lavori
 

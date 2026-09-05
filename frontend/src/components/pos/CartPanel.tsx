@@ -16,6 +16,8 @@ import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem, Product } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { cartLineUnitPrice, courseSurcharge } from '@/lib/fixed-menu';
+import { serviceRunOf } from '@/lib/service-runs';
+import ServiceRunPicker from './ServiceRunPicker';
 
 interface Props {
   tables: Table[];
@@ -42,6 +44,7 @@ export default function CartPanel({ tables, products, submitting, onPlaceOrder, 
   const { currentTenant } = useAuthStore();
   const billingType = usePosSettingsStore((s) => s.billingType);
   const enabledOrderTypes = usePosSettingsStore((s) => s.orderTypes);
+  const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
@@ -238,9 +241,20 @@ export default function CartPanel({ tables, products, submitting, onPlaceOrder, 
                   {item.special_instructions && (
                     <p className="text-xs text-gray-400 italic mt-0.5 break-words">{item.special_instructions}</p>
                   )}
-                  <p className="text-sm text-gray-500">
-                    {fmt(cartLineUnitPrice(item))}
-                  </p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-sm text-gray-500">
+                      {fmt(cartLineUnitPrice(item))}
+                    </p>
+                    {/* Which wave it goes out in. Shown from the start rather
+                        than once a run is in play: hiding it until something
+                        is on run 2 leaves no way to put anything there. */}
+                    {isRestaurant && kotPrintingEnabled && (
+                      <ServiceRunPicker
+                        value={serviceRunOf(item)}
+                        onChange={(run) => cart.setServiceRun(item.id, run)}
+                      />
+                    )}
+                  </div>
                 </div>
                 {/* One menu is one line of one: another guest taking the same
                     menu is another menu, because a split check hands each of

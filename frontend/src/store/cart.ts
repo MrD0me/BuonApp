@@ -20,6 +20,8 @@ interface CartState {
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
   addFixedMenu: (menu: Product, selection: FixedMenuSelection, specialInstructions?: string) => void;
   updateMenuSelection: (cartItemId: string, selection: FixedMenuSelection, specialInstructions?: string) => void;
+  setServiceRun: (cartItemId: string, run: number) => void;
+  attachToMenu: (cartItemId: string, courseId: string, productId: string) => void;
   updateItemDetails: (cartItemId: string, quantity: number, addons: Addon[], specialInstructions: string) => void;
   removeItem: (cartItemId: string) => void;
   updateQuantity: (cartItemId: string, quantity: number) => void;
@@ -97,6 +99,56 @@ export const useCartStore = create<CartState>((set, get) => ({
           }
           : item
       )),
+    });
+  },
+
+  /**
+   * Puts a dish battered from the grid inside a menu already in the cart.
+   *
+   * The dish becomes one of that menu's choices instead of a line of its own,
+   * so it costs what the menu says — nothing, or the surcharge — and the
+   * kitchen ticket still lists it as the dish it is. Which is the whole point
+   * of the menu writing real rows.
+   */
+  attachToMenu: (cartItemId, courseId, productId) => {
+    set({
+      items: get().items.map((item) => (
+        item.id === cartItemId
+          ? { ...item, menu_selection: [...(item.menu_selection || []), { course_id: courseId, product_id: productId }] }
+          : item
+      )),
+    });
+  },
+
+  /**
+   * Which wave this line goes out in.
+   *
+   * The run is part of a line's identity, so moving one has to re-key it —
+   * otherwise two lines of the same dish on two runs would collide the next
+   * time the cart is normalized, and one of the two instructions the kitchen
+   * was given would vanish. A line that lands on an id already in the cart
+   * merges into it, which is right: it is the same dish, in the same wave,
+   * with the same note.
+   */
+  setServiceRun: (cartItemId, run) => {
+    const items = get().items;
+    const target = items.find((item) => item.id === cartItemId);
+    if (!target || target.service_run === run) return;
+
+    const newId = generateCartItemId(
+      target.product.id, target.addons, target.special_instructions, target.menu_line_id, run,
+    );
+    const collision = items.find((item) => item.id === newId && item.id !== cartItemId);
+
+    set({
+      items: items
+        .filter((item) => !(collision && item.id === cartItemId))
+        .map((item) => {
+          if (collision && item.id === newId) {
+            return { ...item, quantity: item.quantity + target.quantity };
+          }
+          return item.id === cartItemId ? { ...item, id: newId, service_run: run } : item;
+        }),
     });
   },
 

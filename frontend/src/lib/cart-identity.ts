@@ -50,6 +50,7 @@ export function generateCartItemId(
   addons: Addon[],
   specialInstructions: string,
   menuLineId?: string | null,
+  serviceRun?: number | null,
 ): string {
   // A fixed menu is never merged with another one, not even an identical one:
   // one menu is one line of one, so a split check can hand each of them to a
@@ -68,14 +69,19 @@ export function generateCartItemId(
     return 0;
   });
 
-  return `cart-v2:${canonicalize({ productId, addons: sortedAddons, specialInstructions })}`;
+  // The run is part of the identity: two lines of the same dish going out in
+  // different waves are two lines, and merging them would silently drop one
+  // of the two instructions the kitchen was given.
+  return `cart-v2:${canonicalize({ productId, addons: sortedAddons, specialInstructions, serviceRun: serviceRun ?? null })}`;
 }
 
 /** Normalize persisted/held cart lines to the current identity format. */
 export function normalizeCartItems(items: CartItem[]): CartItem[] {
   const normalized: CartItem[] = [];
   for (const item of items) {
-    const id = generateCartItemId(item.product.id, item.addons || [], item.special_instructions || '', item.menu_line_id);
+    const id = generateCartItemId(
+      item.product.id, item.addons || [], item.special_instructions || '', item.menu_line_id, item.service_run,
+    );
     const existing = normalized.find((candidate) => candidate.id === id);
     if (existing) {
       existing.quantity += item.quantity;

@@ -105,7 +105,7 @@ export function getPendingKotItems(db: any, orderId: string | number): any[] {
     db,
     (db.prepare(`
       ${KOT_ITEM_SELECT}
-      WHERE oi.order_id = ? AND oi.kot_batch IS NULL AND oi.status NOT IN ('cancelled', 'voided')
+      WHERE oi.order_id = ? AND oi.kot_batch IS NULL AND oi.status NOT IN ('cancelled', 'voided', 'void_adjustment')
       ORDER BY oi.id
     `).all(orderId) as any[]).map(parseItemJson),
   );

@@ -32,6 +32,12 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useSendKot } from '@/hooks/useSendKot';
+import { serviceRunOf } from '@/lib/service-runs';
+import { pendingKotItems } from '@/lib/kot';
+import { menuAwareRowOrder, menuGroupsOfOrder, type MenuGroupState } from '@/lib/fixed-menu';
+import { useCatalogStore } from '@/store/catalog';
+import FixedMenuPicker from '@/components/pos/FixedMenuPicker';
+import ServiceRunPicker from '@/components/pos/ServiceRunPicker';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -222,9 +228,39 @@ export function OrderPanel({
   const awaitsPrice = (item: OrderItem) =>
     Boolean(item.price_required) && !item.price_confirmed && item.status !== 'cancelled';
   const unpricedItems = (order.items || []).filter(awaitsPrice);
-  const pendingKotItems = (order.items || []).filter(
-    (item) => item.kot_batch == null && item.status !== 'cancelled',
-  );
+  const pendingKotRows = pendingKotItems(order.items || []);
+
+  // A menu on the check names its dishes but not its courses, so drawing the
+  // slots still to fill needs the catalogue.
+  const catalogProducts = useCatalogStore((state) => state.products);
+  const ensureCatalog = useCatalogStore((state) => state.ensureLoaded);
+  const [menuFill, setMenuFill] = useState<{ group: MenuGroupState; courseId: string } | null>(null);
+  const [fillingMenu, setFillingMenu] = useState(false);
+  const hasMenuRows = (order.items || []).some((item: OrderItem) => item.menu_role === 'package');
+  useEffect(() => {
+    if (hasMenuRows) void ensureCatalog();
+  }, [hasMenuRows, ensureCatalog]);
+
+  /**
+   * What this course holds now. One shape for adding, swapping and clearing,
+   * because that is the shape the endpoint takes: the list is what the course
+   * ends up with, not what to do to it.
+   */
+  const setCourseDishes = async (groupId: string, courseId: string, productIds: string[]) => {
+    setFillingMenu(true);
+    try {
+      await api.put(`/orders/${order.id}/menu-groups/${groupId}/courses/${courseId}`, { product_ids: productIds });
+      setMenuFill(null);
+      onChanged();
+    } catch (error: unknown) {
+      // The kitchen has that dish. Taking it off the check is the void, with
+      // the manager PIN it asks for — not something to do behind their back.
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      toast.error(code === 'course_in_progress' ? tOrders('menuCourseInProgress') : tOrders('menuCourseFillFailed'));
+    } finally {
+      setFillingMenu(false);
+    }
+  };
 
   // The bill's print history, so the button can say "reprint" rather than
   // "print" the second time round.
@@ -461,9 +497,9 @@ export function OrderPanel({
       toast.error(tOrders('onlyOwnersRemove'));
       return;
     }
-    // A fixed menu comes off the check whole, from whichever of its rows this
-    // was pressed on. Say so before doing it.
-    const question = item?.menu_group_id ? tOrders('removeMenuConfirm') : tOrders('removeItemConfirm');
+    // Pressing the menu's own row takes the whole menu; pressing one of its
+    // dishes takes only that dish. The question has to say which.
+    const question = item?.menu_role === 'package' ? tOrders('removeMenuConfirm') : tOrders('removeItemConfirm');
     if (!await confirm(question, { destructive: true, confirmLabel: tCommon('remove') })) return;
     try {
       await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: tOrders('removedByManager') });
@@ -671,6 +707,22 @@ export function OrderPanel({
     }
   };
 
+  /**
+   * Moves one row to another wave.
+   *
+   * No confirmation and no PIN: no money moves and nothing is re-sent. A row
+   * already on a printed ticket still moves — the paper in the kitchen is
+   * simply out of date, which is what the muted chip is there to say.
+   */
+  const changeServiceRun = async (item: OrderItem, run: number) => {
+    try {
+      await api.patch(`/orders/${order.id}/items/${item.id}/service-run`, { service_run: run });
+      onChanged();
+    } catch {
+      toast.error(tOrders('serviceRunFailed'));
+    }
+  };
+
   const handleSendToKitchen = async () => {
     setSendingToKitchen(true);
     try {
@@ -717,7 +769,15 @@ export function OrderPanel({
     }
   };
 
-            const activeItems = (order.items || []).filter((i: OrderItem) => i.status !== 'cancelled');
+            const activeItems = menuAwareRowOrder((order.items || []).filter((i: OrderItem) => i.status !== 'cancelled'));
+            // The menus on this check: which courses are filled, which are
+            // still open, and which required ones nobody has chosen for.
+            const menuGroups = menuGroupsOfOrder(activeItems, catalogProducts);
+            const menusMissingCourses = menuGroups.filter((entry) => entry.missingRequired.length > 0);
+            const lastRowOfGroup = new Map<string, number>();
+            for (const row of activeItems) {
+              if (row.menu_group_id) lastRowOfGroup.set(String(row.menu_group_id), row.id);
+            }
             const cancelledItems = (order.items || []).filter((i: OrderItem) => i.status === 'cancelled');
             const paid = isOrderPaid(order);
             const payStatus = paymentStatusOf(order);
@@ -878,6 +938,18 @@ export function OrderPanel({
             {activeItems.map((item: OrderItem) => {
               const config = itemStatusConfig[item.status] || itemStatusConfig.pending;
               const isMenuCourse = item.menu_role === 'course';
+              // The slots go under the menu they belong to, which is under its
+              // last row — the rows are already grouped by menuAwareRowOrder.
+              const group = item.menu_group_id && lastRowOfGroup.get(item.menu_group_id) === item.id
+                ? menuGroups.find((entry) => entry.group_id === item.menu_group_id)
+                : undefined;
+              // A dish chosen inside a menu can be swapped for another from
+              // the same course. Only while it is still pending: once the
+              // kitchen has it, the void is the honest way out and the
+              // backend refuses this anyway.
+              const swappableCourse = isMenuCourse && item.menu_course_id && item.status === 'pending' && !paid
+                ? menuGroups.find((entry) => entry.group_id === item.menu_group_id)
+                : undefined;
               return (
                 <div key={item.id} className="py-1.5">
                   <div className="flex items-center justify-between">
@@ -886,7 +958,17 @@ export function OrderPanel({
                       <span className={`text-sm font-medium ${config.color}`}>
                         {item.quantity}x
                       </span>
-                      <span className={`text-sm truncate ${isMenuCourse ? 'text-gray-500 ps-3' : 'text-gray-900'}`}>{item.product_name}</span>
+                      {swappableCourse?.menu ? (
+                        <button
+                          onClick={() => setMenuFill({ group: swappableCourse, courseId: String(item.menu_course_id) })}
+                          className="text-sm truncate text-gray-500 ps-3 underline decoration-dotted decoration-gray-300 underline-offset-4 hover:text-gray-800"
+                          title={tOrders('menuCourseSwap')}
+                        >
+                          {item.product_name}
+                        </button>
+                      ) : (
+                        <span className={`text-sm truncate ${isMenuCourse ? 'text-gray-500 ps-3' : 'text-gray-900'}`}>{item.product_name}</span>
+                      )}
                       {awaitsPrice(item) && (
                         <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[11px] font-medium">
                           {tOrders('rowPriceMissing')}
@@ -897,6 +979,15 @@ export function OrderPanel({
                       )}
                     </div>
                     <div className="flex items-center gap-2">
+                      {/* Which wave it goes out in. A menu package is not a
+                          dish and never reaches a station, so it has none. */}
+                      {kotPrintingEnabled && !paid && item.menu_role !== 'package' && (
+                        <ServiceRunPicker
+                          value={serviceRunOf(item)}
+                          sent={item.kot_batch != null}
+                          onChange={(run) => changeServiceRun(item, run)}
+                        />
+                      )}
                       {/* A dish inside a menu is paid for by the package: it
                           shows a surcharge or nothing, never a bare 0,00. */}
                       <span className="text-sm text-gray-600">
@@ -942,10 +1033,44 @@ export function OrderPanel({
                       ))}
                     </div>
                   )}
+                  {/* The courses of this menu nobody has chosen for yet. One
+                      tap opens the same window the till uses. */}
+                  {group && !paid && !['completed', 'cancelled'].includes(order.status) && group.menu && (
+                    <div className="ps-3 mt-1 flex flex-wrap gap-1.5">
+                      {group.slots.filter((slot) => slot.free > 0).map((slot) => (
+                        <button
+                          key={slot.course.id}
+                          onClick={() => setMenuFill({ group, courseId: slot.course.id })}
+                          className={`px-2 py-0.5 rounded-full text-xs border border-dashed transition-colors ${
+                            slot.course.is_required && slot.filled.length === 0
+                              ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                              : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
+                          }`}
+                        >
+                          + {slot.course.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
+
+          {/* A menu still waiting on a course. A line, never a dialog: in a
+              house that routinely sells the menu without dessert, a dialog
+              every evening is a dialog nobody reads. Nothing here stops the
+              check being closed — sometimes the dessert is genuinely not
+              wanted. */}
+          {menusMissingCourses.length > 0 && !paid && (
+            <p className="mt-3 text-xs text-amber-600">
+              {tOrders('menuAwaitingCourses', {
+                courses: menusMissingCourses
+                  .flatMap((entry) => entry.missingRequired.map((course) => course.label))
+                  .join(', '),
+              })}
+            </p>
+          )}
 
           {/* Bill summary */}
           <div className="mt-3 pt-3 border-t border-dashed border-gray-200 space-y-1">
@@ -1047,7 +1172,7 @@ export function OrderPanel({
               {tOrders('addItem')}
             </Button>
           )}
-          {pendingKotItems.length > 0 && kotPrintingEnabled && !['completed', 'cancelled'].includes(order.status) && (
+          {pendingKotRows.length > 0 && kotPrintingEnabled && !['completed', 'cancelled'].includes(order.status) && (
             <Button
               variant="outline"
               onClick={handleSendToKitchen}
@@ -1056,7 +1181,7 @@ export function OrderPanel({
               className="flex-1 justify-center border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
             >
               <ChefHat size={14} className="me-1.5" />
-              {sendingToKitchen ? tPos('kotSending') : tPos('sendToKitchen', { count: pendingKotItems.length })}
+              {sendingToKitchen ? tPos('kotSending') : tPos('sendToKitchen', { count: pendingKotRows.length })}
             </Button>
           )}
           {/* The bill on paper, which in this fork is what goes to the table.
@@ -1561,6 +1686,27 @@ placeholder={tOrders('managerPin')}
             </div>
           </div>
         </div>
+      )}
+
+      {/* Filling in a course of a menu already on the check. The same window
+          the till uses, told to show one course — props in, callback out, no
+          API client of its own, which is what lets it mount here at all. */}
+      {menuFill?.group.menu && (
+        <FixedMenuPicker
+          menu={menuFill.group.menu}
+          products={catalogProducts}
+          mode="fill"
+          restrictToCourseId={menuFill.courseId}
+          initialSelection={menuFill.group.slots
+            .filter((slot) => slot.course.id === menuFill.courseId)
+            .flatMap((slot) => slot.filled.map((row) => ({ course_id: slot.course.id, product_id: String(row.product_id) })))}
+          onClose={() => { if (!fillingMenu) setMenuFill(null); }}
+          onAdd={(_menu, selection) => setCourseDishes(
+            menuFill.group.group_id,
+            menuFill.courseId,
+            selection.filter((choice) => choice.course_id === menuFill.courseId).map((choice) => choice.product_id),
+          )}
+        />
       )}
 
       {ConfirmDialog}

@@ -717,6 +717,10 @@ Cancel an order item.
 - A new cancellation on a completed, cancelled, paid, or partially paid order
   is rejected. Repeating cancellation of a terminal item is an idempotent
   no-op for an owner or manager.
+- On a fixed menu, cancelling the package row takes the whole menu off the
+  check; cancelling one of its dish rows takes only that dish, so a guest can
+  change their main without losing the starter they have eaten. Restore
+  follows the same split.
 
 ### PATCH `/api/orders/:orderId/items/:itemId/restore`
 Restore a cancelled item (owner or manager only). The item returns to `pending`
@@ -820,6 +824,53 @@ Apply item-level discount.
 ```
 
 **Validations:** Same as order-level discount.
+
+### PATCH `/api/orders/:id/items/:itemId/service-run`
+Move one row to another service run — which wave of the meal the dish leaves
+the kitchen in. Owner, manager, cashier, or waiter; a waiter only on their own
+order.
+
+**Request:**
+```json
+{ "service_run": 2 }
+```
+
+**Validations:** `service_run` is a whole number from 1 to 9. Rejected on a
+completed or cancelled order, and on a row that is cancelled, voided, or a void
+adjustment. No money moves, so no manager PIN is asked for.
+
+`kot_batch` is deliberately untouched: a row already on a printed ticket still
+moves, nothing is re-sent, and the kitchen's copy is simply out of date. Runs
+are labels, not gates — what is pending stays pending whatever run it is on.
+
+### PUT `/api/orders/:id/menu-groups/:groupId/courses/:courseId`
+Fill in, swap, or clear one course of a fixed menu already on the check. Owner,
+manager, cashier, or waiter; a waiter only on their own order.
+
+**Request:**
+```json
+{ "product_ids": ["prod-steak"] }
+```
+
+`product_ids` is what the course holds afterwards, not what to do to it: an
+empty list clears it, a different dish swaps it, one more adds. Replaying the
+same list changes nothing, so a retry after a lost response cannot double a
+dish. Prices come from the menu's own surcharges — a price sent by the client is
+ignored, as everywhere else.
+
+Rows written here are born with `kot_batch` NULL, so they go out on the next
+round on their own. Nothing is printed by this endpoint.
+
+**Validations:** the menu group exists on this order and its package row is
+live (`404`); the course is still on that menu (`409` `course_no_longer_exists`);
+at most `max_choices` dishes, each active and allowed by the course (`400`).
+Rejected on a completed or cancelled order (`400`) and on a paid or partially
+paid one (`409`).
+
+A dish the kitchen has already started returns `409` with
+`code: "course_in_progress"` and the `item_id` holding it up, and writes
+nothing: taking that row off the check is the cancel endpoint's business, with
+the manager PIN and void adjustment it already enforces.
 
 ---
 

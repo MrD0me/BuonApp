@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
@@ -10,7 +10,11 @@ import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
 import type { Addon, Category, Product, Table, Bill, Order, CartItem, FixedMenuSelection } from '@/lib/types';
-import { isFixedMenu } from '@/lib/fixed-menu';
+import {
+  isFixedMenu, menuGroupsOfOrder, menuLinesOfCart, menuLinesOfOrder, openSlotsForProduct,
+  type OpenSlot,
+} from '@/lib/fixed-menu';
+import AttachToMenuModal from '@/components/pos/AttachToMenuModal';
 import { cartItemToPayload } from '@/lib/cart-payload';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -98,6 +102,9 @@ export default function POSPage() {
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [menuProduct, setMenuProduct] = useState<Product | null>(null);
+  // A dish that could go inside a menu, waiting for the floor to say whether
+  // it does. Null whenever there is nothing to ask.
+  const [attachProduct, setAttachProduct] = useState<{ product: Product; slots: OpenSlot[] } | null>(null);
   const [editingMenuItem, setEditingMenuItem] = useState<CartItem | null>(null);
   // The last set of choices, so "one more like it" is a tap rather than
   // another pass through every course.
@@ -395,6 +402,13 @@ export default function POSPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
 
+  // Menus with room left, wherever they are: still in the cart, or already on
+  // the check of an open table the floor is adding to.
+  const openMenuLines = useMemo(() => [
+    ...menuLinesOfCart(cart.items),
+    ...menuLinesOfOrder(menuGroupsOfOrder(pendingOrder?.items || [], products)),
+  ], [cart.items, pendingOrder, products]);
+
   const handleProductClick = (product: Product) => {
     // A fixed menu is not ordered, it is composed: the window that opens asks
     // for a dish per course and writes them as real rows.
@@ -402,8 +416,46 @@ export default function POSPage() {
       setMenuProduct(product);
       return;
     }
+
+    // The table took two menus and this dish fits a course still open on one
+    // of them. Asking now is the only moment anyone can answer it: at the
+    // till, with two guests on the menu and a third who ordered the same
+    // dish, nothing in the check says which was inside. With no open menus
+    // this list is empty and the flow below is the one it has always been.
+    const slots = openSlotsForProduct(product, openMenuLines);
+    if (slots.length > 0) {
+      setAttachProduct({ product, slots });
+      return;
+    }
+
     // Always open modal so user can add notes and adjust quantity
     setAddonProduct(product);
+  };
+
+  /** Inside the menu: the dish becomes one of its choices, priced by it. */
+  const handleAttachToMenu = async (slot: OpenSlot) => {
+    const chosen = attachProduct;
+    if (!chosen) return;
+    setAttachProduct(null);
+
+    if (slot.target.kind === 'cart') {
+      cart.attachToMenu(slot.target.cartItemId, slot.course.id, chosen.product.id);
+      return;
+    }
+
+    // A menu already sent: the backend prices it and the row goes out on the
+    // next round by itself.
+    if (!pendingOrder) return;
+    try {
+      await api.put(
+        `/orders/${pendingOrder.id}/menu-groups/${slot.target.groupId}/courses/${slot.course.id}`,
+        { product_ids: [...slot.taken, chosen.product.id] },
+      );
+      const { data } = await api.get(`/orders/${pendingOrder.id}`);
+      setPendingOrder(data.order);
+    } catch {
+      toast.error(t('menuAttachFailed'));
+    }
   };
 
   const handleMenuAdd = (menu: Product, selection: FixedMenuSelection, instructions: string) => {
@@ -1076,6 +1128,23 @@ export default function POSPage() {
           onAdd={handleMenuAdd}
           onAddAnother={(selection, instructions) => handleMenuAddAnother(menuProduct, selection, instructions)}
           onClose={() => setMenuProduct(null)}
+        />
+      )}
+
+      {/* Asked only when the dish genuinely fits a course with room left, so a
+          house with no set menus never meets it. "On its own" is always one
+          of the answers. */}
+      {attachProduct && (
+        <AttachToMenuModal
+          product={attachProduct.product}
+          slots={attachProduct.slots}
+          onAttach={handleAttachToMenu}
+          onSeparate={() => {
+            const chosen = attachProduct.product;
+            setAttachProduct(null);
+            setAddonProduct(chosen);
+          }}
+          onClose={() => setAttachProduct(null)}
         />
       )}
 

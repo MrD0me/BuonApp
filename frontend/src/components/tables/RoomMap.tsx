@@ -5,6 +5,7 @@ import type { Room, Table, Order } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { parseDbTimestamp } from '@/lib/utils';
+import { isPendingKot } from '@/lib/kot';
 import { Ltr } from '@/components/layout/Ltr';
 import { CircleDollarSign, Flame, Link2 } from 'lucide-react';
 
@@ -69,9 +70,7 @@ function TableTile({
   const elapsed = order ? minutesSince(order.created_at) : null;
   // Rows never sent to the kitchen are what the floor most needs to see at a
   // glance; the same `kot_batch IS NULL` the ticket printer uses.
-  const pendingKot = (order?.items || []).some(
-    (item) => item.kot_batch == null && item.status !== 'cancelled' && item.status !== 'voided',
-  );
+  const pendingKot = (order?.items || []).some(isPendingKot);
   // A row of an off-menu dish that nobody has priced yet. Worth the same glance
   // as an unsent course: the bill cannot be closed honestly until it is filled.
   const unpriced = (order?.items || []).some(

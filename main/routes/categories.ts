@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, generateShortId } from '../db';
 import { requireRole } from '../middleware/security';
+import { DEFAULT_SERVICE_RUN, normalizeServiceRun } from '../services/service-runs';
 
 const router = Router();
 const categoryWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
@@ -141,7 +142,7 @@ router.get('/:id', (req: Request, res: Response) => {
 
 function createCategory(req: Request, res: Response) {
   try {
-    const { name, description, parent_id, sort_order, is_active, color, icon } = req.body;
+    const { name, description, parent_id, sort_order, is_active, color, icon, default_service_run } = req.body;
 
     const categoryName = normalizeCategoryName(name);
     if (!categoryName) {
@@ -157,8 +158,8 @@ function createCategory(req: Request, res: Response) {
     const slug = slugForName(categoryName);
     const id = generateShortId('categories');
     db.prepare(`
-      INSERT INTO categories (id, name, slug, description, parent_id, sort_order, is_active, color, icon, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO categories (id, name, slug, description, parent_id, sort_order, is_active, color, icon, default_service_run, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       categoryName,
@@ -169,6 +170,10 @@ function createCategory(req: Request, res: Response) {
       is_active !== false ? 1 : 0,
       normalizeOptionalString(color),
       normalizeOptionalString(icon),
+      // Which wave dishes of this category go out in. Out of range falls back
+      // to the first: a category is not the place to fail an edit over a hint
+      // to the kitchen.
+      normalizeServiceRun(default_service_run) ?? DEFAULT_SERVICE_RUN,
       now(),
       now()
     );
@@ -185,7 +190,7 @@ router.post('/', categoryWriteRateLimit, requireRole('owner', 'manager'), create
 
 function updateCategory(req: Request, res: Response) {
   try {
-    const { name, description, parent_id, sort_order, is_active, color, icon } = req.body;
+    const { name, description, parent_id, sort_order, is_active, color, icon, default_service_run } = req.body;
     const db = getDatabase();
     const categoryId = String(req.params.id);
 
@@ -219,6 +224,7 @@ function updateCategory(req: Request, res: Response) {
       is_active = CASE WHEN @has_is_active = 1 THEN @is_active ELSE is_active END,
       color = CASE WHEN @has_color = 1 THEN @color ELSE color END,
       icon = CASE WHEN @has_icon = 1 THEN @icon ELSE icon END,
+      default_service_run = CASE WHEN @has_default_service_run = 1 THEN @default_service_run ELSE default_service_run END,
       updated_at = @updated_at
       WHERE id = @id
     `).run({
@@ -237,6 +243,8 @@ function updateCategory(req: Request, res: Response) {
       color: normalizeOptionalString(color),
       has_icon: hasOwn(req.body, 'icon') ? 1 : 0,
       icon: normalizeOptionalString(icon),
+      has_default_service_run: hasOwn(req.body, 'default_service_run') ? 1 : 0,
+      default_service_run: normalizeServiceRun(default_service_run) ?? DEFAULT_SERVICE_RUN,
       updated_at: now(),
       id: categoryId,
     });

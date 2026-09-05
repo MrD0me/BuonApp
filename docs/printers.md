@@ -28,6 +28,16 @@ KOT printing can be disabled for the business. When it is disabled, neither auto
 
 Tickets lead with the table in the largest type the paper allows, then the round number, then a single condensed line carrying the send time, the covers, and the station. Dishes follow with the quantity in its own column and the name in double height; add-ons are marked `+`, item notes `>>` and printed in bold. A thin rule separates one dish from the next, and where a station cooks more than one category the dishes are grouped under a labelled rule per category. The ticket closes with a line and piece count plus the order number, so the pass can check nothing is missing and the ticket can still be traced back to its order.
 
+### Service runs
+
+A run says when a dish should leave the kitchen — the starters, then the pasta, then the mains — which is a different question from the round, and the round only says what has already been sent. A table that orders everything at once still eats in three goes, and one guest's pasta comes out with everyone else's starters because they are not having one.
+
+Each dish takes its run from its category (**Menu → Categories → Goes out in**), so on an ordinary table nobody touches it. The floor moves a single row from the cart or the order panel, before or after the ticket has printed; moving a row already on paper reprints nothing, and the chip goes quiet to say the kitchen's copy is out of date.
+
+Where a ticket spans more than one run it is split under a heavier `#` rule per run, in numerical order, with the category rules nested inside each one. A house that never touches a run has everything on the first, and its ticket is byte-for-byte the one it printed before runs existed.
+
+Runs are labels, not gates: **Send to kitchen** still sends everything waiting, whatever run it is on. There is no way to send one run and hold the rest — that would be a second thing to keep in step with the round, and a run left in the queue after service.
+
 ### Receipt language
 
 Receipts render their labels from the store's UI language setting, in English or Italian; any other language falls back to English rather than printing a half-translated bill. The two core templates keep their own wording for the number line (`Invoice #` on classic, `Bill #` on compact).

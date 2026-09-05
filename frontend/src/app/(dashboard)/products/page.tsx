@@ -15,6 +15,7 @@ import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
 import { nameToColor } from '@/lib/image-utils';
+import { DEFAULT_SERVICE_RUN, SERVICE_RUNS, serviceRunOf } from '@/lib/service-runs';
 import { useTranslations, type AppConfig } from 'use-intl';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
@@ -85,7 +86,7 @@ export default function ProductsPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const { confirm, ConfirmDialog } = useConfirm();
   const [editingAddonGroup, setEditingAddonGroup] = useState<AddonGroup | null>(null);
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true });
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true, default_service_run: DEFAULT_SERVICE_RUN });
   const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
   const [showAddonModal, setShowAddonModal] = useState(false);
 
@@ -324,21 +325,21 @@ export default function ProductsPage() {
   };
 
   const resetCategoryForm = () => {
-    setCategoryForm({ name: '', description: '', color: '', is_active: true });
+    setCategoryForm({ name: '', description: '', color: '', is_active: true, default_service_run: DEFAULT_SERVICE_RUN });
     setEditingCategory(null);
     setShowForm(false);
   };
 
   const openEditCategory = (cat: Category) => {
     setEditingCategory(cat);
-    setCategoryForm({ name: cat.name, description: cat.description || '', color: cat.color || '', is_active: cat.is_active });
+    setCategoryForm({ name: cat.name, description: cat.description || '', color: cat.color || '', is_active: cat.is_active, default_service_run: serviceRunOf({ service_run: cat.default_service_run }) });
     setShowForm(true);
   };
 
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = { name: categoryForm.name, description: categoryForm.description || null, color: categoryForm.color || null, is_active: categoryForm.is_active };
+      const payload = { name: categoryForm.name, description: categoryForm.description || null, color: categoryForm.color || null, is_active: categoryForm.is_active, default_service_run: categoryForm.default_service_run };
       if (editingCategory) {
         await api.put(`/categories/${editingCategory.id}`, payload);
         toast.success(t('categoryUpdated'));
@@ -991,6 +992,23 @@ export default function ProductsPage() {
                       ))}
                     </div>
                   </div>
+                  {/* Only a house that sends tickets to a kitchen has waves to
+                      put a category in. */}
+                  {isRestaurant && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t('categoryDefaultServiceRun')}</label>
+                      <select
+                        value={categoryForm.default_service_run}
+                        onChange={(e) => setCategoryForm({ ...categoryForm, default_service_run: Number(e.target.value) })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                      >
+                        {SERVICE_RUNS.map((run) => (
+                          <option key={run} value={run}>{tPos('serviceRunShort', { n: run })}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">{t('categoryDefaultServiceRunHint')}</p>
+                    </div>
+                  )}
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={categoryForm.is_active} onChange={(e) => setCategoryForm({ ...categoryForm, is_active: e.target.checked })} className="rounded border-gray-300 text-brand focus:ring-brand" />
                     <span className="text-sm text-gray-700">{t('fieldActive')}</span>

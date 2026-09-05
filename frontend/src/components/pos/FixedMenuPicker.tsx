@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { FixedMenuSelection, Product } from '@/lib/types';
-import { courseChoices, courseSurcharge, selectionIsComplete, selectionSurcharge } from '@/lib/fixed-menu';
+import { courseChoices, courseSurcharge, missingRequiredCourses, selectionIsValid, selectionSurcharge } from '@/lib/fixed-menu';
 
 /**
  * Choosing a fixed menu, course by course (docs/coperto-e-menu-fisso.md).
@@ -18,6 +18,12 @@ import { courseChoices, courseSurcharge, selectionIsComplete, selectionSurcharge
  *
  * The price shown is what the guest will be told. What the check actually says
  * is worked out again by the backend from its own catalogue.
+ *
+ * An unfinished menu is allowed out of here. The table orders the starters and
+ * decides the main over them, and refusing the menu until every course is
+ * filled meant the floor could not take the order it was being given. What is
+ * missing is said in amber and asked for again on the check; it never stops
+ * the order.
  */
 interface Props {
   menu: Product;
@@ -26,14 +32,16 @@ interface Props {
   onClose: () => void;
   initialSelection?: FixedMenuSelection;
   initialInstructions?: string;
-  mode?: 'add' | 'edit';
+  mode?: 'add' | 'edit' | 'fill';
+  /** Show one course only — the empty slot the floor tapped on the check. */
+  restrictToCourseId?: string;
   /** Offered after a menu is added, to repeat the same choices for the next guest. */
   onAddAnother?: (selection: FixedMenuSelection, specialInstructions: string) => void;
 }
 
 export default function FixedMenuPicker({
   menu, products, onAdd, onClose,
-  initialSelection = [], initialInstructions = '', mode = 'add', onAddAnother,
+  initialSelection = [], initialInstructions = '', mode = 'add', onAddAnother, restrictToCourseId,
 }: Props) {
   const t = useTranslations('pos');
   const fmt = useFormatCurrency();
@@ -41,13 +49,17 @@ export default function FixedMenuPicker({
   const [instructions, setInstructions] = useState(initialInstructions);
 
   const courses = useMemo(
-    () => [...(menu.courses || [])].sort((left, right) => left.sort_order - right.sort_order),
-    [menu.courses],
+    () => [...(menu.courses || [])]
+      .sort((left, right) => left.sort_order - right.sort_order)
+      .filter((course) => !restrictToCourseId || course.id === restrictToCourseId),
+    [menu.courses, restrictToCourseId],
   );
 
   const surcharge = selectionSurcharge(menu, selection);
   const lineTotal = (Number(menu.price) || 0) + surcharge;
-  const isValid = selectionIsComplete(menu, selection);
+  // Only the ceiling blocks. An empty course is an order still being taken.
+  const isValid = selectionIsValid(menu, selection);
+  const missing = missingRequiredCourses(menu, selection);
 
   const pickedFor = (courseId: string) => selection.filter((choice) => choice.course_id === courseId);
 
@@ -140,7 +152,7 @@ export default function FixedMenuPicker({
                 )}
 
                 {course.is_required && picked.length === 0 && (
-                  <p className="text-xs text-red-500 mt-1">{t('menuCourseRequired', { course: course.label })}</p>
+                  <p className="text-xs text-amber-600 mt-1">{t('menuCourseLater', { course: course.label })}</p>
                 )}
               </div>
             );
@@ -161,15 +173,23 @@ export default function FixedMenuPicker({
         </div>
 
         <div className="p-5 border-t border-gray-100 space-y-2">
+          {/* Said once, plainly, next to the button that takes the order
+              anyway. A dialog here would be a dialog every evening in a house
+              that sells the menu without dessert. */}
+          {missing.length > 0 && (
+            <p className="text-xs text-amber-600 text-center">
+              {t('menuMissingCourses', { courses: missing.map((course) => course.label).join(', ') })}
+            </p>
+          )}
           {surcharge > 0 && (
             <p className="text-xs text-gray-500 text-center">
               {t('menuSurchargeNote', { base: fmt(Number(menu.price)), extra: fmt(surcharge) })}
             </p>
           )}
           <Button onClick={() => onAdd(menu, selection, instructions)} disabled={!isValid} className="w-full" size="lg">
-            {mode === 'edit'
-              ? t('saveItemChanges', { total: fmt(lineTotal) })
-              : t('addToCart', { total: fmt(lineTotal) })}
+            {mode === 'add'
+              ? t('addToCart', { total: fmt(lineTotal) })
+              : t('saveItemChanges', { total: fmt(lineTotal) })}
           </Button>
           {/* Six guests taking the same menu is six menus, so repeating the
               last set of choices has to be one tap rather than one more pass
