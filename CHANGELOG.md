@@ -4,6 +4,125 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [5.0.0] - 2026-09-05
+
+The interface was rebuilt around **where things live**, not around how they
+look. The screen that used to be the till is called *Order* and no longer takes
+money: the till here is the machine standing next to the computer, so calling a
+screen after it was a lie about the room. A bill is drawn up, cashed, discounted
+and reprinted where the order is — at the table in the floor plan, or in the
+service day for takeaway and delivery — and an order is closed from one place
+only.
+
+Two things a table service needs arrived: the **cover charge**, which had a
+counter but no price, and the **fixed menu**, which the catalogue could not
+describe at all. One thing left: **splitting a check between guests**, which was
+never a screen so much as a second shape for the whole billing side.
+
+### Added
+
+- **The cover charge** (migrations v88-v90). Guests were counted and charged
+  nothing. A price per cover is set once in Settings, and a dine-in order
+  carries it by head count: on the order, on the bill, on the preconto that goes
+  to the table. Changing the covers on an open order re-prices it, and the
+  printed line spells out `Cover 4 x 2,00` only when that multiplication really
+  gives the amount beside it — a line that does not check out in the guest's
+  hand is worse than no line.
+- **The fixed menu** (migration v92). A set menu at one price — starter, pasta,
+  main, fruit or dessert, water, sometimes the wine, cover included. It is a
+  product with a tick, so it inherits the order row, the bill, the archive and
+  the reports; what hangs off it are its courses. Choosing one writes **real
+  rows**, one per dish, because the kitchen ticket sections dishes by product
+  category and a commercial package has no category to be sectioned by. The
+  kitchen never sees the package row; the bill indents the dishes under the
+  price and shows a surcharge only where there is one. A menu that includes the
+  cover takes its guest off the cover charge, never below zero and never above
+  the number of people seated, and cancelling any row of a menu takes the whole
+  menu off the check — half a menu is not something anyone ordered.
+- **A price can be written on the row, not only discounted** (migrations v84,
+  v87). An open-price item is priced where the row is, and a row nobody has
+  priced yet is flagged as such: it used to be recognised by its price being
+  zero, which made an intentional zero impossible to confirm.
+- **The order list is the service day.** An evening that runs past midnight is
+  one evening, so the list is titled for the day it shows rather than being a
+  ledger of everything ever taken, and the archive says what was actually
+  ordered instead of only what it cost.
+- **Only the order types the house actually takes.** A restaurant that does no
+  takeaway does not see the takeaway button.
+
+### Changed
+
+- **The till screen is called Order, and takes no money.** It composes and sends
+  orders, and that is all. Cashing, discounts, voids, prices and the preconto
+  moved to where the order lives — the table in the floor plan, or the service
+  day for takeaway and delivery. The order panel behind all of them is now one
+  component instead of two drifting copies, and `/pos?append=<orderId>` is how
+  you go back for the catalogue when adding rows.
+- **The preconto prints without going through a payment window.** The floor
+  takes it to the table long before anybody pays; until now the only way to get
+  one was to press Checkout.
+- **Cashing is pressing a button.** The payment method was already a button that
+  filled in the amount, but it looked like a label glued to a box, so amounts
+  that a single tap would have filled were being typed by hand. The discount left
+  that window: a discount applied after the paper is printed means the sheet in
+  the guest's hand does not say what they pay.
+- **The sidebar carries the six screens a service walks through.** It had eleven
+  entries and one of them led somewhere else entirely; the kitchen display moved
+  inside Settings, where it also gained the entry point it never had, and Staff
+  moved there too — `/staff` still resolves so a saved link does not fall into a
+  hole.
+- **The room takes you where the work is.** An order is started from a free
+  table without going through a picker, and sending one returns you to the floor
+  instead of leaving you on the catalogue.
+- **The words match the machine.** What this program prints is a bill, a
+  *preconto* — never a receipt. The screens say so.
+
+### Removed
+
+- **Splitting a check between guests** (migration v91). It was one screen with a
+  second billing shape behind it: an order stopped being a single bill, every
+  amount had to be apportioned across the shares, the cover had to be divided per
+  head instead of per plate, and six order routes carried a guard against being
+  edited once a check had been split. What the floor takes to the table is a
+  preconto; which of the party pays what is settled at the till, on paper.
+
+  Migration v91 does not leave the rows behind. Every group already divided is
+  put back into a single bill — the order's own totals, the sum of whatever the
+  shares had taken, their payment lines concatenated, and `print_logs`,
+  `loyalty_ledger` and `payment_transaction_refs` re-pointed at the survivor —
+  and only then do `bill_items`, the `split_group_id` and `split_label` columns,
+  and the `split_checks_enabled` setting go. Takings do not move.
+
+  Paying one bill with several methods, and pulling two joined tables apart, are
+  different features and both stay.
+
+### Fixed
+
+- **The bill followed the order, including dishes added later.** A hand-rolled
+  update wrote the total and left the subtotal at whatever it was when the bill
+  was first drawn up, so a reprint could read `Subtotale 90,00 … TOTALE 118,00`
+  — two numbers that do not add up on the paper in the guest's hand.
+- **A paid table stopped staying occupied**, and rows left pending could be added
+  again.
+- **A busy service no longer throws away a waiter's course.** The append route is
+  rate limited at sixty writes a minute, and its `429` was being read as "the
+  order refused these rows for good": they were dropped, with a message saying
+  the order had been closed. A wait is not a refusal.
+- **The browser's receipt tells a gift from an unpriced row.** A row worth
+  nothing because it was given away says so; a row whose price is simply not set
+  yet keeps its zero, so the omission stays visible. The thermal path had drawn
+  that line since prices went on rows; printing the same bill over WebUSB lost
+  it.
+- **Receipt columns are sized on what the row actually prints.** A course inside
+  a fixed menu prints no rate and, when the package covers it, no amount at all,
+  but both were being measured — and the width came off the name column, which
+  on 58 mm paper clipped the dish beside them out of existence.
+- **The cover line says the covers actually charged.** It divided the amount by
+  the number of guests, so a table of four with three menus that include the
+  cover printed `4 x 0,50`, a price nobody had set. It now starts from the
+  configured price and works out how many covers were charged, counting in cents
+  so the division is exact.
+
 ## [4.1.1] - 2026-08-28
 
 Quitting the app never actually finished. Every shutdown — from the menu, the

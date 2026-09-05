@@ -25,13 +25,13 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [printers.md](printers.md) | ESC/POS printer configuration, network/USB/OS-queue/WebUSB connection types, kitchen stations, kitchen-ticket layout, code pages, and troubleshooting. | CURRENT |
 | [google-drive-setup.md](google-drive-setup.md) | Maintainer setup for the optional Google Drive backup OAuth client. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
+| [order-flow-and-navigation.md](order-flow-and-navigation.md) | Riorganizzazione dell'interfaccia prima del rifacimento grafico: navigazione ridotta alle schermate del servizio, pannello ordine condiviso, giornata di servizio e archivio, prezzo di riga modificabile, e la divisione del conto tolta. | CURRENT |
+| [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md) | Prezzo del coperto e menu completo a prezzo fisso: perché i gruppi extra non reggono (la comanda va in sezioni per categoria) e come il menu scrive righe vere nell'ordine. | CURRENT |
 
 ### Active design
 
-| Document | Description | Scope |
-| --- | --- | --- |
-| [order-flow-and-navigation.md](order-flow-and-navigation.md) | Riorganizzazione dell'interfaccia prima del rifacimento grafico: navigazione a cinque voci, pannello ordine condiviso nella scheda del tavolo, giornata di servizio e archivio, prezzo di riga modificabile. | ACTIVE DESIGN |
-| [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md) | Prezzo del coperto e menu completo a prezzo fisso: perché i gruppi extra non reggono (la comanda va in sezioni per categoria) e come il menu scrive righe vere nell'ordine. | CURRENT |
+*Nothing in flight. The two designs that lived here — the interface reorganisation and the
+cover charge with fixed menus — shipped in 5.0.0 and moved up to the table above.*
 
 ### Historical records
 

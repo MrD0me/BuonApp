@@ -2,7 +2,7 @@
 
 BuonApp is an open-source, offline-first Electron desktop POS for restaurants with table service, forked from FloCafe. `main/` contains the Electron main process, Express API (`:3001`), standalone KDS server (`:3002`), Server App for tableside handhelds (`:3003`), SQLite database, printing, and background services. `frontend/` is a statically exported Next.js 16 and React 19 application. `tests/` contains backend, integration, and release test suites.
 
-The domains this fork added on top of upstream — service days, rooms and the floor map, reservations, joined tables, saved layouts, and kitchen-ticket rounds — keep their logic in `main/services/` and use `main/routes/` only for authorization and HTTP translation. Do not reintroduce an import cycle between the two.
+The domains this fork added on top of upstream — service days, rooms and the floor map, reservations, joined tables, saved layouts, kitchen-ticket rounds, the cover charge, and fixed menus — keep their logic in `main/services/` and use `main/routes/` only for authorization and HTTP translation. Do not reintroduce an import cycle between the two.
 
 ## Progressive disclosure
 
@@ -43,10 +43,11 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 1. **Offline-first operation:** Core POS operation (orders, billing, tables and service days, kitchen tickets, printing) must function without internet connectivity. This fork carries no cloud bridge and no usage telemetry — they were removed, along with the settings that armed them (migration v80). The only things that may reach the network are features the owner explicitly configures (Google Drive backup, WhatsApp) and the update check against this fork's own GitHub releases; all of them must fail gracefully when offline. Do not reintroduce an outbound channel to a vendor.
 2. **Data safety:** Existing customer data must survive upgrades. Never reset, truncate, or drop user databases as a shortcut for migration design.
 3. **Architecture boundaries:** UI language and tenant regional settings are separate, decoupled domains. This fork computes no taxes: prices are what the guest pays, the bill is a preconto, and the fiscal receipt comes from the till beside it. Do not reintroduce a taxation engine, country tax packs, or per-item tax fields.
-4. **Business timestamps:** Persisted timestamps follow BuonApp's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.
-5. **Backend authority:** Security-critical and payment calculations remain backend-authoritative.
-6. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
-7. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
+4. **One order, one bill:** Splitting a check between guests was removed in 5.0.0 (migration v91), columns and all. An order has one bill; who among the party pays what is settled at the till. Paying one bill with several methods, and pulling joined tables apart, are different features and stay. Do not reintroduce per-guest shares of a check.
+5. **Business timestamps:** Persisted timestamps follow BuonApp's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.
+6. **Backend authority:** Security-critical and payment calculations remain backend-authoritative.
+7. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
+8. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
 
 ## Working conventions & safety rules
 
@@ -88,8 +89,9 @@ Select checks that cover the changed subsystem:
 | Backend / API | `npm run lint`, `npm run build`, and focused test suites |
 | Database migrations | Fresh database test and upgrade-path migration test |
 | Tables / service days / reservations | `npm run test:table-crud`, `test:rooms-map`, `test:reservations`, `test:reservation-sheet`, `test:table-merge-layouts`, `test:service-days` |
+| Cover charge / fixed menus | `npm run test:cover-charge`, `test:fixed-menu`, plus `test:printer` when the printed line changes |
 | Printing / kitchen tickets | `npm run test:printer`, `test:kot-batch`, `test:receipt-printing` |
 | Auth / Security | Relevant focused test suite plus broader integration tests |
 | Packaging / Releases | Target platform build commands and release checks |
 
-Run `npm test` when a full validation pass is requested, before releases, or when changes touch multiple core subsystems. Note that the six floor-management suites in the table above are **not** part of the `npm test` chain and have to be run explicitly.
+Run `npm test` when a full validation pass is requested, before releases, or when changes touch multiple core subsystems; every suite named in the table above is part of that chain. The Playwright end-to-end specs are not: they run from `frontend/` with `npx playwright test`, and in CI only on pull requests.

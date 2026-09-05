@@ -22,6 +22,8 @@
       <li>Service days with an explicit close and a printed end-of-day report</li>
       <li>Reservations for the service in progress, assigned straight onto the map</li>
       <li>Kitchen tickets printed by round and routed to per-category stations</li>
+      <li>A cover charge carried by head count onto the bill</li>
+      <li>Set menus at one price, written into the order as real dishes</li>
       <li>Thermal ESC/POS printing over USB, local network, and OS print queues</li>
       <li>Tableside ordering from handhelds on the same local network</li>
       <li>An optional Kitchen Display System with real-time updates</li>
@@ -44,6 +46,16 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="5.0.0" date="2026-09-05">
+      <description>
+        <p>The interface was rebuilt around **where things live**, not around how they look. The screen that used to be the till is called *Order* and no longer takes money: the till here is the machine standing next to the computer, so calling a screen after it was a lie about the room. A bill is drawn up, cashed, discounted and reprinted where the order is — at the table in the floor plan, or in the service day for takeaway and delivery — and an order is closed from one place only. Two things a table service needs arrived: the **cover charge**, which had a counter but no price, and the **fixed menu**, which the catalogue could not describe at all. One thing left: **splitting a check between guests**, which was never a screen so much as a second shape for the whole billing side.</p>
+      </description>
+    </release>
+    <release version="4.1.1" date="2026-08-28">
+      <description>
+        <p>Quitting the app never actually finished. Every shutdown — from the menu, the tray, or a signal — spent ten seconds waiting on connections that could not answer, then gave up partway through cleanup, before the database was closed. The process that stayed behind held Electron's single-instance lock, and the next launch quit on the spot without saying why.</p>
+      </description>
+    </release>
     <release version="4.1.0" date="2026-08-28">
       <description>
         <p>The taxation module is gone. This install never issued a fiscal document — the bill it prints is a preconto and the receipt comes from the till standing next to it — so an engine that resolved country rules, signed publisher packs, and apportioned tax evidence across split checks in integer minor units was weight carried for nothing. Roughly 16,000 lines lighter, with no printed total changed.</p>
