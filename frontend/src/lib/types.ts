@@ -110,8 +110,19 @@ export interface FixedMenuCourse {
   excluded_product_ids: string[];
 }
 
-/** What the guest picked, course by course. */
-export type FixedMenuSelection = { course_id: string; product_id: string }[];
+/**
+ * What the guest picked, course by course.
+ *
+ * The note and the wave hang off the dish, not off the menu: the menu's own
+ * row never reaches a kitchen ticket, so anything written against it was
+ * read by nobody.
+ */
+export type FixedMenuSelection = {
+  course_id: string;
+  product_id: string;
+  note?: string;
+  service_run?: number;
+}[];
 
 export interface AddonGroup {
   id: string;

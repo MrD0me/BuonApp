@@ -23,6 +23,37 @@ export function serviceRunOf(item: { service_run?: number | null } | null | unde
 }
 
 /**
+ * The run a dish goes out in when nobody has said otherwise — the mirror of
+ * `resolveServiceRun` in `main/services/service-runs.ts`.
+ *
+ * The cart has to work this out for itself. A line carries a run only once
+ * the floor has moved it; until then the backend reads it off the category
+ * when the row is written, and a chip that says "1ª" over a main that will
+ * leave in the third wave is the interface telling the floor something that
+ * is not true.
+ */
+export function serviceRunForProduct(
+  product: { category_id?: string | null } | null | undefined,
+  categories: { id: string; default_service_run?: number }[],
+): number {
+  if (!product?.category_id) return DEFAULT_SERVICE_RUN;
+  const category = categories.find((entry) => String(entry.id) === String(product.category_id));
+  const run = Number(category?.default_service_run);
+  if (!Number.isInteger(run) || run < 1 || run > MAX_SERVICE_RUNS) return DEFAULT_SERVICE_RUN;
+  return run;
+}
+
+/** What a cart line will go out on: the floor's choice, else its category. */
+export function serviceRunOfCartLine(
+  item: { service_run?: number | null; product?: { category_id?: string | null } },
+  categories: { id: string; default_service_run?: number }[],
+): number {
+  const chosen = Number(item?.service_run);
+  if (Number.isInteger(chosen) && chosen >= 1 && chosen <= MAX_SERVICE_RUNS) return chosen;
+  return serviceRunForProduct(item?.product, categories);
+}
+
+/**
  * Whether a run chip is worth showing at all.
  *
  * A house that never touches a run has everything on the first one, and a

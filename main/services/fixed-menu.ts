@@ -48,10 +48,19 @@ export interface FixedMenuCourse {
   excluded_product_ids: string[];
 }
 
-/** One dish the guest picked, as the client sends it. */
+/**
+ * One dish the guest picked, as the client sends it.
+ *
+ * The note and the run belong to the dish, not to the menu: a menu's package
+ * row never reaches a station, so a note written against the menu as a whole
+ * was read by nobody. And a primo inside a menu leaves with the primi, which
+ * is a fact about that dish and not about the menu it was chosen from.
+ */
 export interface FixedMenuChoiceInput {
   course_id: string;
   product_id: string;
+  note?: string | null;
+  service_run?: unknown;
 }
 
 /**
@@ -87,6 +96,19 @@ const TERMINAL_STATUSES = ['cancelled', 'voided', 'void_adjustment'];
 const MAX_COURSES_PER_MENU = 20;
 const MAX_CHOICES_PER_COURSE = 10;
 const MAX_MENUS_PER_LINE = 20;
+/** Same ceiling the ordinary item note is held to by default. */
+const MAX_CHOICE_NOTE = 100;
+
+/**
+ * A note as it goes on a row: trimmed, capped, and empty means none.
+ *
+ * Cut rather than refused. The window already stops at the same length, and
+ * an order is the wrong thing to fail over a note two characters too long.
+ */
+function choiceNote(value: unknown): string | null {
+  const note = String(value ?? '').trim().slice(0, MAX_CHOICE_NOTE);
+  return note || null;
+}
 
 function invalid(message: string): Error {
   return Object.assign(new Error(message), { statusCode: 400 });
@@ -381,7 +403,12 @@ function buildMenuRows(
   if (courses.length === 0) throw invalid(`${menu.name} has no courses configured yet`);
 
   const choices: FixedMenuChoiceInput[] = Array.isArray(selection)
-    ? selection.map((entry: any) => ({ course_id: String(entry?.course_id ?? ''), product_id: String(entry?.product_id ?? '') }))
+    ? selection.map((entry: any) => ({
+      course_id: String(entry?.course_id ?? ''),
+      product_id: String(entry?.product_id ?? ''),
+      note: choiceNote(entry?.note),
+      service_run: entry?.service_run,
+    }))
     : [];
 
   const courseIds = new Set(courses.map((course) => course.id));
@@ -389,9 +416,12 @@ function buildMenuRows(
     if (!courseIds.has(choice.course_id)) throw invalid(`${menu.name}: a choice refers to a course that is not on this menu`);
   }
 
-  // The package carries the price; the dishes carry the surcharge or nothing.
+  // The package carries the price; the dishes carry the surcharge or nothing,
+  // and each its own note — the package row is filtered out of every kitchen
+  // ticket, so a note written against the menu itself reached no cook.
   const rows: ExpandedOrderItem[] = [{
     ...base,
+    special_instructions: null,
     product_id: menu.id,
     quantity: 1,
     menu_group_id: null,
@@ -425,7 +455,7 @@ function buildMenuRows(
       const surcharge = course.surcharges.find((entry) => entry.product_id === dish.id)?.surcharge ?? 0;
       rows.push({
         product_id: dish.id,
-        special_instructions: null,
+        special_instructions: choice.note ?? null,
         variant_selection: null,
         modifier_selection: null,
         addons: undefined,
@@ -434,6 +464,7 @@ function buildMenuRows(
         menu_role: 'course',
         menu_course_id: course.id,
         unit_price_override: roundMoney(surcharge),
+        service_run: choice.service_run,
       });
     }
   }
@@ -501,6 +532,8 @@ interface MenuGroupRow {
   status: string;
   menu_role: string | null;
   menu_course_id: string | null;
+  special_instructions: string | null;
+  service_run: number | null;
 }
 
 export interface MenuCoursePlan {
@@ -533,7 +566,7 @@ export function planCourseFill(
   productIds: unknown,
 ): MenuCoursePlan {
   const rows = db.prepare(`
-    SELECT id, product_id, status, menu_role, menu_course_id
+    SELECT id, product_id, status, menu_role, menu_course_id, special_instructions, service_run
     FROM order_items WHERE order_id = ? AND menu_group_id = ? ORDER BY id
   `).all(orderId, menuGroupId) as MenuGroupRow[];
 
@@ -552,9 +585,19 @@ export function planCourseFill(
     });
   }
 
+  // Either bare ids or the full shape — the window sends a note and a run
+  // with each dish, the same as it does when the menu is first composed.
   if (!Array.isArray(productIds)) throw invalid('product_ids must be a list of dishes');
-  const wanted = productIds.map((entry: unknown) => String(entry ?? ''));
-  if (wanted.some((productId) => !productId)) throw invalid('product_ids must be a list of dishes');
+  const wanted = productIds.map((entry: any) => (
+    entry && typeof entry === 'object'
+      ? {
+        product_id: String(entry.product_id ?? ''),
+        note: choiceNote(entry.note),
+        service_run: entry.service_run,
+      }
+      : { product_id: String(entry ?? ''), note: null, service_run: undefined }
+  ));
+  if (wanted.some((dish) => !dish.product_id)) throw invalid('product_ids must be a list of dishes');
   if (wanted.length > course.max_choices) {
     throw invalid(`${menu.name}: ${course.label} allows at most ${course.max_choices} ${course.max_choices === 1 ? 'choice' : 'choices'}`);
   }
@@ -571,8 +614,17 @@ export function planCourseFill(
   // nothing and only the difference moves.
   const insert: ExpandedOrderItem[] = [];
   const spare = [...held];
-  for (const productId of wanted) {
-    const already = spare.findIndex((row) => row.product_id === productId);
+  for (const wantedDish of wanted) {
+    const { product_id: productId } = wantedDish;
+    // Matched on the note and the run as well as the dish, so correcting
+    // "no garlic" on a pending row rewrites it — and a row the kitchen has
+    // already taken is caught below rather than quietly edited underneath
+    // the cook.
+    const already = spare.findIndex((row) => (
+      row.product_id === productId
+      && (row.special_instructions || null) === (wantedDish.note || null)
+      && (wantedDish.service_run === undefined || Number(row.service_run) === Number(wantedDish.service_run))
+    ));
     if (already >= 0) {
       spare.splice(already, 1);
       continue;
@@ -586,7 +638,7 @@ export function planCourseFill(
 
     insert.push({
       product_id: dish.id,
-      special_instructions: null,
+      special_instructions: wantedDish.note ?? null,
       variant_selection: null,
       modifier_selection: null,
       addons: undefined,
@@ -595,6 +647,7 @@ export function planCourseFill(
       menu_role: 'course',
       menu_course_id: course.id,
       unit_price_override: roundMoney(course.surcharges.find((entry) => entry.product_id === dish.id)?.surcharge ?? 0),
+      service_run: wantedDish.service_run,
     });
   }
 

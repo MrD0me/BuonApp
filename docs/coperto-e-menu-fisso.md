@@ -1,7 +1,7 @@
 # Coperto e menu fisso
 
 **Stato:** CURRENT. Decisioni prese con l'utente il 2026-08-30, il menu fisso il 2026-08-31, il
-menu aperto e le uscite il 2026-09-05.
+menu aperto e le uscite il 2026-09-05, corretto dopo la prima sera in sala lo stesso giorno.
 **Fatto tutto**: il coperto con le migrazioni v88-v90, il menu fisso con la v92 (nata come v91,
 ha preso il numero dopo perché nel frattempo la v91 è servita a togliere la divisione del conto),
 le eccezioni per piatto con la v93, le uscite con la v94, il menu aperto con la v95.
@@ -275,6 +275,48 @@ singola riga con un tocco, prima e dopo l'invio.
   ordinava per `id`: un dolce scelto mezz'ora dopo ha un id più alto e sarebbe stampato in fondo
   al conto, rientrato e senza importo, sotto un piatto che non c'entra. Adesso ogni gruppo resta
   attaccato al suo pacchetto, sul conto e nel pannello (`menuAwareRowOrder`).
+
+### Corretto alla prima sera in sala
+
+Cinque cose trovate usandolo, di cui la prima mandava le comande sul tavolo
+sbagliato.
+
+- **Il tavolo cambiato non sganciava l'ordine.** Entrando da un tavolo con
+  "aggiungi articoli" il carrello punta a quell'ordine; cambiando tavolo in
+  Ordina si spostava solo l'etichetta, e lo schermo diceva tavolo 10 mentre
+  tutto quello che si mandava finiva sul conto del tavolo 2. Adesso l'ordine
+  di destinazione e' un valore **derivato**: vale finche' il carrello punta al
+  suo tavolo. Derivato e non tenuto in pari a mano perche' il selettore, il
+  ripristino di un ordine sospeso e il parametro `?append=` impostano tutti e
+  tre il tavolo, e uno dei tre si sarebbe dimenticato.
+- **La nota del menu non la leggeva nessuno.** Era una sola per tutto il menu
+  e finiva sulla riga del pacchetto, che ogni comanda filtra via. Adesso la
+  nota sta **sul singolo piatto scelto**, dentro la finestra del menu, e
+  arriva in cucina come quella di qualunque altra riga.
+- **L'uscita idem.** Nel carrello la targhetta stava sulla riga del menu, che
+  non e' un piatto e in cucina non ci va: adesso ogni piatto scelto ha la sua
+  accanto alla nota, e sulla riga di un menu la targhetta non compare piu'.
+- **La targhetta diceva sempre "1ª".** Il carrello non conosceva l'uscita
+  predefinita della categoria, quindi mostrava la prima su un secondo che
+  sarebbe uscito in terza: il backend faceva la cosa giusta e lo schermo
+  raccontava un'altra. `serviceRunForProduct` fa lato interfaccia lo stesso
+  conto che fa `resolveServiceRun` lato server. Nessun rischio di
+  sovrascrittura: se la sala sceglie vince la scelta, se non tocca niente
+  vince la categoria.
+- **Il menu si riapriva con le scelte di quello prima.** Era voluto ed era
+  sbagliato: il secondo commensale raramente ordina lo stesso, e i piatti gia'
+  spuntati si mandavano senza accorgersene. Ripetere un menu ha gia' il suo
+  pulsante, e quello prende le scelte dalla finestra che si ha davanti.
+
+### Obbligatoria diventa prevista
+
+`is_required` non poteva piu' significare obbligatoria da quando un menu si
+puo' battere mezzo deciso. Non e' stato tolto perche' la distinzione serve
+ancora - il vino della casa e' facoltativo, il dolce e' compreso - ma dice
+un'altra cosa: **quali portate il menu prevede**, cioe' cosa segnalare se il
+conto si chiude senza. Nell'editor la spunta si chiama "Prevista" e lo dice
+nel suggerimento; nella finestra dell'ordine la portata mancante e' una riga
+ambra e mai un rifiuto.
 
 ### Cosa resta fuori, per scelta
 

@@ -108,13 +108,33 @@ export default function POSPage() {
   const [editingMenuItem, setEditingMenuItem] = useState<CartItem | null>(null);
   // The last set of choices, so "one more like it" is a tap rather than
   // another pass through every course.
-  const [lastMenuChoice, setLastMenuChoice] = useState<{ menuId: string; selection: FixedMenuSelection; instructions: string } | null>(null);
+
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
-  const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [appendOrder, setAppendOrder] = useState<Order | null>(null);
+  /**
+   * The order the next send will be appended to — but only while the cart is
+   * still pointed at its table.
+   *
+   * Coming from a table sheet with "add items" points the cart at that order,
+   * and picking a different table afterwards used to move only the label: the
+   * screen said table 10 while everything sent still landed on table 2's
+   * check. Derived rather than kept in step by hand, because the picker, the
+   * held-order restore and the ?append= parameter all set the table, and only
+   * one of them was ever going to remember to clear this. Deriving it also
+   * leaves no instant where the two disagree.
+   *
+   * Takeaway and delivery have no table to disagree with.
+   */
+  const pendingOrder = useMemo(() => {
+    if (!appendOrder || cart.orderType !== 'dine_in') return appendOrder;
+    const orderTable = appendOrder.table_id != null ? String(appendOrder.table_id) : null;
+    if (!orderTable || !cart.tableId) return appendOrder;
+    return String(cart.tableId) === orderTable ? appendOrder : null;
+  }, [appendOrder, cart.tableId, cart.orderType]);
   const [supportError, setSupportError] = useState<{ code: string; message: string; payload: Record<string, unknown> } | null>(null);
   const activeUserId = user?.id == null ? null : String(user.id);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
@@ -452,28 +472,26 @@ export default function POSPage() {
         { product_ids: [...slot.taken, chosen.product.id] },
       );
       const { data } = await api.get(`/orders/${pendingOrder.id}`);
-      setPendingOrder(data.order);
+      setAppendOrder(data.order);
     } catch {
       toast.error(t('menuAttachFailed'));
     }
   };
 
-  const handleMenuAdd = (menu: Product, selection: FixedMenuSelection, instructions: string) => {
-    cart.addFixedMenu(menu, selection, instructions);
-    setLastMenuChoice({ menuId: menu.id, selection, instructions });
+  const handleMenuAdd = (menu: Product, selection: FixedMenuSelection) => {
+    cart.addFixedMenu(menu, selection);
     setMenuProduct(null);
   };
 
   // Adds this menu and leaves the window open with the same choices, ready for
   // the next guest taking the same thing.
-  const handleMenuAddAnother = (menu: Product, selection: FixedMenuSelection, instructions: string) => {
-    cart.addFixedMenu(menu, selection, instructions);
-    setLastMenuChoice({ menuId: menu.id, selection, instructions });
+  const handleMenuAddAnother = (menu: Product, selection: FixedMenuSelection) => {
+    cart.addFixedMenu(menu, selection);
   };
 
-  const handleMenuEditSave = (_menu: Product, selection: FixedMenuSelection, instructions: string) => {
+  const handleMenuEditSave = (_menu: Product, selection: FixedMenuSelection) => {
     if (!editingMenuItem) return;
-    cart.updateMenuSelection(editingMenuItem.id, selection, instructions);
+    cart.updateMenuSelection(editingMenuItem.id, selection);
     setEditingMenuItem(null);
   };
 
@@ -551,7 +569,7 @@ export default function POSPage() {
         orderForKot = data.order as Order;
         if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
         addItemsAttemptRef.current = null;
-        setPendingOrder(null);
+        setAppendOrder(null);
       } else {
         const orderPayload = {
           table_id: cart.tableId,
@@ -605,7 +623,7 @@ export default function POSPage() {
         const attempt = addItemsAttemptRef.current;
         if (attempt) clearAppendAttempt(getAppendAttemptStorage(), attempt);
         addItemsAttemptRef.current = null;
-        setPendingOrder(null);
+        setAppendOrder(null);
         toast.error(t('appendAttemptDropped'));
       } else {
         toast.error(t('placeOrderFailed'));
@@ -900,7 +918,7 @@ export default function POSPage() {
     }
     cart.setGuestCount(order.guest_count || 1);
     cart.setOrderNotes(order.special_instructions || '');
-    setPendingOrder(order);
+    setAppendOrder(order);
     toast(`${t('addingItemsToOrder', { number: order.order_number })} ${t('placeOrderReady')}`, { icon: 'ℹ️' });
   };
 
@@ -1020,6 +1038,7 @@ export default function POSPage() {
   const cartPanelProps = {
     tables,
     products,
+    categories,
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
@@ -1123,10 +1142,9 @@ export default function POSPage() {
         <FixedMenuPicker
           menu={menuProduct}
           products={products}
-          initialSelection={lastMenuChoice?.menuId === menuProduct.id ? lastMenuChoice.selection : undefined}
-          initialInstructions={lastMenuChoice?.menuId === menuProduct.id ? lastMenuChoice.instructions : ''}
+          categories={categories}
           onAdd={handleMenuAdd}
-          onAddAnother={(selection, instructions) => handleMenuAddAnother(menuProduct, selection, instructions)}
+          onAddAnother={(selection) => handleMenuAddAnother(menuProduct, selection)}
           onClose={() => setMenuProduct(null)}
         />
       )}
@@ -1152,9 +1170,9 @@ export default function POSPage() {
         <FixedMenuPicker
           menu={editingMenuItem.product}
           products={products}
+          categories={categories}
           mode="edit"
           initialSelection={editingMenuItem.menu_selection || []}
-          initialInstructions={editingMenuItem.special_instructions}
           onAdd={handleMenuEditSave}
           onClose={() => setEditingMenuItem(null)}
         />

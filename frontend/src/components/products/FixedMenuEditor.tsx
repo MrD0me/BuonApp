@@ -198,7 +198,10 @@ export default function FixedMenuEditor({ menu, categories, products, onClose }:
                     placeholder={t('fixedMenuCourseLabel')}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
                   />
-                  <label className="flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap">
+                  <label
+                    className="flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap"
+                    title={t('fixedMenuCourseRequiredHint')}
+                  >
                     <input
                       type="checkbox"
                       checked={course.is_required}

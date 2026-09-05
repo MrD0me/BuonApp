@@ -5,8 +5,10 @@ import { Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import type { FixedMenuSelection, Product } from '@/lib/types';
+import type { Category, FixedMenuSelection, Product } from '@/lib/types';
 import { courseChoices, courseSurcharge, missingRequiredCourses, selectionIsValid, selectionSurcharge } from '@/lib/fixed-menu';
+import { serviceRunForProduct } from '@/lib/service-runs';
+import ServiceRunPicker from './ServiceRunPicker';
 
 /**
  * Choosing a fixed menu, course by course (docs/coperto-e-menu-fisso.md).
@@ -24,29 +26,35 @@ import { courseChoices, courseSurcharge, missingRequiredCourses, selectionIsVali
  * filled meant the floor could not take the order it was being given. What is
  * missing is said in amber and asked for again on the check; it never stops
  * the order.
+ *
+ * The note and the run hang off each chosen dish rather than off the menu.
+ * There was one note for the whole menu once and it went onto the package row,
+ * which every kitchen ticket filters out — so nobody ever read it. The run is
+ * the same kind of fact: a primo inside a menu leaves with the primi, and that
+ * is about the dish, not about the menu it was chosen from.
  */
 interface Props {
   menu: Product;
   products: Product[];
-  onAdd: (menu: Product, selection: FixedMenuSelection, specialInstructions: string) => void;
+  /** For the wave each chosen dish goes out on, which lives on its category. */
+  categories: Category[];
+  onAdd: (menu: Product, selection: FixedMenuSelection) => void;
   onClose: () => void;
   initialSelection?: FixedMenuSelection;
-  initialInstructions?: string;
   mode?: 'add' | 'edit' | 'fill';
   /** Show one course only — the empty slot the floor tapped on the check. */
   restrictToCourseId?: string;
   /** Offered after a menu is added, to repeat the same choices for the next guest. */
-  onAddAnother?: (selection: FixedMenuSelection, specialInstructions: string) => void;
+  onAddAnother?: (selection: FixedMenuSelection) => void;
 }
 
 export default function FixedMenuPicker({
-  menu, products, onAdd, onClose,
-  initialSelection = [], initialInstructions = '', mode = 'add', onAddAnother, restrictToCourseId,
+  menu, products, categories, onAdd, onClose,
+  initialSelection = [], mode = 'add', onAddAnother, restrictToCourseId,
 }: Props) {
   const t = useTranslations('pos');
   const fmt = useFormatCurrency();
   const [selection, setSelection] = useState<FixedMenuSelection>(initialSelection);
-  const [instructions, setInstructions] = useState(initialInstructions);
 
   const courses = useMemo(
     () => [...(menu.courses || [])]
@@ -79,6 +87,15 @@ export default function FixedMenuPicker({
     });
   };
 
+  /** Edits one chosen dish in place — its note, or the wave it goes out on. */
+  const amend = (courseId: string, productId: string, changes: { note?: string; service_run?: number }) => {
+    setSelection((current) => current.map((choice) => (
+      choice.course_id === courseId && choice.product_id === productId
+        ? { ...choice, ...changes }
+        : choice
+    )));
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
@@ -109,9 +126,9 @@ export default function FixedMenuPicker({
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold text-sm text-gray-900">{course.label}</h3>
                   <span className="flex items-center gap-2">
-                    {course.is_required
-                      ? <span className="text-xs text-red-500 font-medium">{t('required')}</span>
-                      : <span className="text-xs text-gray-400">{t('menuCourseOptional')}</span>}
+                    <span className="text-xs text-gray-400">
+                      {course.is_required ? t('menuCourseExpected') : t('menuCourseOptional')}
+                    </span>
                     {course.max_choices > 1 && (
                       <span className="text-xs text-sky-500 font-semibold">
                         {t('menuCoursePicked', { picked: picked.length, max: course.max_choices })}
@@ -125,27 +142,47 @@ export default function FixedMenuPicker({
                 ) : (
                   <div className="space-y-1">
                     {choices.map((dish) => {
-                      const isPicked = picked.some((choice) => choice.product_id === dish.id);
+                      const chosen = picked.find((choice) => choice.product_id === dish.id);
                       const extra = courseSurcharge(course, dish.id);
                       return (
-                        <button
-                          type="button"
-                          key={dish.id}
-                          onClick={() => toggle(course.id, dish.id, course.max_choices)}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                            isPicked ? 'border-brand bg-brand-light text-brand' : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="font-medium">{dish.name}</span>
-                            {extra > 0 && (
-                              <span className={`text-xs ${isPicked ? 'text-brand font-semibold' : 'text-gray-500'}`}>
-                                +{fmt(extra)}
-                              </span>
-                            )}
-                          </span>
-                          {isPicked && <Check size={16} />}
-                        </button>
+                        <div key={dish.id}>
+                          <button
+                            type="button"
+                            onClick={() => toggle(course.id, dish.id, course.max_choices)}
+                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
+                              chosen ? 'border-brand bg-brand-light text-brand' : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="font-medium">{dish.name}</span>
+                              {extra > 0 && (
+                                <span className={`text-xs ${chosen ? 'text-brand font-semibold' : 'text-gray-500'}`}>
+                                  +{fmt(extra)}
+                                </span>
+                              )}
+                            </span>
+                            {chosen && <Check size={16} />}
+                          </button>
+
+                          {/* The note and the wave belong to the dish, and only
+                              once it has actually been chosen. */}
+                          {chosen && (
+                            <div className="flex items-center gap-2 mt-1 ps-3">
+                              <input
+                                type="text"
+                                value={chosen.note || ''}
+                                onChange={(e) => amend(course.id, dish.id, { note: e.target.value.slice(0, 100) })}
+                                placeholder={t('menuDishNotePlaceholder')}
+                                maxLength={100}
+                                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                              />
+                              <ServiceRunPicker
+                                value={chosen.service_run ?? serviceRunForProduct(dish, categories)}
+                                onChange={(run) => amend(course.id, dish.id, { service_run: run })}
+                              />
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -157,19 +194,6 @@ export default function FixedMenuPicker({
               </div>
             );
           })}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('specialInstructions')}</label>
-            <input
-              type="text"
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value.slice(0, 100))}
-              placeholder={t('specialInstructionsPlaceholder')}
-              maxLength={100}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
-            />
-            <p className="text-xs text-gray-400 text-end mt-0.5">{instructions.length}/100</p>
-          </div>
         </div>
 
         <div className="p-5 border-t border-gray-100 space-y-2">
@@ -186,7 +210,7 @@ export default function FixedMenuPicker({
               {t('menuSurchargeNote', { base: fmt(Number(menu.price)), extra: fmt(surcharge) })}
             </p>
           )}
-          <Button onClick={() => onAdd(menu, selection, instructions)} disabled={!isValid} className="w-full" size="lg">
+          <Button onClick={() => onAdd(menu, selection)} disabled={!isValid} className="w-full" size="lg">
             {mode === 'add'
               ? t('addToCart', { total: fmt(lineTotal) })
               : t('saveItemChanges', { total: fmt(lineTotal) })}
@@ -197,7 +221,7 @@ export default function FixedMenuPicker({
           {mode === 'add' && onAddAnother && (
             <Button
               variant="outline"
-              onClick={() => onAddAnother(selection, instructions)}
+              onClick={() => onAddAnother(selection)}
               disabled={!isValid}
               className="w-full"
             >

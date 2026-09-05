@@ -233,6 +233,7 @@ export function OrderPanel({
   // A menu on the check names its dishes but not its courses, so drawing the
   // slots still to fill needs the catalogue.
   const catalogProducts = useCatalogStore((state) => state.products);
+  const catalogCategories = useCatalogStore((state) => state.categories);
   const ensureCatalog = useCatalogStore((state) => state.ensureLoaded);
   const [menuFill, setMenuFill] = useState<{ group: MenuGroupState; courseId: string } | null>(null);
   const [fillingMenu, setFillingMenu] = useState(false);
@@ -1695,6 +1696,7 @@ placeholder={tOrders('managerPin')}
         <FixedMenuPicker
           menu={menuFill.group.menu}
           products={catalogProducts}
+          categories={catalogCategories}
           mode="fill"
           restrictToCourseId={menuFill.courseId}
           initialSelection={menuFill.group.slots

@@ -13,16 +13,18 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
-import type { Table, Order, OrderItem, CartItem, Product } from '@/lib/types';
+import type { Table, Order, OrderItem, CartItem, Category, Product } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { cartLineUnitPrice, courseSurcharge } from '@/lib/fixed-menu';
-import { serviceRunOf } from '@/lib/service-runs';
+import { serviceRunOfCartLine } from '@/lib/service-runs';
 import ServiceRunPicker from './ServiceRunPicker';
 
 interface Props {
   tables: Table[];
   /** The catalogue, so a menu line can name the dishes chosen inside it. */
   products: Product[];
+  /** For the run each line will go out on, which lives on its category. */
+  categories: Category[];
   currency: string;
   submitting: boolean;
   onPlaceOrder: () => void;
@@ -38,7 +40,7 @@ const orderTypeIcons = {
   delivery: Truck,
 };
 
-export default function CartPanel({ tables, products, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, products, categories, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -193,6 +195,7 @@ export default function CartPanel({ tables, products, submitting, onPlaceOrder, 
                   // course showing, unnamed — better than an id nobody reads.
                   name: dish?.name ?? '—',
                   surcharge: course ? courseSurcharge(course, choice.product_id) : 0,
+                  note: choice.note || '',
                 };
               });
               const isMenu = Boolean(item.menu_selection);
@@ -234,6 +237,7 @@ export default function CartPanel({ tables, products, submitting, onPlaceOrder, 
                       {menuCourses.map((course) => (
                         <p key={course.key} className="text-xs text-gray-400">
                           · {course.name}{course.surcharge > 0 ? ` (+${fmt(course.surcharge)})` : ''}
+                          {course.note && <span className="italic"> — {course.note}</span>}
                         </p>
                       ))}
                     </div>
@@ -247,10 +251,14 @@ export default function CartPanel({ tables, products, submitting, onPlaceOrder, 
                     </p>
                     {/* Which wave it goes out in. Shown from the start rather
                         than once a run is in play: hiding it until something
-                        is on run 2 leaves no way to put anything there. */}
-                    {isRestaurant && kotPrintingEnabled && (
+                        is on run 2 leaves no way to put anything there.
+
+                        Not on a menu line: a menu is not a dish and never
+                        reaches a station. Its courses each carry their own
+                        wave, set beside them in the menu window. */}
+                    {isRestaurant && kotPrintingEnabled && !isMenu && (
                       <ServiceRunPicker
-                        value={serviceRunOf(item)}
+                        value={serviceRunOfCartLine(item, categories)}
                         onChange={(run) => cart.setServiceRun(item.id, run)}
                       />
                     )}

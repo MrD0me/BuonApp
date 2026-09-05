@@ -13,6 +13,8 @@
  *  - The backend prices it: a client that sends its own numbers is ignored.
  *  - A menu can be taken with a required course still empty, and filled in
  *    later; a dish from the wrong course is still refused.
+ *  - The note and the wave hang off the chosen dish, never off the menu: the
+ *    package row reaches no kitchen ticket, so a note on it reached nobody.
  *  - Filling one in writes a row that goes out on the next round by itself,
  *    swapping a choice re-prices the check and the open preconto with it,
  *    and a dish the kitchen has already started is never overruled here.
@@ -677,6 +679,58 @@ async function main() {
     assert(
       !withoutMains.data.courses[0].included_product_ids.includes('p-branzino'),
       'and a dish its own category already covers is not stored twice',
+    );
+
+    // ── The note and the wave belong to the dish ──────────────────────────
+    console.log('\n19. A note on one dish of a menu, and its own wave');
+    const noted = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'dine_in', guest_count: 1,
+        items: [{
+          product_id: 'p-menu', quantity: 1,
+          special_instructions: 'nota del pacchetto',
+          menu_selection: [
+            { course_id: withoutMains.data.courses[0].id, product_id: 'p-branzino', note: 'senza sale', service_run: 1 },
+          ],
+        }],
+      },
+    });
+    assertEqual(noted.status, 201, 'the menu is ordered with a note on its dish');
+
+    const notedRows = rowsOf(noted.data.order.id);
+    const fishWithNote = notedRows.find((row) => row.product_id === 'p-branzino');
+    assertEqual(fishWithNote.special_instructions, 'senza sale', 'the note is on the dish the cook will read');
+    assertEqual(fishWithNote.service_run, 1, 'and so is the wave the floor asked for');
+
+    // The package row is filtered out of every ticket, so anything written
+    // against the menu itself would have reached nobody. It is not kept.
+    const notedPackage = notedRows.find((row) => row.menu_role === 'package');
+    assertEqual(notedPackage.special_instructions, null, 'a note against the menu itself is not kept');
+
+    const notedTicket = escPosToText(formatKOT(
+      { order_number: noted.data.order.order_number, table: { name: '4' } },
+      routeItemsToStations(db, getPendingKotItems(db, noted.data.order.id))[0].items,
+      'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 1, 'it',
+    ));
+    assert(/SENZA SALE|senza sale/i.test(notedTicket), 'the note reaches the kitchen ticket');
+
+    // Nothing asked for: the dish takes the wave its own category says, not
+    // one belonging to the menu it was chosen from.
+    db.prepare('UPDATE categories SET default_service_run = 3 WHERE id = ?').run('cat-fish');
+    const unasked = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'dine_in', guest_count: 1,
+        items: [{
+          product_id: 'p-menu', quantity: 1,
+          menu_selection: [{ course_id: withoutMains.data.courses[0].id, product_id: 'p-branzino' }],
+        }],
+      },
+    });
+    assertEqual(
+      rowsOf(unasked.data.order.id).find((row) => row.product_id === 'p-branzino').service_run, 3,
+      'a dish inside a menu goes out with its own category',
     );
 
     // ── Summary ───────────────────────────────────────────────────────────
