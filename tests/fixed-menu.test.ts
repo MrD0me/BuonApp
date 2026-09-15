@@ -50,7 +50,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-fixed-menu';
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
+  seedOwnerUser, seedServerUser, seedCategory, seedProduct,
   api, assert, assertEqual,
   getResults, closeDatabase, now,
 } = require('./helpers/test-setup');
@@ -478,6 +478,17 @@ async function main() {
     const nextRound = getPendingKotItems(db, openId);
     assertEqual(nextRound.length, 1, 'so the next round carries it alone');
     assertEqual(nextRound[0].product_id, 'p-soup', 'and nothing the kitchen already cooked');
+
+    // The waiter who passes by with the handheld is rarely the one who took
+    // the starters. Same list again, so nothing changes but the answer.
+    const { authHeader: serverAuth } = seedServerUser(db);
+    const colleagueReads = await api(baseUrl, `/api/orders/${openId}`, { headers: serverAuth });
+    assertEqual(colleagueReads.status, 200, 'a waiter can read a menu somebody else opened');
+    const colleagueFills = await api(baseUrl, fillUrl, {
+      method: 'PUT', headers: serverAuth, body: { product_ids: ['p-soup'] },
+    });
+    assertEqual(colleagueFills.status, 200, 'and fill it in from their own handheld');
+    assertEqual(rowsOf(openId).filter((row) => row.product_id === 'p-soup').length, 1, 'without doubling the dish');
 
     console.log('\n16. Changing a choice that has not been cooked');
     const bill = await api(baseUrl, '/api/bills/generate', {

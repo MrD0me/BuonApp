@@ -286,7 +286,6 @@ function insertOrderItemRows(
 
 router.get('/', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const db = getDatabase();
     const wheres: string[] = [];
     const params: any[] = [];
@@ -346,10 +345,6 @@ router.get('/', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', '
     if (req.query.table_id) {
       wheres.push('table_id = ?');
       params.push(req.query.table_id);
-    }
-    if (user.role === 'server') {
-      wheres.push('user_id = ?');
-      params.push(user.userId);
     }
     // Cursor pagination: `before` / `after` are ORDER BY keys (created_at),
     // composed with `id` to break ties when many orders share a second.
@@ -478,16 +473,11 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
 
 router.get('/:id', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const db = getDatabase();
     const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id));
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    if (user.role === 'server' && (order as any).user_id !== user.userId) {
-      return res.status(403).json({ error: 'Servers can only view their own orders' });
-    }
-
     // #208: collapse the per-order N+1 (5 queries: items/addons/table/customer/bill/loyalty)
     // into the same batchHydrateOrders used by the list endpoint. Previously
     // 6 prepared calls per single detail click.
@@ -511,9 +501,9 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
     // Always the authenticated caller, never client-supplied — trusting a
     // client-sent user_id would let staff spoof order attribution, and the
     // frontend has in fact never sent one, so every order got user_id=NULL.
-    // That silently broke servers' own order visibility (GET /orders scopes
-    // servers to `user_id = <their id>`, which NULL can never match) and any
-    // per-staff sales attribution.
+    // The column no longer gates anything (any waiter may work any table,
+    // see docs/palmare.md); it says who took the order, which is the whole
+    // reason staff have accounts of their own.
     const authenticatedUserId = (req as any).user.userId;
 
     if (!items || items.length === 0) {
@@ -678,11 +668,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const authUser = (req as any).user;
-    if (authUser?.role === 'server' && order.user_id !== authUser.userId) {
-      return res.status(403).json({ error: 'Servers can only modify their own orders' });
-    }
-
     // Replay before any mutable-order guard. A response-loss retry must return
     // the committed result even if the order was split or its validation state
     // changed after the original append.
@@ -709,10 +694,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
-      if (authUser?.role === 'server' && currentOrder.user_id !== authUser.userId) {
-        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
-      }
-
       // Re-check idempotency under the transaction lock in case the early
       // lookup raced the first request. This must remain before mutable-order
       // guards so a committed append always has a replay path.
@@ -851,9 +832,6 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
         : undefined;
       if (!currentUser || currentUser.is_active !== 1 || !['owner', 'manager', 'cashier', 'chef', 'server'].includes(currentUser.role)) {
         throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
-      }
-      if (currentUser.role === 'server' && String(currentOrder.user_id) !== String(authUser.userId)) {
-        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
       }
 
       if (currentOrder.status === status) {
@@ -1528,16 +1506,12 @@ router.put(
     try {
       const db = getDatabase();
       const orderId = String(req.params.id);
-      const authUser = (req as any).user;
 
       const result = withTxn(() => {
         // Re-read under the transaction lock: two handhelds filling the same
         // menu is an ordinary evening.
         const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-        if (authUser?.role === 'server' && String(order.user_id) !== String(authUser.userId)) {
-          throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
-        }
         if (['completed', 'cancelled'].includes(order.status)) {
           throw Object.assign(new Error('Cannot change a menu on a completed or cancelled order'), { statusCode: 400 });
         }
@@ -1645,11 +1619,6 @@ router.patch('/:id/items/:itemId/service-run', orderWriteRateLimit, requireRole(
     }
     if (['completed', 'cancelled'].includes(order.status)) {
       return res.status(400).json({ error: 'Cannot change a service run on a completed or cancelled order' });
-    }
-
-    const authUser = (req as any).user;
-    if (authUser?.role === 'server' && String(order.user_id) !== String(authUser.userId)) {
-      return res.status(403).json({ error: 'Servers can only modify their own orders' });
     }
 
     const item = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(req.params.itemId, req.params.id) as any;

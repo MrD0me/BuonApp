@@ -42,7 +42,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-service-runs';
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
+  seedOwnerUser, seedServerUser, seedCategory, seedProduct,
   api, assert, assertEqual,
   getResults, closeDatabase,
 } = require('./helpers/test-setup');
@@ -197,6 +197,12 @@ async function main() {
     });
     assertEqual(moved.status, 200, 'the row moves');
     assertEqual(rowFor(orderId, 'p-steak').service_run, 1, 'and it is now in the first wave');
+
+    const { authHeader: serverAuth } = seedServerUser(db);
+    const colleagueMoves = await api(baseUrl, `/api/orders/${orderId}/items/${steakRow.id}/service-run`, {
+      method: 'PATCH', headers: serverAuth, body: { service_run: 1 },
+    });
+    assertEqual(colleagueMoves.status, 200, 'a waiter who did not open the order can move its rows too');
 
     // Runs are labels, not gates: nothing about what is waiting to be sent
     // changes because a row was moved.
