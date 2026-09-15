@@ -222,8 +222,9 @@ export function TableSheet({
           categories={categories}
           mode="fill"
           restrictToCourseId={menuFill.courseId}
+          // The whole menu as it stands, so "still missing" and the price are
+          // true; onAdd keeps only the course on show.
           initialSelection={menuFill.group.slots
-            .filter((slot) => slot.course.id === menuFill.courseId)
             .flatMap((slot) => slot.filled.map((row) => ({ course_id: slot.course.id, product_id: String(row.product_id) })))}
           onClose={() => { if (!filling) setMenuFill(null); }}
           onAdd={(_menu, selection) => {

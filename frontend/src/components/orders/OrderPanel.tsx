@@ -1699,8 +1699,12 @@ placeholder={tOrders('managerPin')}
           categories={catalogCategories}
           mode="fill"
           restrictToCourseId={menuFill.courseId}
+          // Every course the menu already holds, not only the one on show:
+          // the window reads "still missing" and the line price off the whole
+          // selection, and with the others left out it listed courses that
+          // were full and priced a menu without its surcharges. onAdd keeps
+          // only the shown course, so nothing else is rewritten.
           initialSelection={menuFill.group.slots
-            .filter((slot) => slot.course.id === menuFill.courseId)
             .flatMap((slot) => slot.filled.map((row) => ({ course_id: slot.course.id, product_id: String(row.product_id) })))}
           onClose={() => { if (!fillingMenu) setMenuFill(null); }}
           onAdd={(_menu, selection) => setCourseDishes(
