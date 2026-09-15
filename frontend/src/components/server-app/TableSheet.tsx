@@ -66,7 +66,9 @@ export function TableSheet({
   );
   const groups = useMemo(() => menuGroupsOfOrder(activeItems, products), [activeItems, products]);
   const groupById = useMemo(() => new Map(groups.map((group) => [group.group_id, group])), [groups]);
-  const pendingCount = pendingKotItems(activeItems).length;
+  // Dishes, not the priced menu line: the package row is stamped with the
+  // round too, but nobody cooks it and the waiter is counting plates.
+  const pendingCount = pendingKotItems(activeItems).filter((item) => item.menu_role !== 'package').length;
   const guests = order?.guest_count ?? 1;
 
   const fillCourse = async (productIds: string[]) => {
@@ -145,7 +147,10 @@ export function TableSheet({
 
   return (
     <>
-      <Drawer open={open} onOpenChange={onOpenChange}>
+      {/* The sheet steps aside while the menu window is up: both sit at the
+          same layer, and the sheet's portal lands later in the document, so
+          without this the window would open behind it. */}
+      <Drawer open={open && !menuFill} onOpenChange={onOpenChange}>
         <DrawerContent className="max-h-[88vh]">
           <DrawerHeader className="text-start">
             <DrawerTitle className="flex items-center justify-between gap-2">
