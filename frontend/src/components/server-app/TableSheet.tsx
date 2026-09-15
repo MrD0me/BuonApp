@@ -152,7 +152,7 @@ export function TableSheet({
               <span>{table ? t('tableLabel', { name: table.name }) : ''}</span>
               {order && <span className="text-sm font-normal text-gray-500">#<Ltr>{order.order_number}</Ltr></span>}
             </DrawerTitle>
-            <DrawerDescription className="sr-only">{order ? t('openOrder') : t('noOpenOrder')}</DrawerDescription>
+            <DrawerDescription className="sr-only">{t('title')}</DrawerDescription>
           </DrawerHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4">

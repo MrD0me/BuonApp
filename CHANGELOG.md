@@ -4,6 +4,44 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [Unreleased]
+
+The tableside handheld (the Server App on `:3003`) was rebuilt to take orders
+the way the central PC does — see `docs/palmare.md`.
+
+### Changed
+
+- **Any waiter can now see and work any open order**, on the handheld and on
+  the central PC alike. The `server` role used to see only the orders it had
+  opened and got `403` on a colleague's: adding rows, changing status, filling
+  in a menu course, moving a row to another run, voiding with a manager PIN.
+  Orders are still stamped with who opened them (`user_id`), which is what the
+  per-waiter accounts are for; discounts, prices and payments stay closed to
+  waiters as before.
+- The Server App proxy forwards what the handheld needs to order — order
+  detail, rooms, settings, covers, service runs, menu courses — and answers
+  `404` to anything else under `/api` instead of falling through to the page.
+  The three customer routes are no longer forwarded.
+- `GET /api/server-app/info` no longer reports `customers_enabled`.
+
+### Added
+
+- **Handheld: floor view.** Rooms as tabs, tables as tiles with status,
+  covers, minutes since the order opened, the pending-ticket dot and the
+  joined-table marker. Read-only: tables are managed from the central PC.
+- **Handheld: table sheet.** The open order with dishes grouped under their
+  menu, covers correction, per-row service run, *Complete the menu* on a course
+  left empty, *Add dishes*, *Send to kitchen (n)*.
+- **Handheld: ordering with the PC's own windows** — extras, fixed menu with
+  *One more like it*, *inside the menu?* — plus per-row runs, covers, order
+  notes, and the cover-charge line when the house charges one.
+- **Handheld: a send interrupted by a reload is retried** with the same
+  idempotency key, for new orders and for rows added to an open one.
+
+### Removed
+
+- The customer name and phone fields on the handheld ticket.
+
 ## [5.0.0] - 2026-09-05
 
 The interface was rebuilt around **where things live**, not around how they

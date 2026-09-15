@@ -187,10 +187,11 @@ Trovato e sistemato strada facendo:
   montabile nel Server App dei palmari quando arriverà il suo rifacimento — che è dove all'utente
   il menu fisso serve davvero.
 
-**Non fatto, per scelta:** il menu fisso non è stato montato nel Server App. Il palmare non sa fare
-nemmeno gli aggiuntivi e va rifatto per intero; la finestra è pronta per allora. ~~E cambiare una
-scelta a menu già battuto non esiste: si annulla il gruppo e si rifà.~~ Adesso esiste: vedi qui
-sotto.
+~~**Non fatto, per scelta:** il menu fisso non è stato montato nel Server App. Il palmare non sa fare
+nemmeno gli aggiuntivi e va rifatto per intero; la finestra è pronta per allora.~~ Fatto il
+2026-09-15: il palmare è stato rifatto e monta la finestra così com'era, vedi
+[palmare.md](palmare.md). ~~E cambiare una scelta a menu già battuto non esiste: si annulla il
+gruppo e si rifà.~~ Adesso esiste: vedi qui sotto.
 
 ## Il menu aperto e le uscite (2026-09-05)
 
@@ -330,9 +331,9 @@ ambra e mai un rifiuto.
   `expected_item_ids` che risponde 409.
 - **`is_required` smette in silenzio di significare "obbligatorio".** Chi lo usava come rete
   contro le battiture sbagliate la perde: va nelle note di rilascio.
-- **Il Server App**, ancora. `AttachToMenuModal` e `ServiceRunPicker` sono nati con lo stesso
-  contratto della finestra del menu — props dentro, callback fuori, nessun client API — quindi
-  quando il palmare verrà rifatto si montano lì così come sono.
+- ~~**Il Server App**, ancora.~~ `AttachToMenuModal` e `ServiceRunPicker` sono nati con lo stesso
+  contratto della finestra del menu — props dentro, callback fuori, nessun client API — e il
+  2026-09-15 il palmare rifatto li ha montati così come sono: vedi [palmare.md](palmare.md).
 
 ## Ordine dei lavori
 

@@ -109,7 +109,7 @@ src/
 │   │   ├── print-test/     # Printer probe
 │   │   └── settings/       # App configuration
 │   ├── kds-standalone/     # Standalone KDS mode (:3002)
-│   ├── server-standalone/  # Standalone Server App, tableside ordering (:3003)
+│   ├── server-standalone/  # Standalone Server App, tableside ordering (:3003); thin page over components/server-app/
 │   ├── customer-display/   # Guest-facing second screen
 │   └── setup/              # Initial setup wizard
 ├── components/             # React components

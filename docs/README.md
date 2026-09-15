@@ -27,6 +27,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
 | [order-flow-and-navigation.md](order-flow-and-navigation.md) | Riorganizzazione dell'interfaccia prima del rifacimento grafico: navigazione ridotta alle schermate del servizio, pannello ordine condiviso, giornata di servizio e archivio, prezzo di riga modificabile, e la divisione del conto tolta. | CURRENT |
 | [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md) | Prezzo del coperto e menu completo a prezzo fisso: perché i gruppi extra non reggono (la comanda va in sezioni per categoria) e come il menu scrive righe vere nell'ordine. | CURRENT |
+| [palmare.md](palmare.md) | Il Server App dei camerieri rifatto: Sala in sola lettura e Ordina con aggiuntivi, coperti, menu fisso, uscite e completamento di un menu a metà; l'allowlist del proxy; la caduta del vincolo "ogni cameriere solo i suoi ordini". | CURRENT |
 
 ### Active design
 
