@@ -1,28 +1,27 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import '../globals.css';
-import { DirectionalToaster } from '@/components/layout/DirectionalToaster';
 import { KdsHtmlLang } from '@/components/kds/KdsHtmlLang';
-
-const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'BuonApp Server App',
   description: 'Tableside ordering for BuonApp',
 };
 
+/**
+ * Same shape as the standalone KDS layout: a plain container under the root
+ * layout, which already carries the i18n provider and the toaster. The
+ * previous version rendered a second <html><body> pair and a second toaster
+ * inside the root's own.
+ */
 export default function ServerStandaloneLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className="h-full">
-      <body className={`${inter.className} h-full bg-slate-50`}>
-        <KdsHtmlLang />
-        <DirectionalToaster />
-        {children}
-      </body>
-    </html>
+    <div className="min-h-screen bg-slate-50">
+      <KdsHtmlLang />
+      {children}
+    </div>
   );
 }

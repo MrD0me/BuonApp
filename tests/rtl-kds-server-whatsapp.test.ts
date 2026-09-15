@@ -76,6 +76,14 @@ const SCREEN_FILES = [
   // Server App / tableside ordering
   'frontend/src/app/server-standalone/page.tsx',
   'frontend/src/app/server-standalone/layout.tsx',
+  'frontend/src/components/server-app/ServerAppShell.tsx',
+  'frontend/src/components/server-app/ServerLoginForm.tsx',
+  'frontend/src/components/server-app/SalaView.tsx',
+  'frontend/src/components/server-app/TableTile.tsx',
+  'frontend/src/components/server-app/TableSheet.tsx',
+  'frontend/src/components/server-app/OrdinaView.tsx',
+  'frontend/src/components/server-app/HandheldProductGrid.tsx',
+  'frontend/src/components/server-app/HandheldCart.tsx',
   // WhatsApp
   'frontend/src/app/(dashboard)/whatsapp/page.tsx',
 ];
@@ -338,8 +346,8 @@ async function run(): Promise<void> {
   const tableFa = getTestTranslator('fa')('serverApp.tableLabel', { name: '12' });
   assert(tableFa.includes('12') && tableFa !== 'Table 12', `serverApp.tableLabel FA substitution failed, got: ${tableFa}`);
 
-  const guestFa = getTestTranslator('fa')('serverApp.guestFallbackName', { last4: '5678' });
-  assert(guestFa.includes('5678') && !guestFa.startsWith('Guest '), `serverApp.guestFallbackName FA substitution failed, got: ${guestFa}`);
+  const openSinceFa = getTestTranslator('fa')('serverApp.openSince', { minutes: '35' });
+  assert(openSinceFa.includes('35') && !openSinceFa.startsWith('Open for'), `serverApp.openSince FA substitution failed, got: ${openSinceFa}`);
 
   for (const lang of ['en', 'es', 'pt', 'fa'] as const) {
     for (const key of ['kds.disabledTitle', 'kds.disabledHint', 'serverApp.disabledTitle', 'serverApp.disabledHint']) {
