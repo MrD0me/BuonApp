@@ -3,10 +3,12 @@
 import { useEffect, useMemo } from 'react';
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck,
-  Plus, Minus, Trash2, Pause, MapPin, SquarePen,
-  Users,
+  Trash2, Pause, MapPin, SquarePen, Users, Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Stepper } from '@/components/ui/stepper';
+import { ActionBar } from '@/components/ui/action-bar';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useAuthStore } from '@/store/auth';
@@ -17,6 +19,7 @@ import type { Table, Order, OrderItem, CartItem, Category, Product } from '@/lib
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { cartLineUnitPrice, courseSurcharge } from '@/lib/fixed-menu';
 import { serviceRunOfCartLine } from '@/lib/service-runs';
+import { Ltr } from '@/components/layout/Ltr';
 import ServiceRunPicker from './ServiceRunPicker';
 
 interface Props {
@@ -30,7 +33,6 @@ interface Props {
   onPlaceOrder: () => void;
   onShowTablePicker: () => void;
   onEditItem?: (item: CartItem) => void;
-  variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
 }
 
@@ -40,15 +42,26 @@ const orderTypeIcons = {
   delivery: Truck,
 };
 
-export default function CartPanel({ tables, products, categories, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
+/**
+ * The ticket being written, on the till.
+ *
+ * The table heads it — with "change" beside it — because the ticket is what
+ * the table is about; the covers sit under it. Every line is a finger's
+ * width: the bin, the stepper, the course chip. Tapping the dish's name
+ * opens its note and options. The button at the bottom says what it does:
+ * it sends the order.
+ */
+export default function CartPanel({ tables, products, categories, submitting, onPlaceOrder, onShowTablePicker, onEditItem, existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
   const billingType = usePosSettingsStore((s) => s.billingType);
   const enabledOrderTypes = usePosSettingsStore((s) => s.orderTypes);
   const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
+  const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
+  const tServerApp = useTranslations('serverApp');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
   // What this tenant actually takes: the types the owner left on, minus
@@ -66,12 +79,9 @@ export default function CartPanel({ tables, products, categories, submitting, on
       setCartOrderType(availableTypes[0]);
     }
   }, [availableTypes, cartOrderType, setCartOrderType]);
-  // With a single type left the selector goes, and the strip around it is only
-  // worth drawing while something inside it still is.
-  const showOrderTypeBar = availableTypes.length > 1
-    || cartOrderType === 'dine_in'
-    || cartOrderType === 'delivery';
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
+  const showTable = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
+  const tableName = cart.tableId ? tables.find((table) => table.id === cart.tableId)?.name || cart.tableId : null;
 
   const handleHold = async () => {
     if (!cart.tableId) {
@@ -82,91 +92,96 @@ export default function CartPanel({ tables, products, categories, submitting, on
       toast.error(t('cartEmpty'));
       return;
     }
-    const tableName = tables.find((t) => t.id === cart.tableId)?.name || cart.tableId;
     try {
       await heldOrders.holdOrder(cart.tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
       cart.clearCart();
-      toast.success(t('orderHeldFor', { table: tableName }));
+      toast.success(t('orderHeldFor', { table: tableName ?? '' }));
     } catch {
       toast.error(t('holdOrderFailed'));
     }
   };
 
-  const isDrawer = variant === 'drawer';
+  const typeLabel = (type: (typeof availableTypes)[number]) =>
+    type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : t('orderTypeDelivery');
 
   return (
-    <div className={
-      isDrawer
-        ? 'flex flex-col w-full'
-        : 'w-full h-full bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm'
-    }>
-      {/* Order Type */}
-      {showOrderTypeBar && (
-      <div className="p-4 border-b border-gray-100 space-y-2">
+    <div className="flex h-full w-full flex-col border-s border-border bg-card">
+      {/* Head: which table (or which kind of order), and how many covers. */}
+      <div className="flex shrink-0 flex-col gap-3 border-b border-border px-4 py-3">
         {/* One choice is not a choice: with everything but one type switched
             off the row is a button that can only say what it already says. */}
         {availableTypes.length > 1 && (
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {availableTypes
-            .map((type) => {
+          <SegmentedControl
+            stretch
+            aria-label={t('orderTypeDineIn')}
+            value={cart.orderType}
+            onValueChange={(type) => cart.setOrderType(type as typeof cart.orderType)}
+            items={availableTypes.map((type) => {
               const Icon = orderTypeIcons[type];
-              const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : t('orderTypeDelivery');
-              return (
-                <button
-                  key={type}
-                  onClick={() => cart.setOrderType(type)}
-                  className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-md text-xs font-medium transition-colors ${
-                    cart.orderType === type
-                      ? 'bg-white text-brand shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <Icon size={14} />
-                  {label}
-                </button>
-              );
+              return { value: type, label: typeLabel(type), icon: <Icon size={16} /> };
             })}
-        </div>
+            className="w-full"
+          />
+        )}
+
+        {showTable && (
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-lg font-bold text-foreground">
+                {tableName ? t('tableLabel', { name: tableName }) : t('selectTable')}
+              </p>
+              <p className="truncate text-sm text-muted-foreground">
+                {existingOrder ? tServerApp('openOrder') : tServerApp('newOrder')}
+              </p>
+            </div>
+            <Button type="button" variant={tableName ? 'outline' : 'default'} size="touch" onClick={onShowTablePicker}>
+              {tableName ? t('changeTable') : t('selectTable')}
+            </Button>
+          </div>
         )}
 
         {cart.orderType === 'dine_in' && (
-          <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
-            <div className="flex items-center gap-2 text-sm text-gray-600"><Users size={15} /><span>{t('pax')}</span></div>
-            <div className="flex items-center gap-2">
-              <button type="button" aria-label={t('decreasePax')} onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Minus size={13} /></button>
-              <input aria-label={t('pax')} type="number" min="1" max="99" value={cart.guestCount} onChange={(e) => cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))} className="w-10 text-center text-sm font-semibold border-0 outline-none" />
-              <button type="button" aria-label={t('increasePax')} onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Plus size={13} /></button>
-            </div>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 text-base font-semibold text-foreground"><Users size={18} />{t('pax')}</span>
+            <Stepper
+              size="md"
+              min={1}
+              max={99}
+              value={cart.guestCount}
+              onChange={cart.setGuestCount}
+              decreaseLabel={t('decreasePax')}
+              increaseLabel={t('increasePax')}
+            />
           </div>
         )}
 
         {/* Delivery address — shown inline when delivery is selected */}
         {cart.orderType === 'delivery' && (
           <div className="flex items-center gap-2">
-            <MapPin size={14} className="text-gray-400 shrink-0" />
+            <MapPin size={18} className="shrink-0 text-muted-foreground" />
             <input
               type="text"
               value={cart.deliveryAddress}
               onChange={(e) => cart.setDeliveryAddress(e.target.value)}
               placeholder={t('deliveryAddress')}
-              className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              aria-label={t('deliveryAddress')}
+              className="h-touch flex-1 rounded-xl border border-input bg-card px-4 text-base outline-none focus:ring-2 focus:ring-brand"
             />
           </div>
         )}
       </div>
-      )}
 
-      {/* Cart Items */}
-      <div className={isDrawer ? 'overflow-y-auto p-4 max-h-[40vh]' : 'flex-1 overflow-y-auto p-4'}>
+      {/* Lines */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4">
         {/* Previously ordered items (add-items mode) */}
         {existingOrder && existingOrder.items && existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').length > 0 && (
-          <div className="mb-3 pb-3 border-b border-dashed border-gray-200">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{t('alreadyOrdered')}</p>
-            <div className="space-y-1.5">
+          <div className="border-b border-dashed border-border py-3">
+            <p className="mb-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase">{t('alreadyOrdered')}</p>
+            <div className="flex flex-col gap-1">
               {existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').map((item: OrderItem) => (
-                <div key={item.id} className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500">{item.quantity}× {item.product_name}</span>
-                  <span className="text-xs text-gray-400">{fmt(Number(item.total))}</span>
+                <div key={item.id} className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span><Ltr>{item.quantity}×</Ltr> {item.product_name}</span>
+                  <Ltr>{fmt(Number(item.total))}</Ltr>
                 </div>
               ))}
             </div>
@@ -174,12 +189,12 @@ export default function CartPanel({ tables, products, categories, submitting, on
         )}
 
         {cart.items.length === 0 ? (
-          <div className={`flex flex-col items-center justify-center text-gray-400 ${existingOrder ? 'py-4' : isDrawer ? 'py-8' : 'h-full'}`}>
-            <ShoppingCart size={existingOrder ? 24 : 40} />
-            <p className="mt-2 text-sm">{existingOrder ? t('addNewItemsAbove') : t('cartEmpty')}</p>
+          <div className={`flex flex-col items-center justify-center gap-2 text-muted-foreground ${existingOrder ? 'py-6' : 'h-full min-h-40'}`}>
+            <ShoppingCart size={existingOrder ? 24 : 36} />
+            <p className="text-sm">{existingOrder ? t('addNewItemsAbove') : t('cartEmpty')}</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div>
             {cart.items.map((item) => {
               // A fixed menu shows the dishes it was built from, so the floor
               // can read back what was chosen without reopening the window.
@@ -199,56 +214,68 @@ export default function CartPanel({ tables, products, categories, submitting, on
                 };
               });
               const isMenu = Boolean(item.menu_selection);
+              const lineTotal = cartLineUnitPrice(item) * (isMenu ? 1 : item.quantity);
 
               return (
-              <div key={item.id} className="flex items-start gap-3">
-                <button
-                  onClick={() => cart.removeItem(item.id)}
-                  className="w-6 h-6 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors mt-0.5 shrink-0"
-                >
-                  <Trash2 size={13} />
-                </button>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {item.product.name}
-                    </p>
-                    {onEditItem && (
+                <div key={item.id} className="flex flex-col gap-2 border-b border-border py-3 last:border-0">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-touch"
+                      aria-label={tCommon('removeItem')}
+                      onClick={() => cart.removeItem(item.id)}
+                      className="shrink-0 text-muted-foreground"
+                    >
+                      <Trash2 />
+                    </Button>
+                    {onEditItem ? (
                       <button
+                        type="button"
                         onClick={() => onEditItem(item)}
-                        className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 text-xs font-medium transition-colors"
+                        aria-label={`${tCommon('edit')}: ${item.product.name}`}
+                        className="min-w-0 flex-1 rounded-lg py-1 text-start active:bg-muted"
                       >
-                        <SquarePen size={12} />
-                        {tCommon('edit')}
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate text-base font-semibold text-foreground">{item.product.name}</span>
+                          <SquarePen size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+                        </span>
+                        {item.addons.map((a) => (
+                          <span key={a.id} className="block text-sm text-muted-foreground">
+                            + {a.name}{(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''}{Number(a.price) > 0 ? ` (${fmt(Number(a.price) * (a.quantity || 1))})` : ''}
+                          </span>
+                        ))}
+                        {menuCourses.map((course) => (
+                          <span key={course.key} className="block text-sm text-muted-foreground">
+                            · {course.name}{course.surcharge > 0 ? ` (+${fmt(course.surcharge)})` : ''}
+                            {course.note && <span className="italic"> — {course.note}</span>}
+                          </span>
+                        ))}
+                        {item.special_instructions && (
+                          <span className="block text-sm italic text-muted-foreground">{item.special_instructions}</span>
+                        )}
                       </button>
+                    ) : (
+                      <div className="min-w-0 flex-1 py-1">
+                        <span className="block truncate text-base font-semibold text-foreground">{item.product.name}</span>
+                      </div>
+                    )}
+                    {/* One menu is one line of one: another guest taking the same
+                        menu is another menu, because a check hands each of them
+                        over whole. Hence no quantity stepper here. */}
+                    {!isMenu && (
+                      <Stepper
+                        size="sm"
+                        min={0}
+                        value={item.quantity}
+                        onChange={(quantity) => cart.updateQuantity(item.id, quantity)}
+                        decreaseLabel={t('decreaseQuantity')}
+                        increaseLabel={t('increaseQuantity')}
+                        className="shrink-0"
+                      />
                     )}
                   </div>
-                  {item.addons.length > 0 && (
-                    <div className="mt-0.5">
-                      {item.addons.map((a) => (
-                        <p key={a.id} className="text-xs text-gray-400">
-                          + {a.name}{(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''} {Number(a.price) > 0 && `(${fmt(Number(a.price) * (a.quantity || 1))})`}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {menuCourses.length > 0 && (
-                    <div className="mt-0.5">
-                      {menuCourses.map((course) => (
-                        <p key={course.key} className="text-xs text-gray-400">
-                          · {course.name}{course.surcharge > 0 ? ` (+${fmt(course.surcharge)})` : ''}
-                          {course.note && <span className="italic"> — {course.note}</span>}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {item.special_instructions && (
-                    <p className="text-xs text-gray-400 italic mt-0.5 break-words">{item.special_instructions}</p>
-                  )}
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <p className="text-sm text-gray-500">
-                      {fmt(cartLineUnitPrice(item))}
-                    </p>
+                  <div className="flex items-center justify-between gap-2 ps-12">
                     {/* Which wave it goes out in. Shown from the start rather
                         than once a run is in play: hiding it until something
                         is on run 2 leaves no way to put anything there.
@@ -256,85 +283,58 @@ export default function CartPanel({ tables, products, categories, submitting, on
                         Not on a menu line: a menu is not a dish and never
                         reaches a station. Its courses each carry their own
                         wave, set beside them in the menu window. */}
-                    {isRestaurant && kotPrintingEnabled && !isMenu && (
+                    {isRestaurant && kotPrintingEnabled && !isMenu ? (
                       <ServiceRunPicker
                         value={serviceRunOfCartLine(item, categories)}
                         onChange={(run) => cart.setServiceRun(item.id, run)}
                       />
-                    )}
+                    ) : <span />}
+                    <span className="text-base font-semibold text-foreground"><Ltr>{fmt(lineTotal)}</Ltr></span>
                   </div>
                 </div>
-                {/* One menu is one line of one: another guest taking the same
-                    menu is another menu, because a split check hands each of
-                    them over whole. Hence no quantity stepper here. */}
-                {isMenu ? (
-                  <span className="text-sm font-medium w-5 text-center shrink-0 text-gray-400">1</span>
-                ) : (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => cart.updateQuantity(item.id, item.quantity - 1)}
-                      className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-                    >
-                      <Minus size={14} />
-                    </button>
-                    <span className="text-sm font-medium w-5 text-center">{item.quantity}</span>
-                    <button
-                      onClick={() => cart.updateQuantity(item.id, item.quantity + 1)}
-                      className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </div>
-                )}
-              </div>
               );
             })}
           </div>
         )}
-      </div>
 
-      {/* Cart Footer */}
-      <div className="p-4 border-t border-gray-100">
-        {/* Order Notes */}
         {cart.items.length > 0 && (
-          <div className="mb-3">
+          <div className="py-4">
+            <label htmlFor="pos-order-notes" className="mb-1.5 block text-sm font-semibold text-muted-foreground">{t('orderNotesPlaceholder')}</label>
             <textarea
+              id="pos-order-notes"
               value={cart.orderNotes}
               onChange={(e) => cart.setOrderNotes(e.target.value.slice(0, 200))}
-              placeholder={t('orderNotesPlaceholder')}
               rows={2}
               maxLength={200}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+              className="w-full resize-none rounded-xl border border-input bg-card px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
             />
-            <p className="text-xs text-gray-400 text-end mt-0.5">{cart.orderNotes.length}/200</p>
           </div>
         )}
-        <div className="flex justify-between mb-1 text-sm">
-          <span className="text-gray-500">{t('items')}</span>
-          <span className="font-medium">{cart.itemCount()}</span>
+      </div>
+
+      <ActionBar className="flex-col items-stretch gap-2.5">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-sm text-muted-foreground">{tServerApp('dishCount', { count: cart.itemCount() })}</span>
+          <span className="text-xl font-bold text-foreground"><Ltr>{fmt(cart.subtotal())}</Ltr></span>
         </div>
-        <div className="flex justify-between mb-4 text-lg">
-          <span className="font-semibold text-gray-900">{t('subtotal')}</span>
-          <span className="font-bold text-brand">
-            {fmt(cart.subtotal())}
-          </span>
-        </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2.5">
           {canHold && (
-            <Button variant="outline" onClick={handleHold} className="flex-1">
-              <Pause size={14} className="me-1" /> {t('holdButton')}
+            <Button type="button" variant="outline" size="touch-xl" onClick={handleHold}>
+              <Pause /> {t('holdButton')}
             </Button>
           )}
           <Button
+            type="button"
             onClick={onPlaceOrder}
             disabled={submitting || cart.items.length === 0}
-            className="flex-1"
-            size="lg"
+            size="touch-xl"
+            className="flex-1 bg-brand text-white hover:bg-brand-hover"
           >
+            <Send />
             {submitting ? t('placing') : t('placeOrderButton')}
           </Button>
         </div>
-      </div>
+      </ActionBar>
     </div>
   );
 }

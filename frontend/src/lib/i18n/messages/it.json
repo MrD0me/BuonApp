@@ -240,7 +240,6 @@
     "wsConnected": "WebSocket connesso"
   },
   "nav": {
-    "collapse": "Comprimi",
     "confirmLogout": "Sei sicuro di voler uscire?",
     "customers": "Clienti",
     "heapLabel": "Heap: ",
@@ -268,6 +267,7 @@
     "whatsapp": "WhatsApp"
   },
   "orders": {
+    "filters": "Filtri",
     "active": "Attivo",
     "addItem": "Aggiungi Articolo",
     "addItemsCartClearConfirm": "Hai articoli nel carrello di Ordina. Aggiungere righe a questo ordine li cancellerà. Procedere?",
@@ -424,6 +424,7 @@
     "whatsappFailed": "Impossibile aprire WhatsApp"
   },
   "pos": {
+    "changeTable": "Cambia",
     "addCustomer": "Aggiungi Cliente",
     "addItems": "Aggiungi Articoli",
     "addItemsFailed": "Impossibile aggiungere gli articoli",
@@ -569,7 +570,7 @@
     "paymentRecordedWithPoints": "Pagamento registrato! {points} punti fedeltà accreditati.",
     "percentage": "Percentuale",
     "phone": "Telefono",
-    "placeOrderButton": "Effettua Ordine",
+    "placeOrderButton": "Invia ordine",
     "placeOrderFailed": "Impossibile effettuare l'ordine",
     "placeOrderReady": "Effettua l'ordine quando sei pronto.",
     "placing": "Invio in corso...",
@@ -1009,6 +1010,7 @@
     "title": "Server App"
   },
   "serviceDays": {
+    "openSinceTime": "aperta dalle {time}",
     "alreadyOpen": "C’è già una giornata aperta.",
     "bills": "Conti",
     "blockersCount": "{count} cose da sistemare prima di poter chiudere",
@@ -1737,6 +1739,7 @@
     "updatedToast": "Personale aggiornato"
   },
   "tables": {
+    "legendPending": "da mandare in cucina",
     "add": "Aggiungi Tavolo",
     "addRoom": "Aggiungi sala",
     "addTable": "Aggiungi Tavolo",

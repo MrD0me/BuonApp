@@ -240,7 +240,6 @@
     "wsConnected": "WebSocket connected"
   },
   "nav": {
-    "collapse": "Collapse",
     "confirmLogout": "Are you sure you want to log out?",
     "customers": "Customers",
     "heapLabel": "Heap: ",
@@ -268,6 +267,7 @@
     "whatsapp": "WhatsApp"
   },
   "orders": {
+    "filters": "Filters",
     "active": "Active",
     "addItem": "Add Item",
     "addItemsCartClearConfirm": "You have items in the order screen’s cart. Adding to this order will clear them. Continue?",
@@ -424,6 +424,7 @@
     "whatsappFailed": "Failed to open WhatsApp"
   },
   "pos": {
+    "changeTable": "Change",
     "addCustomer": "Add Customer",
     "addItems": "Add Items",
     "addItemsFailed": "Failed to add items",
@@ -1009,6 +1010,7 @@
     "title": "Server App"
   },
   "serviceDays": {
+    "openSinceTime": "open since {time}",
     "alreadyOpen": "A day is already open.",
     "bills": "Bills",
     "blockersCount": "{count} still to settle before the day can close",
@@ -1737,6 +1739,7 @@
     "updatedToast": "Staff updated"
   },
   "tables": {
+    "legendPending": "to send to the kitchen",
     "add": "Add Table",
     "addRoom": "Add room",
     "addTable": "Add Table",

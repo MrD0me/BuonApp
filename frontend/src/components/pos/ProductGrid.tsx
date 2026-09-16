@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { Pencil, Search } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -11,6 +11,7 @@ import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { Ltr } from '@/components/layout/Ltr';
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; activeBg: string; activeText: string }> = {
   red: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', activeBg: 'bg-red-500', activeText: 'text-white' },
@@ -49,17 +50,27 @@ interface Props {
   search: string;
   setSearch: (s: string) => void;
   currency: string;
+  /** A tap on the dish itself. */
   onProductClick: (product: Product) => void;
+  /** The pencil on the tile: note and quantity, whatever the dish. */
+  onProductOptions: (product: Product) => void;
   sidebarOpen?: boolean;
 }
 
+/**
+ * The menu on the till: search, one chip per category in its colour, and a
+ * grid of tiles a finger can hit. Tiles are compact — a small thumbnail at
+ * most, no square photo — so five or six fit across the cash-desk monitor
+ * and the eye scans names, not pictures.
+ */
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, onProductClick, sidebarOpen = true,
+  search, setSearch, onProductClick, onProductOptions, sidebarOpen = true,
 }: Props) {
   const cart = useCartStore();
   const { showProductImages } = usePosSettingsStore();
   const t = useTranslations('pos');
+  const tServerApp = useTranslations('serverApp');
   const fmt = useFormatCurrency();
   const cartQuantities = useMemo(() => {
     const quantities = new Map<Product['id'], number>();
@@ -75,11 +86,17 @@ export default function ProductGrid({
     return matchCat && matchSearch;
   });
 
+  const chip = (selected: boolean, color?: string | null) => {
+    const colorClasses = getCategoryColorClasses(color);
+    if (selected) return colorClasses ? `${colorClasses.activeBg} ${colorClasses.activeText}` : 'bg-brand text-white';
+    return colorClasses ? `${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border}` : 'bg-card text-foreground border border-border';
+  };
+
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      <div className="shrink-0 mb-3">
-        <div className="relative mb-2">
-          <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+      <div className="mb-3 flex shrink-0 flex-col gap-2.5">
+        <div className="relative">
+          <Search size={20} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
             type="text"
             value={search}
@@ -97,134 +114,104 @@ export default function ProductGrid({
               }
             }}
             placeholder={t('searchProducts')}
-            className="w-full ps-9 pe-4 py-2 bg-white border border-gray-200 rounded-xl focus:border-brand outline-none transition-colors text-sm"
+            aria-label={t('searchProducts')}
+            className="h-touch w-full rounded-xl border border-input bg-card ps-11 pe-4 text-base outline-none transition-colors focus:ring-2 focus:ring-brand"
           />
         </div>
-        <div className="flex flex-wrap gap-2 pb-1">
+        <div className="flex flex-wrap gap-2">
           <button
+            type="button"
+            aria-pressed={!selectedCategory}
             onClick={() => setSelectedCategory(null)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-              !selectedCategory ? 'bg-brand text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-            }`}
+            className={`h-touch rounded-xl px-4 text-base font-semibold whitespace-nowrap transition active:scale-95 ${chip(!selectedCategory)}`}
           >
             {t('allCategories')}
           </button>
-          {categories.filter((cat) => cat.id != null).map((cat) => {
-            const colorClasses = getCategoryColorClasses(cat.color);
-            const isSelected = selectedCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  isSelected
-                    ? colorClasses
-                      ? `${colorClasses.activeBg} ${colorClasses.activeText}`
-                      : 'bg-brand text-white'
-                    : colorClasses
-                      ? `${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border} hover:opacity-80`
-                      : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                {cat.name}
-              </button>
-            );
-          })}
+          {categories.filter((cat) => cat.id != null).map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              aria-pressed={selectedCategory === cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`h-touch rounded-xl px-4 text-base font-semibold whitespace-nowrap transition active:scale-95 ${chip(selectedCategory === cat.id, cat.color)}`}
+            >
+              {cat.name}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
-        <div className={`grid gap-3 ${
-          sidebarOpen 
-            ? 'grid-cols-4' 
-            : 'grid-cols-5'
-        }`}>
+      <div className="flex-1 overflow-y-auto">
+        {/* Counted against the width the grid actually gets, not the window's:
+              the ticket takes 320-384 px of it and the bar another 176, and a
+              column too many turns every dish name into an abbreviation. */}
+          <div className={`grid gap-2.5 ${sidebarOpen ? 'grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' : 'grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6'}`}>
           {filtered.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
-            
+            const stockBadge = product.track_inventory
+              ? product.stock_quantity <= 0
+                ? t('outOfStock')
+                : product.stock_quantity <= (product.low_stock_threshold || 0) ? t('lowStock') : null
+              : null;
 
             return (
-              <div
-                key={product.id}
-                data-testid="pos-product-card"
-                onClick={() => onProductClick(product)}
-                className="bg-white rounded-xl p-2.5 border border-gray-100 hover:border-brand/40 hover:shadow-md transition-all text-start relative group cursor-pointer overflow-hidden"
-              >
-                {!!product.track_inventory && (
-                  <>
-                    {product.stock_quantity <= 0 ? (
-                      <span className="absolute top-2 start-2 bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-red-200 pointer-events-none">
-                        {t('outOfStock')}
-                      </span>
-                    ) : product.stock_quantity <= (product.low_stock_threshold || 0) ? (
-                      <span className="absolute top-2 start-2 bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-orange-200 pointer-events-none">
-                        {t('lowStock')}
-                      </span>
-                    ) : null}
-                  </>
-                )}
-                {inCartQty > 0 && (
-                  <span className="absolute top-0 end-0 bg-brand text-white text-xs w-6 h-6 rounded-es-lg flex items-center justify-center font-bold z-10">
-                    {inCartQty}
-                  </span>
-                )}
-
-                {showProductImages && (
-                  <div className="w-full aspect-square rounded-lg mb-3 relative overflow-hidden">
-                    {/* Always-visible background tile — no flash when image loads */}
-                    <div
-                      className="absolute inset-0 flex items-center justify-center"
-                      style={{ backgroundColor: nameToColor(product.name) }}
-                    >
-                      <span className="text-2xl font-bold text-white/80">
-                        {product.name.substring(0, 2).toUpperCase()}
-                      </span>
-                    </div>
-
-                    {/* Image overlays the tile when available */}
-                    {product.has_image && (
-                      <img
-                        src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}`}
-                        alt={product.name}
-                        className="absolute inset-0 w-full h-full object-cover rounded-lg"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    )}
-
-                    {product.tags && product.tags.length > 0 && (
-                      <span className="absolute bottom-1.5 end-1.5 z-10">
-                        <TagBadge tag={product.tags[0]} />
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                <h3 className="font-medium text-gray-900 text-sm line-clamp-2 leading-snug">{product.name}</h3>
-                <div className="flex items-center justify-between mt-1">
-                  <p className="text-brand font-bold">
-                    {fmt(Number(product.price))}
-                  </p>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {!showProductImages && product.tags && product.tags.length > 0 && (
-                      <TagBadge tag={product.tags[0]} />
-                    )}
-                    {product.addon_groups && product.addon_groups.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onProductClick(product);
-                        }}
-                        className="text-gray-400 hover:text-gray-600 transition-colors"
-                        title={t('customisable')}
+              <div key={product.id} className="relative">
+                <button
+                  type="button"
+                  data-testid="pos-product-card"
+                  onClick={() => onProductClick(product)}
+                  className={`flex min-h-[96px] w-full flex-col justify-between gap-2 rounded-2xl border bg-card p-3 pe-11 text-start shadow-xs transition active:scale-[0.98] ${inCartQty > 0 ? 'border-brand ring-1 ring-brand' : 'border-border'}`}
+                >
+                  <span className="flex min-w-0 items-start gap-2.5">
+                    {showProductImages && (
+                      <span
+                        className="relative size-10 shrink-0 overflow-hidden rounded-lg"
+                        style={{ backgroundColor: nameToColor(product.name) }}
+                        aria-hidden="true"
                       >
-                        <SlidersHorizontal size={12} />
-                      </button>
+                        <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-white/80">
+                          {product.name.substring(0, 2).toUpperCase()}
+                        </span>
+                        {product.has_image && (
+                          <img
+                            src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}`}
+                            alt=""
+                            className="absolute inset-0 h-full w-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        )}
+                      </span>
                     )}
-                  </div>
-                </div>
-
+                    <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">{product.name}</span>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Ltr className={`text-base font-semibold ${product.is_fixed_menu ? 'text-brand' : 'text-foreground'}`}>{fmt(Number(product.price))}</Ltr>
+                    {product.is_fixed_menu && <span className="text-sm text-brand">{t('menuFixed')}</span>}
+                    {product.tags && product.tags.length > 0 && <TagBadge tag={product.tags[0]} />}
+                    {stockBadge && (
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${product.stock_quantity <= 0 ? 'bg-table-occupied-soft text-table-occupied' : 'bg-pending-soft text-pending'}`}>
+                        {stockBadge}
+                      </span>
+                    )}
+                  </span>
+                </button>
+                <span className="absolute end-1 top-1">
+                  {inCartQty > 0 ? (
+                    <span className="flex size-touch items-center justify-center" aria-hidden="true">
+                      <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-brand px-2 text-sm font-bold text-white"><Ltr>{inCartQty}</Ltr></span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label={tServerApp('productOptions', { name: product.name })}
+                      title={t('customisable')}
+                      onClick={() => onProductOptions(product)}
+                      className="flex size-touch items-center justify-center rounded-xl text-muted-foreground/70 transition active:bg-muted"
+                    >
+                      <Pencil size={18} />
+                    </button>
+                  )}
+                </span>
               </div>
             );
           })}

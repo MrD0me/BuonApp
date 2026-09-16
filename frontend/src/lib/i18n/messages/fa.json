@@ -240,7 +240,6 @@
     "wsConnected": "WebSocket پیوند داده شد"
   },
   "nav": {
-    "collapse": "جمع کردن",
     "confirmLogout": "آیا از خروج مطمئن هستید؟",
     "customers": "مشتریان",
     "heapLabel": "حافظه: ",
@@ -268,6 +267,7 @@
     "whatsapp": "واتساپ"
   },
   "orders": {
+    "filters": "فیلترها",
     "active": "فعال",
     "addItem": "افزودن کالا",
     "addItemsCartClearConfirm": "در سبد صفحه سفارش کالا دارید. افزودن سطر به این سفارش آن‌ها را پاک می‌کند. ادامه می‌دهید؟",
@@ -424,6 +424,7 @@
     "whatsappFailed": "باز کردن واتساپ انجام نشد"
   },
   "pos": {
+    "changeTable": "تغییر",
     "addCustomer": "افزودن مشتری",
     "addItems": "افزودن کالاها",
     "addItemsFailed": "افزودن کالاها انجام نشد",
@@ -1009,6 +1010,7 @@
     "title": "برنامه سرور"
   },
   "serviceDays": {
+    "openSinceTime": "باز از ساعت {time}",
     "alreadyOpen": "یک روز از قبل باز است.",
     "bills": "صورت‌حساب‌ها",
     "blockersCount": "{count} مورد باید پیش از بستن روز تسویه شود",
@@ -1737,6 +1739,7 @@
     "updatedToast": "کارمند به‌روزرسانی شد"
   },
   "tables": {
+    "legendPending": "برای ارسال به آشپزخانه",
     "add": "افزودن میز",
     "addRoom": "افزودن سالن",
     "addTable": "افزودن میز",

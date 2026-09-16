@@ -240,7 +240,6 @@
     "wsConnected": "WebSocket conectado"
   },
   "nav": {
-    "collapse": "Contraer",
     "confirmLogout": "¿Estás seguro de que quieres cerrar la sesión?",
     "customers": "Clientes",
     "heapLabel": "Memoria: ",
@@ -268,6 +267,7 @@
     "whatsapp": "WhatsApp"
   },
   "orders": {
+    "filters": "Filtros",
     "active": "Activos",
     "addItem": "Agregar ítem",
     "addItemsCartClearConfirm": "Tienes artículos en el carrito de Pedir. Añadir líneas a este pedido los borrará. ¿Continuar?",
@@ -424,6 +424,7 @@
     "whatsappFailed": "No se pudo abrir WhatsApp"
   },
   "pos": {
+    "changeTable": "Cambiar",
     "addCustomer": "Agregar Cliente",
     "addItems": "Agregar ítems",
     "addItemsFailed": "No se pudieron agregar los ítems",
@@ -1009,6 +1010,7 @@
     "title": "App de mesero"
   },
   "serviceDays": {
+    "openSinceTime": "abierta desde las {time}",
     "alreadyOpen": "Ya hay una jornada abierta.",
     "bills": "Cuentas",
     "blockersCount": "{count} cosas por resolver antes de poder cerrar",
@@ -1737,6 +1739,7 @@
     "updatedToast": "Personal actualizado"
   },
   "tables": {
+    "legendPending": "por enviar a cocina",
     "add": "Agregar Mesa",
     "addRoom": "Añadir salón",
     "addTable": "Agregar Mesa",
