@@ -73,19 +73,33 @@ function TableTile({
   const unpriced = (order?.items || []).some(
     (item) => Boolean(item.price_required) && !item.price_confirmed && item.status !== 'cancelled',
   );
-  // On screen, not in room units: a big room on a small monitor shrinks its
-  // tiles, and the second line goes before the name does.
-  const compact = height * scale < 96 || width * scale < 120;
+  // Measured on screen, not in room units: a big room on a small monitor
+  // shrinks its tiles, and what a tile can hold is a matter of pixels. A name
+  // and one line of detail need about 60 px of height; a second line, 76.
+  const drawnHeight = height * scale;
+  const drawnWidth = width * scale;
+  const showDetail = drawnHeight >= 60 && drawnWidth >= 72;
+  const showSecondLine = drawnHeight >= 76;
   // A table being held shows who it is being held for; that is the whole point
   // of marking it reserved rather than just colouring it.
   const booking = !order ? table.reservation ?? null : null;
   const isGroupMember = Boolean(table.merged_into);
   const round = table.shape === 'round';
 
+  // The state is the colour, and the legend above the map says what the
+  // colours mean. A pill saying "Disponibile" as well was the same fact twice,
+  // and on a tile as wide as the table the floor actually drew it got cut in
+  // half. What is left is what the pill could not say: how many are sitting,
+  // for how long, whose booking, how many plates are still to go.
+  const statusWord = tTables(TABLE_STATUS_LABEL_KEYS[table.status]);
+
   return (
     <div
       role="button"
       tabIndex={0}
+      aria-label={[table.name, statusWord, pending > 0 ? t('pendingToSend', { count: pending }) : null]
+        .filter(Boolean).join(' · ')}
+      title={statusWord}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -99,8 +113,9 @@ function TableTile({
         height: height * scale,
       }}
       className={`
-        flex flex-col overflow-hidden bg-card select-none text-start
-        ${round ? `rounded-full border-2 items-center justify-center text-center px-3 ${style.border}` : `rounded-xl border border-border border-s-4 ${style.band}`}
+        flex flex-col overflow-hidden select-none text-start
+        ${tone === 'free' ? 'bg-card' : style.soft}
+        ${round ? `items-center justify-center rounded-full border-2 px-3 text-center ${style.border}` : 'rounded-xl border border-border'}
         ${editing ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
         ${dragging ? 'shadow-lg ring-2 ring-brand z-10' : 'shadow-xs'}
         ${!table.is_active ? 'opacity-50' : ''}
@@ -108,30 +123,53 @@ function TableTile({
         transition-shadow
       `}
     >
-      <div className={`flex items-start justify-between gap-1 ${round ? 'flex-col items-center' : 'px-2 pt-2'}`}>
+      {/* A straight band down the inline-start edge, clipped by the tile's own
+          corners. A thick border would meet the thin ones on a diagonal and
+          read as a crescent stuck to the side of the table. */}
+      {!round && <span aria-hidden="true" className={`absolute inset-y-0 start-0 w-1.5 ${style.dot}`} />}
+      <div className={`flex items-start justify-between gap-1 ${round ? 'flex-col items-center' : 'ps-3.5 pe-2 pt-2'}`}>
         <span className="truncate text-base font-bold leading-tight text-foreground">{table.name}</span>
         {pending > 0 && (
           <StatusBadge tone="pending" size="sm" title={tTables('kotPending')}>
-            {compact ? <Ltr>{String(pending)}</Ltr> : t('pendingToSend', { count: pending })}
+            {drawnWidth >= 150 ? t('pendingToSend', { count: pending }) : <Ltr>{String(pending)}</Ltr>}
           </StatusBadge>
         )}
       </div>
-      <div className={`mt-auto flex flex-col gap-1 ${round ? 'items-center' : 'px-2 pb-2 pt-1'}`}>
-        <span className="flex items-center gap-1.5">
-          <StatusBadge tone={tone} size="sm">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</StatusBadge>
-          {isGroupMember && <Link2 size={14} className="shrink-0 text-muted-foreground" aria-label={tTables('mergedInto')} />}
-          {unpriced && <CircleDollarSign size={14} className="shrink-0 text-pending" aria-label={tTables('unpricedRow')} />}
-        </span>
-        {!compact && (
+      {/* A round table centres its text: pushed to the bottom with mt-auto it
+          ran off the curve. */}
+      <div className={`flex flex-col gap-0.5 ${round ? 'items-center' : 'mt-auto ps-3.5 pe-2 pb-2 pt-1'}`}>
+        {(isGroupMember || unpriced) && (
+          <span className="flex items-center gap-1.5">
+            {isGroupMember && <Link2 size={14} className="shrink-0 text-muted-foreground" aria-label={tTables('mergedInto')} />}
+            {unpriced && <CircleDollarSign size={14} className="shrink-0 text-pending" aria-label={tTables('unpricedRow')} />}
+          </span>
+        )}
+        {/* Two short lines rather than one long one: a tile is as wide as the
+            table somebody drew, and a single line carrying covers, money and
+            minutes ended in an ellipsis on every one of them. */}
+        {showDetail && (
           booking ? (
-            <span className="truncate text-xs font-medium text-table-reserved">
-              <Ltr>{booking.booked_time ? `${booking.booked_time} · ` : ''}</Ltr>{booking.name}
-              <Ltr>{` · ${tTables('reservationGuestsShort', { count: booking.guests })}`}</Ltr>
-            </span>
+            <>
+              <span className="truncate text-xs font-medium text-table-reserved">
+                <Ltr>{booking.booked_time ? `${booking.booked_time} · ` : ''}</Ltr>{booking.name}
+              </span>
+              {showSecondLine && (
+                <span className="truncate text-xs text-table-reserved">
+                  <Ltr>{tTables('reservationGuestsShort', { count: booking.guests })}</Ltr>
+                </span>
+              )}
+            </>
           ) : order ? (
-            <span className={`truncate text-xs ${elapsed !== null && elapsed >= 90 ? 'font-semibold text-table-occupied' : 'text-muted-foreground'}`}>
-              <Ltr>{`${order.guest_count ?? 1}/${table.capacity} · ${formatCurrency(order.total || 0)}${elapsed !== null ? ` · ${tTables('elapsedMinutes', { count: elapsed })}` : ''}`}</Ltr>
-            </span>
+            <>
+              <span className={`truncate text-xs ${elapsed !== null && elapsed >= 90 ? 'font-semibold text-table-occupied' : 'text-muted-foreground'}`}>
+                <Ltr>{`${order.guest_count ?? 1}/${table.capacity}${elapsed !== null ? ` · ${tTables('elapsedMinutes', { count: elapsed })}` : ''}`}</Ltr>
+              </span>
+              {showSecondLine && (
+                <span className="truncate text-xs font-medium text-foreground">
+                  <Ltr>{formatCurrency(order.total || 0)}</Ltr>
+                </span>
+              )}
+            </>
           ) : (
             <span className="truncate text-xs text-muted-foreground">{tTables('capacitySeats', { count: table.capacity })}</span>
           )

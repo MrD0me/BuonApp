@@ -8,12 +8,11 @@ import Link from 'next/link';
 import { Plus, Pencil, Trash2, Map as MapIcon, PenLine, LayoutGrid, CalendarCheck } from 'lucide-react';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { SegmentedControl } from '@/components/ui/segmented-control';
-import { StatusDot, StatusBadge } from '@/components/ui/status-badge';
+import { StatusDot } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ServiceDayChip } from '@/components/service-days/ServiceDayChip';
 import { TABLE_STATUS_TONE } from '@/lib/status-styles';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n/enums';
-import { Ltr } from '@/components/layout/Ltr';
 import type { Room, Table, Order, Reservation } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { useTranslations } from 'use-intl';
@@ -292,8 +291,11 @@ export default function TablesPage() {
                   {tTables(TABLE_STATUS_LABEL_KEYS[status])}
                 </span>
               ))}
+              {/* A dot like the others: the same badge with a number inside
+                  read as a live count of plates waiting, and said 2 with
+                  nothing to send. */}
               <span className="flex items-center gap-1.5">
-                <StatusBadge tone="pending" size="sm"><Ltr>2</Ltr></StatusBadge>
+                <StatusDot tone="pending" />
                 {tTables('legendPending')}
               </span>
             </div>
