@@ -1,10 +1,10 @@
 'use client';
 
-import { X } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { Product } from '@/lib/types';
 import type { OpenSlot } from '@/lib/fixed-menu';
+import { Modal, ModalBody, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
 
 /**
  * "Is this one inside the menu?"
@@ -35,51 +35,45 @@ interface Props {
 
 export default function AttachToMenuModal({ product, slots, onAttach, onSeparate, onClose }: Props) {
   const t = useTranslations('pos');
+  const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-sm max-h-[85vh] flex flex-col">
-        <div className="flex justify-between items-start p-5 border-b border-gray-100">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">{product.name}</h2>
-            <p className="text-sm text-gray-500">{t('attachToMenuQuestion')}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X size={20} />
-          </button>
-        </div>
+    <Modal open onOpenChange={(open) => { if (!open) onClose(); }} size="sm">
+      <ModalHeader closeLabel={tCommon('close')}>
+        <ModalTitle>{product.name}</ModalTitle>
+        <ModalDescription>{t('attachToMenuQuestion')}</ModalDescription>
+      </ModalHeader>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-2">
-          {slots.map((slot) => (
-            <button
-              key={`${slot.target.kind === 'cart' ? slot.target.cartItemId : slot.target.groupId}:${slot.course.id}`}
-              type="button"
-              onClick={() => onAttach(slot)}
-              className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border border-brand bg-brand-light text-brand hover:brightness-95 transition"
-            >
-              <span className="text-start">
-                <span className="block text-sm font-semibold">{slot.menuLabel}</span>
-                <span className="block text-xs opacity-80">{slot.course.label}</span>
-              </span>
-              {/* What it adds, if anything. The rest of the dish is on the menu
-                  price, and the check will say so. */}
-              <span className="text-sm font-semibold shrink-0">
-                {slot.surcharge > 0 ? `+${fmt(slot.surcharge)}` : t('attachToMenuIncluded')}
-              </span>
-            </button>
-          ))}
-
+      <ModalBody className="flex flex-col gap-2.5">
+        {slots.map((slot) => (
           <button
+            key={`${slot.target.kind === 'cart' ? slot.target.cartItemId : slot.target.groupId}:${slot.course.id}`}
             type="button"
-            onClick={onSeparate}
-            className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border border-gray-200 text-gray-700 hover:border-gray-300 transition"
+            onClick={() => onAttach(slot)}
+            className="flex min-h-touch-xl w-full items-center justify-between gap-3 rounded-xl border border-brand bg-brand-light px-4 py-2 text-brand transition active:scale-[0.99]"
           >
-            <span className="text-sm font-semibold">{t('attachToMenuSeparate')}</span>
-            <span className="text-sm text-gray-500 shrink-0">{fmt(Number(product.price) || 0)}</span>
+            <span className="min-w-0 text-start">
+              <span className="block text-base font-semibold">{slot.menuLabel}</span>
+              <span className="block text-sm opacity-80">{slot.course.label}</span>
+            </span>
+            {/* What it adds, if anything. The rest of the dish is on the menu
+                price, and the check will say so. */}
+            <span className="shrink-0 text-base font-semibold">
+              {slot.surcharge > 0 ? `+${fmt(slot.surcharge)}` : t('attachToMenuIncluded')}
+            </span>
           </button>
-        </div>
-      </div>
-    </div>
+        ))}
+
+        <button
+          type="button"
+          onClick={onSeparate}
+          className="flex min-h-touch-xl w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-2 text-foreground transition active:scale-[0.99]"
+        >
+          <span className="text-base font-semibold">{t('attachToMenuSeparate')}</span>
+          <span className="shrink-0 text-base text-muted-foreground">{fmt(Number(product.price) || 0)}</span>
+        </button>
+      </ModalBody>
+    </Modal>
   );
 }

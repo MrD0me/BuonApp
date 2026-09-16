@@ -23,3 +23,13 @@ export function isPendingKot(item: Pick<OrderItem, 'kot_batch' | 'status'>): boo
 export function pendingKotItems<T extends Pick<OrderItem, 'kot_batch' | 'status'>>(items: T[]): T[] {
   return items.filter(isPendingKot);
 }
+
+/**
+ * How many plates are still waiting to go: the number on the "N to send"
+ * badge of a table. Dishes, not the priced menu line — the package row is
+ * stamped with the round too, but nobody cooks it and the floor is counting
+ * plates.
+ */
+export function pendingDishCount<T extends Pick<OrderItem, 'kot_batch' | 'status' | 'menu_role'>>(items: T[]): number {
+  return pendingKotItems(items).filter((item) => item.menu_role !== 'package').length;
+}

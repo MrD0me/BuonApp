@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Modal, ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { Category, FixedMenuSelection, Product } from '@/lib/types';
@@ -15,8 +16,8 @@ import ServiceRunPicker from './ServiceRunPicker';
  *
  * Props in, callback out, and no API client of its own — the same shape as
  * AddonModal. That is on purpose: the handheld app composes orders through its
- * own axios instance, and when its rewrite comes this window has to mount
- * there unchanged. The catalogue arrives as a prop; nothing here fetches.
+ * own axios instance, and this window mounts there unchanged. The catalogue
+ * arrives as a prop; nothing here fetches.
  *
  * The price shown is what the guest will be told. What the check actually says
  * is worked out again by the backend from its own catalogue.
@@ -53,6 +54,7 @@ export default function FixedMenuPicker({
   initialSelection = [], mode = 'add', onAddAnother, restrictToCourseId,
 }: Props) {
   const t = useTranslations('pos');
+  const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
   const [selection, setSelection] = useState<FixedMenuSelection>(initialSelection);
 
@@ -97,139 +99,141 @@ export default function FixedMenuPicker({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
-        <div className="flex justify-between items-center p-5 border-b border-gray-100">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">{menu.name}</h2>
-            <p className="text-brand font-semibold">
-              {fmt(Number(menu.price))}
-              {menu.fixed_menu_includes_cover ? <span className="text-xs text-gray-500 font-normal"> · {t('menuIncludesCover')}</span> : null}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X size={20} />
-          </button>
-        </div>
+    <Modal open onOpenChange={(open) => { if (!open) onClose(); }} size="md">
+      <ModalHeader closeLabel={tCommon('close')}>
+        <ModalTitle>{menu.name}</ModalTitle>
+        <ModalDescription className="text-brand text-base font-semibold">
+          {fmt(Number(menu.price))}
+          {menu.fixed_menu_includes_cover ? <span className="text-sm font-normal text-muted-foreground"> · {t('menuIncludesCover')}</span> : null}
+        </ModalDescription>
+      </ModalHeader>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {courses.length === 0 && (
-            <p className="text-sm text-gray-500">{t('menuHasNoCourses')}</p>
-          )}
+      <ModalBody className="space-y-5">
+        {courses.length === 0 && (
+          <p className="text-sm text-muted-foreground">{t('menuHasNoCourses')}</p>
+        )}
 
-          {courses.map((course) => {
-            const picked = pickedFor(course.id);
-            const choices = courseChoices(course, products);
+        {courses.map((course) => {
+          const picked = pickedFor(course.id);
+          const choices = courseChoices(course, products);
+          const stillEmpty = course.is_required && picked.length === 0;
 
-            return (
-              <div key={course.id}>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-sm text-gray-900">{course.label}</h3>
-                  <span className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">
-                      {course.is_required ? t('menuCourseExpected') : t('menuCourseOptional')}
-                    </span>
-                    {course.max_choices > 1 && (
-                      <span className="text-xs text-sky-500 font-semibold">
-                        {t('menuCoursePicked', { picked: picked.length, max: course.max_choices })}
-                      </span>
-                    )}
+          return (
+            <div key={course.id}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-base font-semibold text-foreground">{course.label}</h3>
+                <span className="flex items-center gap-2 text-xs">
+                  <span className={stillEmpty ? 'font-semibold text-pending' : 'text-muted-foreground'}>
+                    {course.is_required ? t('menuCourseExpected') : t('menuCourseOptional')}
                   </span>
-                </div>
-
-                {choices.length === 0 ? (
-                  <p className="text-xs text-gray-400">{t('menuCourseEmpty')}</p>
-                ) : (
-                  <div className="space-y-1">
-                    {choices.map((dish) => {
-                      const chosen = picked.find((choice) => choice.product_id === dish.id);
-                      const extra = courseSurcharge(course, dish.id);
-                      return (
-                        <div key={dish.id}>
-                          <button
-                            type="button"
-                            onClick={() => toggle(course.id, dish.id, course.max_choices)}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                              chosen ? 'border-brand bg-brand-light text-brand' : 'border-gray-200 hover:border-gray-300'
-                            }`}
-                          >
-                            <span className="flex items-center gap-2">
-                              <span className="font-medium">{dish.name}</span>
-                              {extra > 0 && (
-                                <span className={`text-xs ${chosen ? 'text-brand font-semibold' : 'text-gray-500'}`}>
-                                  +{fmt(extra)}
-                                </span>
-                              )}
-                            </span>
-                            {chosen && <Check size={16} />}
-                          </button>
-
-                          {/* The note and the wave belong to the dish, and only
-                              once it has actually been chosen. */}
-                          {chosen && (
-                            <div className="flex items-center gap-2 mt-1 ps-3">
-                              <input
-                                type="text"
-                                value={chosen.note || ''}
-                                onChange={(e) => amend(course.id, dish.id, { note: e.target.value.slice(0, 100) })}
-                                placeholder={t('menuDishNotePlaceholder')}
-                                maxLength={100}
-                                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                              />
-                              <ServiceRunPicker
-                                value={chosen.service_run ?? serviceRunForProduct(dish, categories)}
-                                onChange={(run) => amend(course.id, dish.id, { service_run: run })}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {course.is_required && picked.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-1">{t('menuCourseLater', { course: course.label })}</p>
-                )}
+                  {course.max_choices > 1 && (
+                    <span className="font-semibold text-muted-foreground">
+                      {t('menuCoursePicked', { picked: picked.length, max: course.max_choices })}
+                    </span>
+                  )}
+                </span>
               </div>
-            );
-          })}
-        </div>
 
-        <div className="p-5 border-t border-gray-100 space-y-2">
-          {/* Said once, plainly, next to the button that takes the order
-              anyway. A dialog here would be a dialog every evening in a house
-              that sells the menu without dessert. */}
-          {missing.length > 0 && (
-            <p className="text-xs text-amber-600 text-center">
-              {t('menuMissingCourses', { courses: missing.map((course) => course.label).join(', ') })}
-            </p>
-          )}
-          {surcharge > 0 && (
-            <p className="text-xs text-gray-500 text-center">
-              {t('menuSurchargeNote', { base: fmt(Number(menu.price)), extra: fmt(surcharge) })}
-            </p>
-          )}
-          <Button onClick={() => onAdd(menu, selection)} disabled={!isValid} className="w-full" size="lg">
-            {mode === 'add'
-              ? t('addToCart', { total: fmt(lineTotal) })
-              : t('saveItemChanges', { total: fmt(lineTotal) })}
+              {choices.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('menuCourseEmpty')}</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {choices.map((dish) => {
+                    const chosen = picked.find((choice) => choice.product_id === dish.id);
+                    const extra = courseSurcharge(course, dish.id);
+                    return (
+                      <div key={dish.id}>
+                        <button
+                          type="button"
+                          aria-pressed={Boolean(chosen)}
+                          onClick={() => toggle(course.id, dish.id, course.max_choices)}
+                          className={`flex min-h-touch-lg w-full items-center justify-between gap-3 rounded-xl border px-3 py-1.5 text-start transition active:scale-[0.99] ${
+                            chosen ? 'border-brand bg-brand-light text-brand' : 'border-border bg-card text-foreground'
+                          }`}
+                        >
+                          <span className="flex min-w-0 flex-1 items-center gap-3">
+                            <span
+                              aria-hidden="true"
+                              className={`flex size-6 shrink-0 items-center justify-center rounded-full border-2 ${chosen ? 'border-brand bg-brand text-white' : 'border-input bg-card'}`}
+                            >
+                              {chosen && <Check className="size-4" />}
+                            </span>
+                            <span className="text-base font-medium">{dish.name}</span>
+                          </span>
+                          {extra > 0 && (
+                            <span className={`shrink-0 text-sm ${chosen ? 'font-semibold' : 'text-muted-foreground'}`}>
+                              +{fmt(extra)}
+                            </span>
+                          )}
+                        </button>
+
+                        {/* The note and the wave belong to the dish, and only
+                            once it has actually been chosen. */}
+                        {chosen && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 ps-3">
+                            <input
+                              type="text"
+                              value={chosen.note || ''}
+                              onChange={(e) => amend(course.id, dish.id, { note: e.target.value.slice(0, 100) })}
+                              placeholder={t('menuDishNotePlaceholder')}
+                              aria-label={t('menuDishNotePlaceholder')}
+                              maxLength={100}
+                              className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                            />
+                            <ServiceRunPicker
+                              value={chosen.service_run ?? serviceRunForProduct(dish, categories)}
+                              onChange={(run) => amend(course.id, dish.id, { service_run: run })}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {stillEmpty && (
+                <p className="mt-1.5 text-sm text-pending">{t('menuCourseLater', { course: course.label })}</p>
+              )}
+            </div>
+          );
+        })}
+      </ModalBody>
+
+      <ModalFooter>
+        {/* Said once, plainly, next to the button that takes the order
+            anyway. A dialog here would be a dialog every evening in a house
+            that sells the menu without dessert. */}
+        {missing.length > 0 && (
+          <p className="text-center text-sm text-pending">
+            {t('menuMissingCourses', { courses: missing.map((course) => course.label).join(', ') })}
+          </p>
+        )}
+        {surcharge > 0 && (
+          <p className="text-center text-sm text-muted-foreground">
+            {t('menuSurchargeNote', { base: fmt(Number(menu.price)), extra: fmt(surcharge) })}
+          </p>
+        )}
+        <Button onClick={() => onAdd(menu, selection)} disabled={!isValid} className="w-full" size="touch-xl">
+          {mode === 'add'
+            ? t('addToCart', { total: fmt(lineTotal) })
+            : t('saveItemChanges', { total: fmt(lineTotal) })}
+        </Button>
+        {/* Six guests taking the same menu is six menus, so repeating the
+            last set of choices has to be one tap rather than one more pass
+            through every course. */}
+        {mode === 'add' && onAddAnother && (
+          <Button
+            variant="outline"
+            size="touch-lg"
+            onClick={() => onAddAnother(selection)}
+            disabled={!isValid}
+            className="w-full"
+          >
+            {t('menuAddAnother')}
           </Button>
-          {/* Six guests taking the same menu is six menus, so repeating the
-              last set of choices has to be one tap rather than one more pass
-              through every course. */}
-          {mode === 'add' && onAddAnother && (
-            <Button
-              variant="outline"
-              onClick={() => onAddAnother(selection)}
-              disabled={!isValid}
-              className="w-full"
-            >
-              {t('menuAddAnother')}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
+        )}
+      </ModalFooter>
+    </Modal>
   );
 }

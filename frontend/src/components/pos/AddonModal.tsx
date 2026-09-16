@@ -1,13 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Plus, Minus } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
+import { Stepper } from '@/components/ui/stepper';
+import { Modal, ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { Product, Addon, AddonGroup } from '@/lib/types';
 
+/**
+ * A dish's options: its add-ons, a note for the kitchen, how many.
+ *
+ * A sheet from the bottom on the handheld and a card on the PC (that is the
+ * Modal's doing). Every option is a row a finger can hit — tapping the row
+ * picks it — and quantities are steppers, not 24 px icons.
+ *
+ * Props in, callback out, no API client — mountable on the handheld unchanged.
+ */
 interface Props {
   product: Product;
   currency: string;
@@ -29,11 +40,15 @@ function groupInitialAddons(addons: Addon[]): Record<string | number, Addon[]> {
   return grouped;
 }
 
+const ROW_ON = 'border-brand bg-brand-light text-brand';
+const ROW_OFF = 'border-border bg-card text-foreground';
+
 export default function AddonModal({
   product, onAdd, onClose,
   initialQuantity = 1, initialAddons = [], initialInstructions = '', mode = 'add',
 }: Props) {
   const t = useTranslations('pos');
+  const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
   const [selected, setSelected] = useState<Record<string | number, Addon[]>>(() => groupInitialAddons(initialAddons));
   const [quantity, setQuantity] = useState(initialQuantity);
@@ -78,11 +93,7 @@ export default function AddonModal({
   const toggleAddonCheckbox = (group: AddonGroup, addon: Addon) => {
     const currentList = selected[group.id] || [];
     const exists = currentList.some((a) => a.id === addon.id);
-    if (exists) {
-      updateAddonQuantity(group, addon, -1);
-    } else {
-      updateAddonQuantity(group, addon, 1);
-    }
+    updateAddonQuantity(group, addon, exists ? -1 : 1);
   };
 
   const getAddonQuantity = (groupId: string | number, addonId: string | number): number => {
@@ -95,10 +106,12 @@ export default function AddonModal({
   const addonTotal = allAddons.reduce((sum, a) => sum + Number(a.price) * (a.quantity || 1), 0);
   const itemTotal = (Number(product.price) + addonTotal) * quantity;
 
+  const requiredMinOf = (group: AddonGroup) =>
+    Boolean(group.is_required) ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
+
   const isValid = groups.every((g) => {
     const count = getGroupTotalQuantity(g.id);
-    const requiredMin = Boolean(g.is_required) ? Math.max(1, g.min_selection || 1) : (g.min_selection || 0);
-    if (count < requiredMin) return false;
+    if (count < requiredMinOf(g)) return false;
     if (g.max_selection && count > g.max_selection) return false;
     return true;
   });
@@ -109,201 +122,150 @@ export default function AddonModal({
     onClose();
   };
 
+  const priceLabel = (addon: Addon, on: boolean) => (
+    <span className={`shrink-0 text-sm ${on ? 'font-semibold' : 'text-muted-foreground'}`}>
+      {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
+    </span>
+  );
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
-        <div className="flex justify-between items-center p-5 border-b border-gray-100">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">{product.name}</h2>
-            <p className="text-brand font-semibold">{fmt(Number(product.price))}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X size={20} />
-          </button>
-        </div>
+    <Modal open onOpenChange={(open) => { if (!open) onClose(); }} size="md">
+      <ModalHeader closeLabel={tCommon('close')}>
+        <ModalTitle>{product.name}</ModalTitle>
+        <ModalDescription className="text-brand text-base font-semibold">{fmt(Number(product.price))}</ModalDescription>
+      </ModalHeader>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {groups.map((group) => {
-            const count = getGroupTotalQuantity(group.id);
-            const activeAddons = (group.addons || []).filter((a) => a.is_active);
-            const allowMultiple = Boolean(group.allow_multiple_quantities);
+      <ModalBody className="space-y-5">
+        {groups.map((group) => {
+          const count = getGroupTotalQuantity(group.id);
+          const activeAddons = (group.addons || []).filter((a) => a.is_active);
+          const allowMultiple = Boolean(group.allow_multiple_quantities);
+          const requiredMin = requiredMinOf(group);
 
-            return (
-              <div key={group.id}>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-sm text-gray-900">{group.name}</h3>
-                  <span className="flex items-center gap-2">
-                    {Boolean(group.is_required) && (
-                      <span className="text-xs text-red-500 font-medium">{t('required')}</span>
-                    )}
-                    {group.max_selection ? (() => {
-                      const remaining = Math.max(0, group.max_selection - count);
-                      const isZero = remaining === 0;
-                      return (
-                        <span className={`font-semibold transition-all ${
-                          isZero
-                            ? 'text-sm text-amber-500'
-                            : 'text-xs text-sky-500'
-                        }`}>
-                          {isZero ? t('selectionComplete') : t('remainingCount', { count: remaining })}
-                        </span>
-                      );
-                    })() : null}
-                  </span>
-                </div>
-                {group.description && <p className="text-xs text-gray-400 mb-2">{group.description}</p>}
-                <div className="space-y-1">
-                  {activeAddons.map((addon) => {
-                    const addonQty = getAddonQuantity(group.id, addon.id);
-                    const isSel = addonQty > 0;
+          return (
+            <div key={group.id}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-base font-semibold text-foreground">{group.name}</h3>
+                <span className="flex items-center gap-2 text-xs">
+                  {Boolean(group.is_required) && (
+                    <span className="font-medium text-table-occupied">{t('required')}</span>
+                  )}
+                  {group.max_selection ? (() => {
+                    const remaining = Math.max(0, group.max_selection - count);
+                    return (
+                      <span className={`font-semibold ${remaining === 0 ? 'text-table-reserved' : 'text-muted-foreground'}`}>
+                        {remaining === 0 ? t('selectionComplete') : t('remainingCount', { count: remaining })}
+                      </span>
+                    );
+                  })() : null}
+                </span>
+              </div>
+              {group.description && <p className="mb-2 text-sm text-muted-foreground">{group.description}</p>}
 
-                    if (allowMultiple) {
-                      return (
-                        <div
-                          key={addon.id}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                            isSel
-                              ? 'border-brand bg-brand-light text-brand'
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{addon.name}</span>
-                            <span className={`text-xs ${isSel ? 'text-brand font-semibold' : 'text-gray-500'}`}>
-                              {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {isSel ? (
-                              <div className="flex items-center gap-1.5 bg-white border border-brand rounded-lg p-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => updateAddonQuantity(group, addon, -1)}
-                                  className="w-6 h-6 rounded flex items-center justify-center text-brand hover:bg-brand-light"
-                                >
-                                  <Minus size={14} />
-                                </button>
-                                <span className="text-xs font-bold w-4 text-center text-brand">{addonQty}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => updateAddonQuantity(group, addon, 1)}
-                                  className="w-6 h-6 rounded flex items-center justify-center text-brand hover:bg-brand-light"
-                                >
-                                  <Plus size={14} />
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => updateAddonQuantity(group, addon, 1)}
-                                className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200"
-                              >
-                                <Plus size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }
+              <div className="flex flex-col gap-2">
+                {activeAddons.map((addon) => {
+                  const addonQty = getAddonQuantity(group.id, addon.id);
+                  const on = addonQty > 0;
 
+                  if (allowMultiple) {
+                    // A quantity per option: the row shows a stepper once
+                    // the option is in, and a plus to bring it in.
                     return (
                       <div
                         key={addon.id}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                          isSel
-                            ? 'border-brand bg-brand-light text-brand'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
+                        className={`flex min-h-touch-lg items-center justify-between gap-3 rounded-xl border px-3 py-1.5 ${on ? ROW_ON : ROW_OFF}`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{addon.name}</span>
-                          <span className={`text-xs ${isSel ? 'text-brand font-semibold' : 'text-gray-500'}`}>
-                            {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {isSel ? (
-                            <div className="flex items-center gap-1.5 bg-white border border-brand rounded-lg p-0.5">
-                              <button
-                                type="button"
-                                onClick={() => toggleAddonCheckbox(group, addon)}
-                                className="w-6 h-6 rounded flex items-center justify-center text-brand hover:bg-brand-light"
-                              >
-                                <Minus size={14} />
-                              </button>
-                              <span className="text-xs font-bold w-4 text-center text-brand">1</span>
-                              <button
-                                type="button"
-                                disabled
-                                className="w-6 h-6 rounded flex items-center justify-center text-gray-300 cursor-not-allowed opacity-50"
-                              >
-                                <Plus size={14} />
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => toggleAddonCheckbox(group, addon)}
-                              className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200"
-                            >
-                              <Plus size={14} />
-                            </button>
-                          )}
-                        </div>
+                        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2">
+                          <span className="text-base font-medium">{addon.name}</span>
+                          {priceLabel(addon, on)}
+                        </span>
+                        {on ? (
+                          <Stepper
+                            size="sm"
+                            value={addonQty}
+                            onChange={(next) => updateAddonQuantity(group, addon, next - addonQty)}
+                            decreaseLabel={t('decreaseQuantity')}
+                            increaseLabel={t('increaseQuantity')}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label={t('increaseQuantity')}
+                            onClick={() => updateAddonQuantity(group, addon, 1)}
+                            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground active:scale-95"
+                          >
+                            <Plus className="size-5" />
+                          </button>
+                        )}
                       </div>
                     );
-                  })}
-                </div>
-                {(() => {
-                  const requiredMin = Boolean(group.is_required) ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
-                  if (requiredMin > 0 && count < requiredMin) {
-                    return (
-                      <p className="text-xs text-red-500 mt-1">{t('selectAtLeast', { count: requiredMin })}</p>
-                    );
                   }
-                  return null;
-                })()}
+
+                  // One tap on the row picks it, another clears it.
+                  return (
+                    <button
+                      key={addon.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggleAddonCheckbox(group, addon)}
+                      className={`flex min-h-touch-lg w-full items-center justify-between gap-3 rounded-xl border px-3 py-1.5 text-start transition active:scale-[0.99] ${on ? ROW_ON : ROW_OFF}`}
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-3">
+                        <span
+                          aria-hidden="true"
+                          className={`flex size-6 shrink-0 items-center justify-center rounded-md border-2 ${on ? 'border-brand bg-brand text-white' : 'border-input bg-card'}`}
+                        >
+                          {on && <Check className="size-4" />}
+                        </span>
+                        <span className="text-base font-medium">{addon.name}</span>
+                      </span>
+                      {priceLabel(addon, on)}
+                    </button>
+                  );
+                })}
               </div>
-            );
-          })}
+              {requiredMin > 0 && count < requiredMin && (
+                <p className="mt-1.5 text-sm text-table-occupied">{t('selectAtLeast', { count: requiredMin })}</p>
+              )}
+            </div>
+          );
+        })}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('specialInstructions')}</label>
-            <input
-              type="text"
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value.slice(0, 100))}
-              placeholder={t('specialInstructionsPlaceholder')}
-              maxLength={100}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
-            />
-            <p className="text-xs text-gray-400 text-end mt-0.5">{instructions.length}/100</p>
-          </div>
+        <div>
+          <label htmlFor={`addon-note-${product.id}`} className="mb-1.5 block text-base font-semibold text-foreground">
+            {t('specialInstructions')}
+          </label>
+          <input
+            id={`addon-note-${product.id}`}
+            type="text"
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value.slice(0, 100))}
+            placeholder={t('specialInstructionsPlaceholder')}
+            maxLength={100}
+            className="h-touch w-full rounded-xl border border-input bg-card px-4 text-base outline-none focus:ring-2 focus:ring-brand"
+          />
+          <p className="mt-1 text-end text-xs text-muted-foreground">{instructions.length}/100</p>
         </div>
+      </ModalBody>
 
-        <div className="p-5 border-t border-gray-100">
-          <div className="flex items-center justify-center gap-4 mb-4">
-            <button
-              onClick={() => setQuantity(Math.max(1, quantity - 1))}
-              className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
-            >
-              <Minus size={16} />
-            </button>
-            <span className="text-lg font-bold w-8 text-center">{quantity}</span>
-            <button
-              onClick={() => setQuantity(quantity + 1)}
-              className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
-            >
-              <Plus size={16} />
-            </button>
-          </div>
-          <Button onClick={handleAdd} disabled={!isValid} className="w-full" size="lg">
-            {mode === 'edit'
-              ? t('saveItemChanges', { total: fmt(itemTotal) })
-              : t('addToCart', { total: fmt(itemTotal) })}
-          </Button>
+      <ModalFooter>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-base font-semibold text-foreground">{t('quantity')}</span>
+          <Stepper
+            size="md"
+            min={1}
+            value={quantity}
+            onChange={setQuantity}
+            decreaseLabel={t('decreaseQuantity')}
+            increaseLabel={t('increaseQuantity')}
+          />
         </div>
-      </div>
-    </div>
+        <Button onClick={handleAdd} disabled={!isValid} className="w-full" size="touch-xl">
+          {mode === 'edit'
+            ? t('saveItemChanges', { total: fmt(itemTotal) })
+            : t('addToCart', { total: fmt(itemTotal) })}
+        </Button>
+      </ModalFooter>
+    </Modal>
   );
 }

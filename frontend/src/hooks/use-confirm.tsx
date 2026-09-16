@@ -82,7 +82,9 @@ export function useConfirm() {
 
   const ConfirmDialog: ReactNode = state ? (
     <Dialog open={state.open} onOpenChange={(open) => !open && handleCancel()}>
-      <DialogContent className="sm:max-w-md" showCloseButton={false}>
+      {/* Above everything, Modal included: a confirmation raised from inside
+          a window has to be visible over that window. */}
+      <DialogContent className="z-confirm sm:max-w-md" overlayClassName="z-confirm" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{state.title || t('confirm')}</DialogTitle>
           <DialogDescription>{state.message}</DialogDescription>
