@@ -954,6 +954,17 @@
     "success": "Database restored successfully. Restarting..."
   },
   "serverApp": {
+    "coversCount": "{count, plural, one {# cover} other {# covers}}",
+    "pendingToSend": "{count, plural, one {# to send} other {# to send}}",
+    "newOrder": "New order",
+    "noOpenOrderHint": "The first order opens the table.",
+    "productOptions": "Options for {name}",
+    "backToMenu": "Back to the menu",
+    "categories": "Categories",
+    "rooms": "Rooms",
+    "dishes": "Dishes",
+    "toSend": "To send",
+    "dishCount": "{count, plural, one {# dish} other {# dishes}}",
     "addItems": "Add dishes",
     "addToOrder": "Add to order",
     "attemptDropped": "The pending send was dropped: the check no longer takes it",

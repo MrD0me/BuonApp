@@ -6,7 +6,7 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
 
-  await page.getByTestId('pos-product-card').click();
+  await page.getByTestId('pos-product-card').first().click();
   await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
   await page.getByRole('button', { name: 'Place Order' }).click();
 
@@ -50,7 +50,7 @@ test('prepaid checkout never reports success when the payment response is partia
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
 
-  await page.getByTestId('pos-product-card').click();
+  await page.getByTestId('pos-product-card').first().click();
   await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
   await page.getByRole('button', { name: 'Place Order' }).click();
   await expect(page.getByRole('button', { name: 'Confirm Payment · ฿60.00' })).toBeVisible();

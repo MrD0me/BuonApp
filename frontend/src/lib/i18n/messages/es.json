@@ -954,6 +954,17 @@
     "success": "Base restaurada con éxito. Reiniciando..."
   },
   "serverApp": {
+    "coversCount": "{count, plural, one {# comensal} other {# comensales}}",
+    "pendingToSend": "{count, plural, one {# por enviar} other {# por enviar}}",
+    "newOrder": "Pedido nuevo",
+    "noOpenOrderHint": "El primer pedido abre la mesa.",
+    "productOptions": "Opciones de {name}",
+    "backToMenu": "Volver al menú",
+    "categories": "Categorías",
+    "rooms": "Salas",
+    "dishes": "Platos",
+    "toSend": "Por enviar",
+    "dishCount": "{count, plural, one {# plato} other {# platos}}",
     "addItems": "Añadir platos",
     "addToOrder": "Agregar al pedido",
     "attemptDropped": "El envío pendiente se descartó: la cuenta ya no lo acepta",

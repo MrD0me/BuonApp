@@ -954,6 +954,17 @@
     "success": "پایگاه داده با کامیابی بازگردانده شد. در حال راه‌اندازی دوباره"
   },
   "serverApp": {
+    "coversCount": "{count, plural, one {# نفر} other {# نفر}}",
+    "pendingToSend": "{count, plural, one {# برای ارسال} other {# برای ارسال}}",
+    "newOrder": "سفارش جدید",
+    "noOpenOrderHint": "اولین سفارش میز را باز می‌کند.",
+    "productOptions": "گزینه‌های {name}",
+    "backToMenu": "بازگشت به منو",
+    "categories": "دسته‌بندی‌ها",
+    "rooms": "سالن‌ها",
+    "dishes": "غذاها",
+    "toSend": "برای ارسال",
+    "dishCount": "{count, plural, one {# غذا} other {# غذا}}",
     "addItems": "افزودن غذا",
     "addToOrder": "افزودن به سفارش",
     "attemptDropped": "ارسال معلق کنار گذاشته شد: صورت‌حساب دیگر آن را نمی‌پذیرد",

@@ -59,6 +59,26 @@ function seedPosFixture() {
     'e2e-product', 'e2e-category', 'E2E Coffee', 60,
     0, 0, 999, 1, createdAt, createdAt,
   );
+  // A second dish with an add-on group: the one whose tap has to open the
+  // options window, now that a plain dish goes straight onto the ticket.
+  db.prepare(
+    `INSERT INTO products (
+       id, category_id, name, price,
+       cb_percent, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+  ).run(
+    'e2e-product-tea', 'e2e-category', 'E2E Tea', 50,
+    0, 0, 999, 2, createdAt, createdAt,
+  );
+  db.prepare(
+    `INSERT INTO addon_groups (id, name, is_required, min_selection, max_selection, allow_multiple_quantities, is_active, sort_order, created_at, updated_at)
+     VALUES (?, ?, 0, 0, 1, 0, 1, 0, ?, ?)`
+  ).run('e2e-addon-group', 'Milk', createdAt, createdAt);
+  db.prepare(
+    'INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 0, ?, ?)'
+  ).run('e2e-addon', 'e2e-addon-group', 'Oat milk', 10, createdAt, createdAt);
+  db.prepare('INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)')
+    .run('e2e-product-tea', 'e2e-addon-group');
 }
 
 let exitRequested = false;

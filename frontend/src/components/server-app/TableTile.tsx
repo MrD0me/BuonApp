@@ -4,17 +4,11 @@ import { Link2, Users } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Order, Table } from '@/lib/types';
 import { parseDbTimestamp } from '@/lib/utils';
-import { isPendingKot } from '@/lib/kot';
+import { pendingDishCount } from '@/lib/kot';
+import { TABLE_STATUS_TONE, TONE_STYLES } from '@/lib/status-styles';
+import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n/enums';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Ltr } from '@/components/layout/Ltr';
-
-/** The same colours the floor map on the central PC uses, so a table reads the same on both. */
-const STATUS_STYLES: Record<string, { tile: string; dot: string }> = {
-  available: { tile: 'border-gray-200 bg-white', dot: 'bg-green-500' },
-  occupied: { tile: 'border-red-200 bg-red-50', dot: 'bg-red-500' },
-  reserved: { tile: 'border-amber-200 bg-amber-50', dot: 'bg-amber-500' },
-  cleaning: { tile: 'border-gray-300 bg-gray-100', dot: 'bg-gray-500' },
-  held: { tile: 'border-blue-200 bg-blue-50', dot: 'bg-blue-500' },
-};
 
 /** Minutes since a timestamp, or null when there isn't one to measure from. */
 function minutesSince(timestamp: string | null | undefined): number | null {
@@ -32,16 +26,21 @@ interface Props {
 }
 
 /**
- * One table in the list: its name, its colour, how many are sitting at it and
- * for how long, and the orange dot that says a round is still waiting to go
- * to the kitchen — the one signal a waiter passing by must not miss.
+ * One table in the list.
+ *
+ * Its state is said twice, in colour and in words — a band down the side and
+ * a pill that reads "Occupato" — because a 6 px dot was the one thing a
+ * waiter walking past could not see. Under it: how many are sitting, for how
+ * long, and the count of plates still waiting to go to the kitchen, which is
+ * the one number the floor must not miss.
  */
 export function TableTile({ table, order, onClick }: Props) {
   const tTables = useTranslations('tables');
   const t = useTranslations('serverApp');
-  const style = STATUS_STYLES[table.status] || STATUS_STYLES.available;
+  const tone = TABLE_STATUS_TONE[table.status] ?? 'free';
+  const style = TONE_STYLES[tone];
   const elapsed = order ? minutesSince(order.created_at) : null;
-  const pendingRound = (order?.items || []).some(isPendingKot);
+  const pending = order ? pendingDishCount(order.items || []) : 0;
   const joined = Boolean(table.merged_into);
   const reservation = !order && table.reservation && table.reservation.status === 'booked' ? table.reservation : null;
 
@@ -49,26 +48,28 @@ export function TableTile({ table, order, onClick }: Props) {
     <button
       type="button"
       onClick={onClick}
-      className={`relative flex min-h-24 flex-col rounded-xl border p-3 text-start transition active:scale-[0.98] ${style.tile} ${joined ? 'border-dashed' : ''}`}
+      className={`flex min-h-touch-xl flex-col gap-2.5 rounded-2xl border border-border border-s-4 bg-card p-3 ps-3.5 text-start shadow-xs transition active:scale-[0.98] ${style.band} ${joined ? 'border-dashed' : ''}`}
     >
-      <span className="flex items-center gap-2">
-        <span className={`size-2.5 shrink-0 rounded-full ${style.dot}`} />
-        <span className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900">{table.name}</span>
-        {joined && <Link2 size={14} className="shrink-0 text-gray-400" aria-label={tTables('mergedInto')} />}
-        {pendingRound && (
-          <span className="size-2.5 shrink-0 rounded-full bg-orange-500 ring-2 ring-white" aria-label={t('pendingKitchen')} title={t('pendingKitchen')} />
-        )}
+      <span className="flex items-start justify-between gap-2">
+        <span className="min-w-0 truncate text-xl leading-tight font-bold text-foreground">{table.name}</span>
+        {pending > 0 ? (
+          <StatusBadge tone="pending" size="sm" title={t('pendingKitchen')}>{t('pendingToSend', { count: pending })}</StatusBadge>
+        ) : joined ? (
+          <Link2 size={18} className="shrink-0 text-muted-foreground" aria-label={tTables('mergedInto')} />
+        ) : null}
       </span>
-      {order ? (
-        <span className="mt-auto flex items-center gap-3 pt-2 text-xs text-gray-600">
-          <span className="flex items-center gap-1"><Users size={12} /><Ltr>{order.guest_count ?? 1}</Ltr></span>
-          {elapsed !== null && <span>{t('openSince', { minutes: elapsed })}</span>}
-        </span>
-      ) : reservation ? (
-        <span className="mt-auto truncate pt-2 text-xs text-amber-700">{reservation.name}</span>
-      ) : (
-        <span className="mt-auto pt-2 text-xs text-gray-400">{tTables('statusAvailable')}</span>
-      )}
+      <span className="mt-auto flex flex-col items-start gap-1.5">
+        <StatusBadge tone={tone} size="sm">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</StatusBadge>
+        {order ? (
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Users size={14} />
+            <Ltr>{order.guest_count ?? 1}</Ltr>
+            {elapsed !== null && <span>· {t('openSince', { minutes: elapsed })}</span>}
+          </span>
+        ) : reservation ? (
+          <span className="max-w-full truncate text-sm font-medium text-table-reserved">{reservation.name}</span>
+        ) : null}
+      </span>
     </button>
   );
 }

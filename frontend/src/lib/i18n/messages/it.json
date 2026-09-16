@@ -954,6 +954,17 @@
     "success": "Database ripristinato con successo. Riavvio in corso..."
   },
   "serverApp": {
+    "coversCount": "{count, plural, one {# coperto} other {# coperti}}",
+    "pendingToSend": "{count, plural, one {# da inviare} other {# da inviare}}",
+    "newOrder": "Nuovo ordine",
+    "noOpenOrderHint": "Il primo ordine apre il tavolo.",
+    "productOptions": "Opzioni per {name}",
+    "backToMenu": "Torna al menu",
+    "categories": "Categorie",
+    "rooms": "Sale",
+    "dishes": "Piatti",
+    "toSend": "Da inviare",
+    "dishCount": "{count, plural, one {# piatto} other {# piatti}}",
     "addItems": "Aggiungi piatti",
     "addToOrder": "Aggiungi all'ordine",
     "attemptDropped": "L'invio in sospeso è stato scartato: il conto non lo accetta più",

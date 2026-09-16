@@ -954,6 +954,17 @@
     "success": "Banco de dados restaurado com sucesso. Reiniciando..."
   },
   "serverApp": {
+    "coversCount": "{count, plural, one {# pessoa} other {# pessoas}}",
+    "pendingToSend": "{count, plural, one {# a enviar} other {# a enviar}}",
+    "newOrder": "Novo pedido",
+    "noOpenOrderHint": "O primeiro pedido abre a mesa.",
+    "productOptions": "Opções de {name}",
+    "backToMenu": "Voltar ao cardápio",
+    "categories": "Categorias",
+    "rooms": "Salas",
+    "dishes": "Pratos",
+    "toSend": "A enviar",
+    "dishCount": "{count, plural, one {# prato} other {# pratos}}",
     "addItems": "Adicionar pratos",
     "addToOrder": "Adicionar ao pedido",
     "attemptDropped": "O envio pendente foi descartado: a conta não o aceita mais",

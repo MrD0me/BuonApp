@@ -3,10 +3,13 @@
 import { useMemo, useState } from 'react';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import type { Addon, CartItem, Category, FixedMenuSelection, Order, Product, Table } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { isFixedMenu, menuGroupsOfOrder, menuLinesOfCart, menuLinesOfOrder, openSlotsForProduct, type OpenSlot } from '@/lib/fixed-menu';
+import { needsOptionsDialog } from '@/lib/product-options';
+import { Button } from '@/components/ui/button';
+import { ActionBar } from '@/components/ui/action-bar';
 import { Ltr } from '@/components/layout/Ltr';
 import AddonModal from '@/components/pos/AddonModal';
 import FixedMenuPicker from '@/components/pos/FixedMenuPicker';
@@ -33,17 +36,22 @@ interface Props {
 /**
  * Taking the order: the till's Ordina screen, on a phone.
  *
- * The three windows are the till's own, mounted as they are: extras, the
- * fixed menu, and "inside the menu?". A tap on a dish goes the same three
- * ways it does on the central PC — a menu is composed, a dish that fits an
- * open course is asked about, anything else opens the extras — so the check
- * that comes out is the same check whoever took it.
+ * Two screens under one header: the menu, and the ticket being written. A
+ * tap on a dish goes the same ways it does on the central PC — a menu is
+ * composed, a dish that fits an open course is asked about, a dish with
+ * options opens them — and a dish with nothing to decide goes straight in.
+ * The bar at the bottom says how much is on the ticket and opens it.
+ *
+ * The three windows are the till's own, mounted as they are. They sit one
+ * layer above the page, so the ticket stays where it is while a line is
+ * being edited.
  */
 export function OrdinaView({
   table, pendingOrder, products, categories, kotPrintingEnabled, coverChargeAmount, currency, submitting,
   onBack, onSend, onAttachToOrderMenu,
 }: Props) {
   const t = useTranslations('serverApp');
+  const fmt = useFormatCurrency();
   const cart = useCartStore();
   const [cartOpen, setCartOpen] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
@@ -69,7 +77,11 @@ export function OrdinaView({
       setAttachProduct({ product, slots });
       return;
     }
-    setAddonProduct(product);
+    if (needsOptionsDialog(product)) {
+      setAddonProduct(product);
+      return;
+    }
+    cart.addItem(product, 1, [], '');
   };
 
   const handleAttachToMenu = async (slot: OpenSlot) => {
@@ -104,53 +116,25 @@ export function OrdinaView({
   };
 
   const itemCount = cart.itemCount();
+  const guests = pendingOrder?.guest_count ?? cart.guestCount;
+  const subtitle = `${t('coversCount', { count: guests })} · ${pendingOrder ? t('openOrder') : t('newOrder')}`;
 
-  return (
-    <div className="pb-24">
-      <header className="sticky top-0 z-20 -mx-3 mb-3 flex items-center gap-2 border-b border-gray-200 bg-white/95 px-3 py-2 backdrop-blur">
-        <button type="button" onClick={onBack} aria-label={t('backToFloor')} className="rounded-lg border border-gray-200 p-2 text-gray-600"><ArrowLeft size={18} className="rtl-flip" /></button>
+  const header = (title: string, backLabel: string, onBackClick: () => void) => (
+    <header className="sticky top-0 z-20 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-5xl items-center gap-2 px-2">
+        <Button type="button" variant="ghost" size="icon-touch" onClick={onBackClick} aria-label={backLabel}>
+          <ArrowLeft className="rtl-flip size-6" />
+        </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-semibold">{t('tableLabel', { name: table.name })}</h1>
-          <p className="truncate text-xs text-gray-500">{pendingOrder ? t('openOrder') : t('ordina')}</p>
+          <h1 className="truncate text-xl leading-tight font-bold">{title}</h1>
+          <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
         </div>
-      </header>
+      </div>
+    </header>
+  );
 
-      <HandheldProductGrid products={products} categories={categories} onProductClick={handleProductClick} />
-
-      {/* The cart lives in a sheet, behind one button that says how much is in it. */}
-      <button
-        type="button"
-        onClick={() => setCartOpen(true)}
-        className="fixed bottom-5 end-5 z-30 flex h-14 items-center gap-2 rounded-full bg-brand px-5 font-semibold text-white shadow-lg"
-      >
-        <ShoppingCart size={20} />
-        <span>{t('cart')}</span>
-        {itemCount > 0 && <span className="flex min-w-6 items-center justify-center rounded-full bg-white px-1.5 text-sm text-brand"><Ltr>{itemCount}</Ltr></span>}
-      </button>
-
-      <Drawer open={cartOpen} onOpenChange={setCartOpen}>
-        <DrawerContent className="max-h-[88vh]">
-          <DrawerHeader className="text-start">
-            <DrawerTitle>{t('cart')}</DrawerTitle>
-            <DrawerDescription className="sr-only">{t('tableLabel', { name: table.name })}</DrawerDescription>
-          </DrawerHeader>
-          <HandheldCart
-            products={products}
-            categories={categories}
-            kotPrintingEnabled={kotPrintingEnabled}
-            coverChargeAmount={coverChargeAmount}
-            existingOrder={pendingOrder}
-            submitting={submitting}
-            onEditItem={(item) => {
-              setCartOpen(false);
-              if (item.menu_selection) setEditingMenuItem(item);
-              else setEditingCartItem(item);
-            }}
-            onSend={() => { setCartOpen(false); void onSend(); }}
-          />
-        </DrawerContent>
-      </Drawer>
-
+  const windows = (
+    <>
       {addonProduct && (
         <AddonModal
           product={addonProduct}
@@ -179,7 +163,8 @@ export function OrdinaView({
           onSeparate={() => {
             const chosen = attachProduct.product;
             setAttachProduct(null);
-            setAddonProduct(chosen);
+            if (needsOptionsDialog(chosen)) setAddonProduct(chosen);
+            else cart.addItem(chosen, 1, [], '');
           }}
           onClose={() => setAttachProduct(null)}
         />
@@ -209,6 +194,62 @@ export function OrdinaView({
           onClose={() => setEditingCartItem(null)}
         />
       )}
+    </>
+  );
+
+  if (cartOpen) {
+    return (
+      <div className="flex min-h-dvh flex-col bg-background text-foreground">
+        {header(t('cart'), t('backToMenu'), () => setCartOpen(false))}
+        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
+          <HandheldCart
+            products={products}
+            categories={categories}
+            kotPrintingEnabled={kotPrintingEnabled}
+            coverChargeAmount={coverChargeAmount}
+            existingOrder={pendingOrder}
+            submitting={submitting}
+            onEditItem={(item) => {
+              if (item.menu_selection) setEditingMenuItem(item);
+              else setEditingCartItem(item);
+            }}
+            onSend={() => { void onSend(); }}
+          />
+        </div>
+        {windows}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      {header(table.name, t('backToFloor'), onBack)}
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-3">
+        <HandheldProductGrid
+          products={products}
+          categories={categories}
+          onProductClick={handleProductClick}
+          onProductOptions={setAddonProduct}
+        />
+      </main>
+
+      {/* The ticket, in one bar: how many plates and how much, and a tap opens it. */}
+      <ActionBar>
+        <Button
+          type="button"
+          size="touch-xl"
+          onClick={() => setCartOpen(true)}
+          className="w-full justify-between bg-brand text-white hover:bg-brand-hover"
+        >
+          <span className="flex items-center gap-2.5">
+            <ShoppingCart />
+            <span>{t('cart')}</span>
+            <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-white/25 px-2 text-sm font-bold"><Ltr>{itemCount}</Ltr></span>
+          </span>
+          <Ltr>{fmt(cart.subtotal())}</Ltr>
+        </Button>
+      </ActionBar>
+      {windows}
     </div>
   );
 }
