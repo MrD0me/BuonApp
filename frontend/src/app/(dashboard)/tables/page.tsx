@@ -6,6 +6,13 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { Plus, Pencil, Trash2, Map as MapIcon, PenLine, LayoutGrid, CalendarCheck } from 'lucide-react';
+import { PageToolbar } from '@/components/layout/PageToolbar';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import { StatusDot } from '@/components/ui/status-badge';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ServiceDayChip } from '@/components/service-days/ServiceDayChip';
+import { TABLE_STATUS_TONE } from '@/lib/status-styles';
+import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n/enums';
 import type { Room, Table, Order, Reservation } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { useTranslations } from 'use-intl';
@@ -29,6 +36,7 @@ import { normalizeDiscountMode, type DiscountMode } from '@/lib/discount-setting
 export default function TablesPage() {
   const tTables = useTranslations('tables');
   const tNav = useTranslations('nav');
+  const tServerApp = useTranslations('serverApp');
   const role = useAuthStore((state) => state.currentTenant?.role) || 'cashier';
   const canEdit = role === 'owner' || role === 'manager';
 
@@ -181,65 +189,72 @@ export default function TablesPage() {
   }
 
   return (
-    <div>
-      <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">{tTables('title')}</h1>
-        <div className="flex items-center gap-2">
-          {/* Bookings belong to the room, so they are reached from it rather
-              than from a bar entry of their own. */}
-          <Button variant="outline" asChild>
-            <Link href="/reservations">
-              <CalendarCheck size={16} className="me-1" /> {tNav('reservations')}
-            </Link>
-          </Button>
-          {canEdit && (
-            <Button variant={editing ? 'default' : 'outline'} onClick={() => setEditing((value) => !value)}>
-              {editing ? <><MapIcon size={16} className="me-1" /> {tTables('serviceMode')}</>
-                : <><PenLine size={16} className="me-1" /> {tTables('editMode')}</>}
+    <div className="flex flex-col gap-4">
+      {/* Titled like the sidebar entry: the page and the bar say the same word. */}
+      <PageToolbar
+        title={tNav('tables')}
+        actions={(
+          <>
+            <ServiceDayChip readOnly />
+            {/* Bookings belong to the room, so they are reached from it rather
+                than from a bar entry of their own. */}
+            <Button variant="outline" size="touch" asChild>
+              <Link href="/reservations">
+                <CalendarCheck /> {tNav('reservations')}
+              </Link>
             </Button>
-          )}
-          {editing && (
-            <>
-              <Button variant="outline" onClick={() => setShowLayouts(true)}>
-                <LayoutGrid size={16} className="me-1" /> {tTables('layouts')}
+            {canEdit && (
+              <Button variant={editing ? 'default' : 'outline'} size="touch" onClick={() => setEditing((value) => !value)}>
+                {editing ? <><MapIcon /> {tTables('serviceMode')}</> : <><PenLine /> {tTables('editMode')}</>}
               </Button>
-              <Button variant="outline" onClick={() => setRoomForm({ room: null })}>
-                <Plus size={16} className="me-1" /> {tTables('addRoom')}
-              </Button>
-              <Button onClick={() => setTableForm({ table: null })} disabled={rooms.length === 0}>
-                <Plus size={16} className="me-1" /> {tTables('addTable')}
-              </Button>
-            </>
-          )}
+            )}
+          </>
+        )}
+      />
+      {editing && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-brand/30 bg-brand-light/40 px-4 py-3">
+          <Button variant="outline" size="touch" onClick={() => setShowLayouts(true)}>
+            <LayoutGrid /> {tTables('layouts')}
+          </Button>
+          <Button variant="outline" size="touch" onClick={() => setRoomForm({ room: null })}>
+            <Plus /> {tTables('addRoom')}
+          </Button>
+          <Button size="touch" onClick={() => setTableForm({ table: null })} disabled={rooms.length === 0}>
+            <Plus /> {tTables('addTable')}
+          </Button>
+          <p className="ms-auto text-sm text-muted-foreground">{tTables('editModeHint')}</p>
         </div>
-      </div>
+      )}
 
       {rooms.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-100 p-10 text-center">
-          <MapIcon size={32} className="mx-auto text-gray-300 mb-3" />
-          <p className="font-medium text-gray-700">{tTables('noRooms')}</p>
-          <p className="text-sm text-gray-500 mt-1 mb-4">{tTables('noRoomsHint')}</p>
-          {canEdit && (
-            <Button onClick={() => { setEditing(true); setRoomForm({ room: null }); }}>
+        <EmptyState
+          className="rounded-2xl border border-border bg-card py-16"
+          icon={<MapIcon />}
+          title={tTables('noRooms')}
+          hint={tTables('noRoomsHint')}
+          action={canEdit ? (
+            <Button size="touch-lg" onClick={() => { setEditing(true); setRoomForm({ room: null }); }}>
               {tTables('createRoom')}
             </Button>
-          )}
-        </div>
+          ) : undefined}
+        />
       ) : (
-        <>
+        <div className="flex flex-col gap-4">
           {!editing && unassigned.length > 0 && (
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <p className="text-xs font-medium text-amber-800 mb-2">
+            <div className="rounded-2xl border border-table-reserved bg-table-reserved-soft p-3">
+              <p className="mb-2 text-sm font-semibold text-table-reserved">
                 {armedBooking ? tTables('pickTableFor', { name: armedBooking.name }) : tTables('unassignedBookings', { count: unassigned.length })}
               </p>
               <div className="flex flex-wrap gap-2">
                 {unassigned.map((booking) => (
                   <button key={booking.id}
+                    type="button"
+                    aria-pressed={armedBooking?.id === booking.id}
                     onClick={() => setArmedBooking(armedBooking?.id === booking.id ? null : booking)}
-                    className={`px-2.5 py-1 text-xs rounded-lg border-2 transition-colors ${
+                    className={`h-touch rounded-xl border-2 bg-card px-3 text-sm font-medium transition ${
                       armedBooking?.id === booking.id
-                        ? 'border-brand bg-white text-brand font-medium'
-                        : 'border-amber-300 bg-white text-amber-900 hover:border-amber-400'
+                        ? 'border-brand text-brand'
+                        : 'border-table-reserved/40 text-foreground'
                     }`}>
                     {booking.booked_time ? `${booking.booked_time} · ` : ''}{booking.name} · {booking.guests}
                   </button>
@@ -248,31 +263,42 @@ export default function TablesPage() {
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            {rooms.map((room) => (
-              <button key={room.id} onClick={() => setSelectedRoomId(room.id)}
-                className={`px-3 py-1.5 text-sm rounded-lg border-2 transition-colors ${
-                  activeRoom?.id === room.id
-                    ? 'border-brand bg-brand-light text-brand font-medium'
-                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                }`}>
-                {room.name}
-                <span className="ms-1.5 text-xs text-gray-400">{(room.tables || []).length}</span>
-              </button>
-            ))}
-
-            {editing && activeRoom && (
-              <div className="flex items-center gap-1 ms-2">
-                <button onClick={() => setRoomForm({ room: activeRoom })}
-                  className="p-1.5 text-gray-500 hover:text-gray-800" title={tTables('editRoom')}>
-                  <Pencil size={15} />
-                </button>
-                <button onClick={() => setDeletingRoom(activeRoom)}
-                  className="p-1.5 text-red-500 hover:text-red-700" title={tTables('deleteRoom')}>
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <SegmentedControl
+                size="lg"
+                aria-label={tServerApp('rooms')}
+                value={activeRoom?.id ?? ''}
+                onValueChange={setSelectedRoomId}
+                items={rooms.map((room) => ({ value: room.id, label: room.name, count: (room.tables || []).length }))}
+              />
+              {editing && activeRoom && (
+                <>
+                  <Button variant="ghost" size="icon-touch" onClick={() => setRoomForm({ room: activeRoom })} aria-label={tTables('editRoom')} title={tTables('editRoom')}>
+                    <Pencil />
+                  </Button>
+                  <Button variant="ghost" size="icon-touch" onClick={() => setDeletingRoom(activeRoom)} aria-label={tTables('deleteRoom')} title={tTables('deleteRoom')} className="text-table-occupied">
+                    <Trash2 />
+                  </Button>
+                </>
+              )}
+            </div>
+            {/* What the colours mean, once, instead of a dot the eye has to decode. */}
+            <div className="hidden flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground lg:flex">
+              {(['available', 'occupied', 'reserved', 'held'] as const).map((status) => (
+                <span key={status} className="flex items-center gap-1.5">
+                  <StatusDot tone={TABLE_STATUS_TONE[status]} />
+                  {tTables(TABLE_STATUS_LABEL_KEYS[status])}
+                </span>
+              ))}
+              {/* A dot like the others: the same badge with a number inside
+                  read as a live count of plates waiting, and said 2 with
+                  nothing to send. */}
+              <span className="flex items-center gap-1.5">
+                <StatusDot tone="pending" />
+                {tTables('legendPending')}
+              </span>
+            </div>
           </div>
 
           {activeRoom && (
@@ -286,23 +312,19 @@ export default function TablesPage() {
             />
           )}
 
-          {editing && (
-            <p className="mt-3 text-xs text-gray-500">{tTables('editModeHint')}</p>
-          )}
-        </>
+        </div>
       )}
 
       {orphanTables.length > 0 && (
-        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-3">
-          <p className="text-sm font-medium text-amber-800 mb-2">
+        <div className="rounded-2xl border border-table-reserved bg-table-reserved-soft p-3">
+          <p className="mb-2 text-sm font-semibold text-table-reserved">
             {tTables('unassignedTables', { count: orphanTables.length })}
           </p>
           <div className="flex flex-wrap gap-2">
             {orphanTables.map((table) => (
-              <button key={table.id} onClick={() => setTableForm({ table })}
-                className="px-2.5 py-1 text-xs rounded-lg bg-white border border-amber-300 text-amber-900 hover:bg-amber-100">
+              <Button key={table.id} type="button" variant="outline" size="touch" onClick={() => setTableForm({ table })}>
                 {table.name}
-              </button>
+              </Button>
             ))}
           </div>
         </div>

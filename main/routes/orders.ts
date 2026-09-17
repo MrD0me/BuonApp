@@ -11,7 +11,8 @@ import { getOpenServiceDay, getOrOpenServiceDay } from '../services/service-day'
 import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
 import { seatReservationForTable } from '../services/reservations';
 import { syncUnpaidBillsForOrder } from './bills';
-import { coveredGuestCount, expandFixedMenuItems, type ExpandedOrderItem } from '../services/fixed-menu';
+import { coveredGuestCount, expandFixedMenuItems, planCourseFill, type ExpandedOrderItem } from '../services/fixed-menu';
+import { normalizeServiceRun, resolveServiceRun, MAX_SERVICE_RUNS } from '../services/service-runs';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -209,8 +210,8 @@ function insertOrderItemRows(
   const insertItem = db.prepare(`
     INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
       subtotal, discount_amount, total, variant_selection,
-      modifier_selection, special_instructions, menu_group_id, menu_role, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      modifier_selection, special_instructions, menu_group_id, menu_role, menu_course_id, service_run, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
   `);
 
   let subtotal = 0;
@@ -265,7 +266,12 @@ function insertOrderItemRows(
       itemSubtotal, itemDiscount, itemSubtotal,
       JSON.stringify(item.variant_selection || null),
       JSON.stringify(item.modifier_selection || null),
-      item.special_instructions || null, item.menu_group_id, item.menu_role, itemCreatedAt, itemCreatedAt
+      item.special_instructions || null, item.menu_group_id, item.menu_role, item.menu_course_id ?? null,
+      // Which wave it goes out in: what the floor asked for, or the run its
+      // category says. Resolved here so every path that writes a row —
+      // opening an order, appending to one, filling in a menu — inherits it.
+      resolveServiceRun(db, product.id, item.service_run),
+      itemCreatedAt, itemCreatedAt
     );
     insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons as any, itemCreatedAt);
 
@@ -280,7 +286,6 @@ function insertOrderItemRows(
 
 router.get('/', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const db = getDatabase();
     const wheres: string[] = [];
     const params: any[] = [];
@@ -340,10 +345,6 @@ router.get('/', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', '
     if (req.query.table_id) {
       wheres.push('table_id = ?');
       params.push(req.query.table_id);
-    }
-    if (user.role === 'server') {
-      wheres.push('user_id = ?');
-      params.push(user.userId);
     }
     // Cursor pagination: `before` / `after` are ORDER BY keys (created_at),
     // composed with `id` to break ties when many orders share a second.
@@ -472,16 +473,11 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
 
 router.get('/:id', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const db = getDatabase();
     const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id));
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    if (user.role === 'server' && (order as any).user_id !== user.userId) {
-      return res.status(403).json({ error: 'Servers can only view their own orders' });
-    }
-
     // #208: collapse the per-order N+1 (5 queries: items/addons/table/customer/bill/loyalty)
     // into the same batchHydrateOrders used by the list endpoint. Previously
     // 6 prepared calls per single detail click.
@@ -505,9 +501,9 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
     // Always the authenticated caller, never client-supplied — trusting a
     // client-sent user_id would let staff spoof order attribution, and the
     // frontend has in fact never sent one, so every order got user_id=NULL.
-    // That silently broke servers' own order visibility (GET /orders scopes
-    // servers to `user_id = <their id>`, which NULL can never match) and any
-    // per-staff sales attribution.
+    // The column no longer gates anything (any waiter may work any table,
+    // see docs/palmare.md); it says who took the order, which is the whole
+    // reason staff have accounts of their own.
     const authenticatedUserId = (req as any).user.userId;
 
     if (!items || items.length === 0) {
@@ -672,11 +668,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const authUser = (req as any).user;
-    if (authUser?.role === 'server' && order.user_id !== authUser.userId) {
-      return res.status(403).json({ error: 'Servers can only modify their own orders' });
-    }
-
     // Replay before any mutable-order guard. A response-loss retry must return
     // the committed result even if the order was split or its validation state
     // changed after the original append.
@@ -703,10 +694,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
-      if (authUser?.role === 'server' && currentOrder.user_id !== authUser.userId) {
-        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
-      }
-
       // Re-check idempotency under the transaction lock in case the early
       // lookup raced the first request. This must remain before mutable-order
       // guards so a committed append always has a replay path.
@@ -845,9 +832,6 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
         : undefined;
       if (!currentUser || currentUser.is_active !== 1 || !['owner', 'manager', 'cashier', 'chef', 'server'].includes(currentUser.role)) {
         throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
-      }
-      if (currentUser.role === 'server' && String(currentOrder.user_id) !== String(authUser.userId)) {
-        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
       }
 
       if (currentOrder.status === status) {
@@ -1490,6 +1474,173 @@ router.patch('/:id/guests', orderWriteRateLimit, requireRole('owner', 'manager',
     notifyOrderUpdated();
 
     res.json({ order: updated });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+  }
+});
+
+/**
+ * Fills in, swaps, or clears one course of a menu already on the check.
+ *
+ * The table takes the starters, the ticket goes to the kitchen, and the main
+ * is decided half an hour later. Until now that meant cancelling the whole
+ * menu and battering it again; the menu is a container that fills up as the
+ * meal goes, and this is how it fills.
+ *
+ * One endpoint for all three because `product_ids` says what the course holds
+ * afterwards, not what to do to it: an empty list clears it, a different dish
+ * swaps it, one more adds. Replaying the same list changes nothing, so a
+ * retry after a lost response cannot double a dish.
+ *
+ * The rows it writes are born with `kot_batch` NULL like any other, so they
+ * go out on the next round on their own. Nothing is printed from here: a
+ * ticket firing out of the checkout screen is not something anybody asked
+ * for.
+ */
+router.put(
+  '/:id/menu-groups/:groupId/courses/:courseId',
+  orderWriteRateLimit,
+  requireRole('owner', 'manager', 'cashier', 'server'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const orderId = String(req.params.id);
+
+      const result = withTxn(() => {
+        // Re-read under the transaction lock: two handhelds filling the same
+        // menu is an ordinary evening.
+        const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+        if (['completed', 'cancelled'].includes(order.status)) {
+          throw Object.assign(new Error('Cannot change a menu on a completed or cancelled order'), { statusCode: 400 });
+        }
+        // Same predicate the cancel route uses: once money has been taken
+        // against the check, the rows behind it stop moving.
+        if (db.prepare(`
+          SELECT 1
+          FROM bills
+          WHERE order_id = ?
+            AND (
+              COALESCE(payment_status, 'unpaid') <> 'unpaid'
+              OR COALESCE(paid_amount, 0) > 0
+              OR (payment_details IS NOT NULL AND TRIM(payment_details) NOT IN ('', '[]', '{}', 'null'))
+            )
+          LIMIT 1
+        `).get(orderId)) {
+          throw Object.assign(new Error('Cannot change a menu on a paid or partially paid order'), { statusCode: 409 });
+        }
+
+        const plan = planCourseFill(db, orderId, String(req.params.groupId), String(req.params.courseId), (req.body || {}).product_ids);
+        if (plan.blocked) {
+          throw Object.assign(new Error('The kitchen has already started that dish'), {
+            statusCode: 409, code: 'course_in_progress', item_id: plan.blocked.item_id,
+          });
+        }
+
+        for (const itemId of plan.cancel) {
+          const row = db.prepare('SELECT * FROM order_items WHERE id = ?').get(itemId) as any;
+          db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?").run(now(), itemId);
+          // A pending row never reached a pan, so its stock goes back — the
+          // same rule the cancel route follows for a pending row.
+          if (row && Number(row.inventory_deducted_quantity) > 0) {
+            db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
+              .run(row.inventory_deducted_quantity, now(), row.product_id);
+          }
+        }
+
+        if (plan.insert.length > 0) insertOrderItemRows(db, orderId, plan.insert);
+
+        // Re-price off the rows, the same tail POST /:id/items runs: a
+        // surcharge coming or going moves the check, and the cover moves if
+        // the menu is the kind that includes one.
+        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(orderId) as any[];
+        const subtotal = activeItems.reduce((sum, row) => sum + row.subtotal, 0);
+
+        let discountAmount = order.discount_amount || 0;
+        if (discountAmount > 0 && order.subtotal > 0 && order.discount_type === 'percentage') {
+          discountAmount = roundMoney(subtotal * (order.discount_value || 0) / 100);
+        }
+
+        const coverCharge = orderCoverCharge(db, orderId);
+        const total = roundMoney(Math.max(0, subtotal - discountAmount) + orderCharges({ ...order, cover_charge: coverCharge }));
+
+        db.prepare('UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
+          .run(subtotal, discountAmount, total, coverCharge, now(), orderId);
+
+        syncUnpaidBillsForOrder(db, orderId, {
+          subtotal,
+          discountAmount,
+          deliveryCharge: order.delivery_charge || 0,
+          packagingCharge: order.packaging_charge || 0,
+          coverCharge,
+          total,
+        });
+
+        const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)) as any;
+        const updatedItems = attachEffectiveAddons(
+          db,
+          db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[],
+        );
+        return Object.assign({}, updatedOrder, { items: updatedItems });
+      });
+
+      notifyKdsUpdate();
+      res.json({ order: result });
+    } catch (error: any) {
+      console.error("[API] Internal error:", error);
+      const body: Record<string, unknown> = {
+        error: error.statusCode ? error.message : "Internal server error",
+      };
+      if (error.code) body.code = error.code;
+      if (error.item_id) body.item_id = error.item_id;
+      res.status(error.statusCode || 500).json(body);
+    }
+  },
+);
+
+/**
+ * Moves one row to another wave of the meal.
+ *
+ * The primo that has to come out with the starters because its guest is not
+ * having one. Allowed before and after the ticket has gone: `kot_batch` is
+ * deliberately untouched, so moving a row neither re-sends it nor takes it
+ * off a ticket that has already printed — the paper in the kitchen is simply
+ * out of date, and the floor is told as much by the row going quiet.
+ *
+ * No money moves, so this asks nothing of the bill and takes no manager PIN.
+ */
+router.patch('/:id/items/:itemId/service-run', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({ error: 'Cannot change a service run on a completed or cancelled order' });
+    }
+
+    const item = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(req.params.itemId, req.params.id) as any;
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    if (['cancelled', 'voided', 'void_adjustment'].includes(item.status)) {
+      return res.status(400).json({ error: 'That row is off the check' });
+    }
+
+    const serviceRun = normalizeServiceRun((req.body || {}).service_run);
+    if (serviceRun === null) {
+      return res.status(400).json({ error: `service_run must be a whole number between 1 and ${MAX_SERVICE_RUNS}` });
+    }
+
+    db.prepare('UPDATE order_items SET service_run = ?, updated_at = ? WHERE id = ?')
+      .run(serviceRun, now(), req.params.itemId);
+
+    notifyKdsUpdate();
+
+    const updatedItem = parseItemJson(db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.itemId));
+    res.json({ item: updatedItem });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });

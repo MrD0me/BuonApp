@@ -12,7 +12,6 @@ import {
   Users,
   Settings,
   LogOut,
-  PanelLeft,
   UserCircle,
   type LucideIcon,
 } from 'lucide-react';
@@ -56,6 +55,10 @@ interface NavItem {
  * bar used to carry eleven entries, one of which (KDS) opened a settings tab
  * rather than the kitchen screen it named.
  *
+ * Rows are 48 px: the cash desk is a touch monitor. The toggle that collapses
+ * the bar is not a row of its own any more — it sits in every page's header,
+ * where it says what it does instead of being one more entry to read.
+ *
  * null businessTypes = show for all business types.
  */
 const ALL_NAV_ITEMS: NavItem[] = [
@@ -67,13 +70,15 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/customers', labelKey: 'customers', icon: Users, roles: ['owner', 'manager'], businessTypes: null },
 ];
 
+const ROW = 'text-[15px] [&>svg]:size-5';
+
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, currentTenant, logout } = useAuthStore();
   // The flags are still read here for the whole app: other screens act on
   // them even though the bar itself only filters on two.
   const { tablesRequired, customersEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes } = usePosSettingsStore();
-  const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
+  const { isMobile, setOpenMobile } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
   const { confirm, ConfirmDialog } = useConfirm();
@@ -140,16 +145,16 @@ export default function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-1">
               {navItems.map((item) => {
                 const [hrefPath, hrefQuery] = item.href.split('?');
                 const isActive = !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                    <SidebarMenuButton asChild size="lg" isActive={isActive} tooltip={t(item.labelKey)} className={ROW}>
                       <Link href={item.href} onClick={closeMobile}>
-                        <item.icon className="size-4 shrink-0" />
-                        <span>{t(item.labelKey)}</span>
+                        <item.icon className="shrink-0" />
+                        <span className="font-semibold">{t(item.labelKey)}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -161,41 +166,35 @@ export default function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <SidebarMenu>
+        <SidebarMenu className="gap-1">
           {(role === 'owner' || role === 'manager') && (
             <SidebarMenuItem>
               {/* Configuration sits with logging out, not among the places
                   people work: staff, the kitchen display and WhatsApp all live
                   inside it. */}
-              <SidebarMenuButton asChild isActive={pathname?.startsWith('/settings')} tooltip={t('settings')}>
+              <SidebarMenuButton asChild size="lg" isActive={pathname?.startsWith('/settings')} tooltip={t('settings')} className={ROW}>
                 <Link href="/settings" onClick={closeMobile}>
-                  <Settings className="size-4 shrink-0" />
-                  <span>{t('settings')}</span>
+                  <Settings className="shrink-0" />
+                  <span className="font-semibold">{t('settings')}</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={toggleSidebar} tooltip={t('toggleSidebar')}>
-              <PanelLeft />
-              <span>{t('collapse')}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
             {/* Identity label, not a button — nothing to click through to, so it
                 deliberately skips SidebarMenuButton's interactive/hover styling. */}
             <div
               title={user?.name || user?.email || t('user')}
-              className="flex w-full items-center gap-2 rounded-md p-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0"
+              className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-5 [&>svg]:shrink-0"
             >
               <UserCircle />
               <span className="truncate">{user?.name || user?.email || t('user')}</span>
             </div>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={async () => { if (await confirm(t('confirmLogout'))) logout(); }} tooltip={t('logoutTooltip')}>
+            <SidebarMenuButton size="lg" onClick={async () => { if (await confirm(t('confirmLogout'))) logout(); }} tooltip={t('logoutTooltip')} className={ROW}>
               <LogOut />
-              <span>{t('logout')}</span>
+              <span className="font-semibold">{t('logout')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

@@ -1,21 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Percent, Banknote, Plus, ChefHat, Pencil, MoreHorizontal, Users, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
+import { RotateCcw, MessageCircle, Printer, XCircle, Percent, Banknote, Plus, Users, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import type { OrderItem, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
@@ -32,6 +26,18 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useSendKot } from '@/hooks/useSendKot';
+import { pendingDishCount, pendingKotItems } from '@/lib/kot';
+import { menuAwareRowOrder, menuGroupsOfOrder, type MenuGroupState } from '@/lib/fixed-menu';
+import { useCatalogStore } from '@/store/catalog';
+import { ORDER_STATUS_TONE, PAYMENT_STATUS_TONE, TONE_STYLES } from '@/lib/status-styles';
+import { Modal, ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
+import { Stepper } from '@/components/ui/stepper';
+import { OrderHeader } from '@/components/orders/OrderHeader';
+import { OrderLines } from '@/components/orders/OrderLines';
+import { LineActionSheet } from '@/components/orders/LineActionSheet';
+import { OrderTotals } from '@/components/orders/OrderTotals';
+import { OrderActionBar } from '@/components/orders/OrderActionBar';
+import FixedMenuPicker from '@/components/pos/FixedMenuPicker';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -53,29 +59,20 @@ import {
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
-const itemStatusConfig: Record<OrderItem['status'], { dot: string; color: string; labelKey: OrdersKey }> = {
-  pending: { dot: 'bg-yellow-400', color: 'text-yellow-700', labelKey: 'itemStatusWaiting' },
-  preparing: { dot: 'bg-blue-500', color: 'text-blue-700', labelKey: 'itemStatusPreparing' },
-  ready: { dot: 'bg-green-500', color: 'text-green-700', labelKey: 'itemStatusReady' },
-  served: { dot: 'bg-purple-500', color: 'text-purple-700', labelKey: 'itemStatusServed' },
-  cancelled: { dot: 'bg-red-400', color: 'text-red-500', labelKey: 'itemStatusCancelled' },
-  voided: { dot: 'bg-red-500', color: 'text-red-600 line-through', labelKey: 'itemStatusVoided' },
-  void_adjustment: { dot: 'bg-red-300', color: 'text-red-500 italic', labelKey: 'itemStatusVoidAdjustment' },
+/* Colours come from `lib/status-styles.ts`; only the labels live here. */
+const orderStatusBadge: Record<Order['status'], { badge: string; labelKey: OrdersKey }> = {
+  pending: { badge: TONE_STYLES[ORDER_STATUS_TONE.pending].badge, labelKey: 'pending' },
+  preparing: { badge: TONE_STYLES[ORDER_STATUS_TONE.preparing].badge, labelKey: 'preparing' },
+  ready: { badge: TONE_STYLES[ORDER_STATUS_TONE.ready].badge, labelKey: 'ready' },
+  served: { badge: TONE_STYLES[ORDER_STATUS_TONE.served].badge, labelKey: 'served' },
+  completed: { badge: TONE_STYLES[ORDER_STATUS_TONE.completed].badge, labelKey: 'completed' },
+  cancelled: { badge: TONE_STYLES[ORDER_STATUS_TONE.cancelled].badge, labelKey: 'cancelled' },
 };
 
-const orderStatusBadge: Record<Order['status'], { bg: string; text: string; labelKey: OrdersKey }> = {
-  pending: { bg: 'bg-yellow-100', text: 'text-yellow-700', labelKey: 'pending' },
-  preparing: { bg: 'bg-blue-100', text: 'text-blue-700', labelKey: 'preparing' },
-  ready: { bg: 'bg-green-100', text: 'text-green-700', labelKey: 'ready' },
-  served: { bg: 'bg-purple-100', text: 'text-purple-700', labelKey: 'served' },
-  completed: { bg: 'bg-gray-100', text: 'text-gray-600', labelKey: 'completed' },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'cancelled' },
-};
-
-const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; text: string; labelKey: OrdersKey }> = {
-  paid: { bg: 'bg-green-100', text: 'text-green-700', labelKey: 'paid' },
-  partial: { bg: 'bg-amber-100', text: 'text-amber-700', labelKey: 'partiallyPaid' },
-  unpaid: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'unpaidBadge' },
+const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { badge: string; labelKey: OrdersKey }> = {
+  paid: { badge: TONE_STYLES.paid.badge, labelKey: 'paid' },
+  partial: { badge: TONE_STYLES.partial.badge, labelKey: 'partiallyPaid' },
+  unpaid: { badge: TONE_STYLES.unpaid.badge, labelKey: 'unpaidBadge' },
 };
 
 interface CancelModal {
@@ -127,10 +124,12 @@ interface OrderPanelProps {
    * the time it rendered at.
    */
   nowMs?: number;
+  /** Entries the host adds to the "more" menu: what happens to the table, not the order. */
+  extraMenu?: ReactNode;
 }
 
 export function OrderPanel({
-  order, onChanged, discountMode, discountRequiresApproval, nowMs,
+  order, onChanged, discountMode, discountRequiresApproval, nowMs, extraMenu,
 }: OrderPanelProps) {
   const { currentTenant } = useAuthStore();
   const { printBill } = usePrinterStore();
@@ -196,6 +195,8 @@ export function OrderPanel({
 
   const [sendingToKitchen, setSendingToKitchen] = useState(false);
   const [rowEdit, setRowEdit] = useState<RowEdit | null>(null);
+  // The row whose action sheet is open, by id so a refetch never leaves it stale.
+  const [lineSheetId, setLineSheetId] = useState<number | null>(null);
   const [savingRow, setSavingRow] = useState(false);
 
 
@@ -222,9 +223,45 @@ export function OrderPanel({
   const awaitsPrice = (item: OrderItem) =>
     Boolean(item.price_required) && !item.price_confirmed && item.status !== 'cancelled';
   const unpricedItems = (order.items || []).filter(awaitsPrice);
-  const pendingKotItems = (order.items || []).filter(
-    (item) => item.kot_batch == null && item.status !== 'cancelled',
-  );
+  const pendingKotRows = pendingKotItems(order.items || []);
+  // What the button says it will send: plates, the same number the table's
+  // badge carries. The package row of a menu is stamped with the round too
+  // but nobody cooks it, and two different counts for one thing on one
+  // screen is the floor asking which one is true.
+  const pendingPlates = pendingDishCount(order.items || []);
+
+  // A menu on the check names its dishes but not its courses, so drawing the
+  // slots still to fill needs the catalogue.
+  const catalogProducts = useCatalogStore((state) => state.products);
+  const catalogCategories = useCatalogStore((state) => state.categories);
+  const ensureCatalog = useCatalogStore((state) => state.ensureLoaded);
+  const [menuFill, setMenuFill] = useState<{ group: MenuGroupState; courseId: string } | null>(null);
+  const [fillingMenu, setFillingMenu] = useState(false);
+  const hasMenuRows = (order.items || []).some((item: OrderItem) => item.menu_role === 'package');
+  useEffect(() => {
+    if (hasMenuRows) void ensureCatalog();
+  }, [hasMenuRows, ensureCatalog]);
+
+  /**
+   * What this course holds now. One shape for adding, swapping and clearing,
+   * because that is the shape the endpoint takes: the list is what the course
+   * ends up with, not what to do to it.
+   */
+  const setCourseDishes = async (groupId: string, courseId: string, productIds: string[]) => {
+    setFillingMenu(true);
+    try {
+      await api.put(`/orders/${order.id}/menu-groups/${groupId}/courses/${courseId}`, { product_ids: productIds });
+      setMenuFill(null);
+      onChanged();
+    } catch (error: unknown) {
+      // The kitchen has that dish. Taking it off the check is the void, with
+      // the manager PIN it asks for — not something to do behind their back.
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      toast.error(code === 'course_in_progress' ? tOrders('menuCourseInProgress') : tOrders('menuCourseFillFailed'));
+    } finally {
+      setFillingMenu(false);
+    }
+  };
 
   // The bill's print history, so the button can say "reprint" rather than
   // "print" the second time round.
@@ -461,9 +498,9 @@ export function OrderPanel({
       toast.error(tOrders('onlyOwnersRemove'));
       return;
     }
-    // A fixed menu comes off the check whole, from whichever of its rows this
-    // was pressed on. Say so before doing it.
-    const question = item?.menu_group_id ? tOrders('removeMenuConfirm') : tOrders('removeItemConfirm');
+    // Pressing the menu's own row takes the whole menu; pressing one of its
+    // dishes takes only that dish. The question has to say which.
+    const question = item?.menu_role === 'package' ? tOrders('removeMenuConfirm') : tOrders('removeItemConfirm');
     if (!await confirm(question, { destructive: true, confirmLabel: tCommon('remove') })) return;
     try {
       await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: tOrders('removedByManager') });
@@ -671,6 +708,22 @@ export function OrderPanel({
     }
   };
 
+  /**
+   * Moves one row to another wave.
+   *
+   * No confirmation and no PIN: no money moves and nothing is re-sent. A row
+   * already on a printed ticket still moves — the paper in the kitchen is
+   * simply out of date, which is what the muted chip is there to say.
+   */
+  const changeServiceRun = async (item: OrderItem, run: number) => {
+    try {
+      await api.patch(`/orders/${order.id}/items/${item.id}/service-run`, { service_run: run });
+      onChanged();
+    } catch {
+      toast.error(tOrders('serviceRunFailed'));
+    }
+  };
+
   const handleSendToKitchen = async () => {
     setSendingToKitchen(true);
     try {
@@ -717,7 +770,15 @@ export function OrderPanel({
     }
   };
 
-            const activeItems = (order.items || []).filter((i: OrderItem) => i.status !== 'cancelled');
+            const activeItems = menuAwareRowOrder((order.items || []).filter((i: OrderItem) => i.status !== 'cancelled'));
+            // The menus on this check: which courses are filled, which are
+            // still open, and which required ones nobody has chosen for.
+            const menuGroups = menuGroupsOfOrder(activeItems, catalogProducts);
+            const menusMissingCourses = menuGroups.filter((entry) => entry.missingRequired.length > 0);
+            const lastRowOfGroup = new Map<string, number>();
+            for (const row of activeItems) {
+              if (row.menu_group_id) lastRowOfGroup.set(String(row.menu_group_id), row.id);
+            }
             const cancelledItems = (order.items || []).filter((i: OrderItem) => i.status === 'cancelled');
             const paid = isOrderPaid(order);
             const payStatus = paymentStatusOf(order);
@@ -734,406 +795,311 @@ export function OrderPanel({
             const paidSoFar = Number(bill?.paid_amount || 0);
             const stillOwed = Number(bill?.balance || 0);
 
+  const orderOpen = !['completed', 'cancelled'].includes(order.status);
+  const canAct = isOwnerOrManager && !paid && orderOpen;
+  const statusBadge = orderStatusBadge[order.status];
+  // The row the sheet is open on, read fresh from the order so a refetch
+  // underneath it (a run moved, a price saved) is what the sheet shows.
+  const sheetItem = lineSheetId != null ? (order.items || []).find((row) => row.id === lineSheetId) ?? null : null;
+  const sheetSwappable = sheetItem && sheetItem.menu_role === 'course' && sheetItem.menu_course_id && sheetItem.status === 'pending' && !paid
+    ? menuGroups.find((entry) => entry.group_id === sheetItem.menu_group_id)
+    : undefined;
+  const INPUT = 'h-touch w-full rounded-xl border border-input bg-card px-4 text-base outline-none focus:ring-2 focus:ring-brand';
+  const LABEL = 'mb-1.5 block text-sm font-semibold text-foreground';
+
   return (
     <>
-      <div
-        key={order.id}
-        className={`bg-white rounded-xl border overflow-hidden flex flex-col ${
-          order.status === 'cancelled' ? 'border-red-200 opacity-75' : 'border-gray-100'
-        }`}
-      >
-        {/* Top bar: order id/status on the left, payment badge + reprint on the right */}
-        <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 border-b border-gray-100">
-          <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <span className="font-bold text-gray-900">#<Ltr>{order.order_number}</Ltr></span>
-            {(() => { const badge = orderStatusBadge[order.status]; return badge ? (
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>{tOrders(badge.labelKey)}</span>
-            ) : null; })()}
-            <span className="text-sm text-gray-500 capitalize">{tOrders(ORDER_TYPE_LABEL_KEYS[order.type])}</span>
-            {order.table && (
-              <span className="text-sm text-orange-600 font-medium">{order.table.name}</span>
-            )}
-            <span className="flex items-center gap-1 text-xs text-gray-400">
-              <Clock size={12} />
-              {getTimeSince(order.created_at)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {payBadge && (
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${payBadge.bg} ${payBadge.text}`}>
-                {tOrders(payBadge.labelKey)}
-              </span>
-            )}
-            {paid && order.customer?.phone && (
-              <button
-                onClick={() => isWhatsAppReady ? handleSendViaFlo(order) : handleWhatsAppShare(order)}
-                disabled={sendingWaOrderId === order.id}
-                className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-70"
-                title={isWhatsAppReady ? tCommon('sendViaFlo') : tCommon('shareViaWhatsApp')}
-              >
-                {sendingWaOrderId === order.id ? <Loader2 className="size-4 animate-spin" /> : isWhatsAppReady ? <Send size={14} /> : <MessageCircle size={14} />}
-              </button>
-            )}
-            {order.bill && (
-              <button
-                onClick={handlePrintBill}
-                disabled={printingBillId === order.bill.id}
-                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-50 transition-colors"
-                title={(printHistory[order.bill.id]?.length ?? 0) > 0 ? tCommon('reprint') : tCommon('print')}
-              >
-                <Printer size={14} />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Order notes */}
-        {order.special_instructions && (
-          <div className="px-4 py-2 bg-amber-50 border-b border-amber-100">
-            <p className="text-sm text-amber-700 font-medium break-words">
-              📝 {order.special_instructions}
-            </p>
-          </div>
-        )}
-
-        {/* Customer info strip */}
-        {order.customer ? (
-          <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-              <User size={14} className="text-blue-600 shrink-0" />
-              <span className="text-sm font-medium text-blue-800 truncate">{order.customer.name}</span>
-              {order.customer.phone && (
-                <span className="text-xs text-blue-600 shrink-0"><Ltr>{order.customer.phone}</Ltr></span>
-              )}
-            </div>
-            <button
-              onClick={() => handleCreateNewOrderForCustomer(order)}
-              className="flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2.5 py-1 rounded-lg transition-colors shrink-0"
-              title={tOrders('startNewOrderForCustomer')}
-            >
-              <Plus size={12} /> {tOrders('newOrder')}
-            </button>
-          </div>
-        ) : customersEnabled && isOwnerOrManager && !['completed', 'cancelled'].includes(order.status) ? (
-          <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
-            {linkCustomerOrderId === order.id ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={linkCustomerSearch}
-                  onChange={(e) => {
-                    setLinkCustomerSearch(e.target.value);
-                    searchCustomersForLink(e.target.value);
-                  }}
-                  placeholder={tOrders('searchCustomer')}
-                  className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  autoFocus
-                />
-                <button
-                  onClick={() => {
-                    setLinkCustomerOrderId(null);
-                    setLinkCustomerSearch('');
-                    setLinkCustomerResults([]);
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <XCircle size={16} />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setLinkCustomerOrderId(order.id)}
-                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-blue-600 transition-colors"
-              >
-                <UserPlus size={14} />
-                {tOrders('linkCustomer')}
-              </button>
-            )}
-            {linkCustomerOrderId === order.id && linkCustomerResults.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {linkCustomerResults.map((customer) => (
-                  <button
-                    key={customer.id}
-                    onClick={() => handleLinkCustomer(order.id, String(customer.id))}
-                    disabled={linkingCustomer}
-                    className="w-full flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-start disabled:opacity-50"
+      <div className={`flex min-h-0 flex-1 flex-col ${order.status === 'cancelled' ? 'opacity-75' : ''}`}>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <OrderHeader
+            order={order}
+            statusTone={ORDER_STATUS_TONE[order.status] ?? 'neutral'}
+            statusLabel={tOrders(statusBadge.labelKey)}
+            paymentTone={payStatus ? PAYMENT_STATUS_TONE[payStatus] : null}
+            paymentLabel={payBadge ? tOrders(payBadge.labelKey) : null}
+            typeLabel={tOrders(ORDER_TYPE_LABEL_KEYS[order.type])}
+            timeSince={getTimeSince(order.created_at)}
+            actions={(
+              <>
+                {paid && order.customer?.phone && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-touch"
+                    onClick={() => isWhatsAppReady ? handleSendViaFlo(order) : handleWhatsAppShare(order)}
+                    disabled={sendingWaOrderId === order.id}
+                    aria-label={isWhatsAppReady ? tCommon('sendViaFlo') : tCommon('shareViaWhatsApp')}
+                    title={isWhatsAppReady ? tCommon('sendViaFlo') : tCommon('shareViaWhatsApp')}
+                    className="text-kitchen-ready"
                   >
-                    <div>
-                      <span className="text-sm font-medium text-gray-900">{customer.name}</span>
-                      {customer.phone && (
-                        <span className="text-xs text-gray-500 ms-2"><Ltr>{customer.phone}</Ltr></span>
-                      )}
-                    </div>
-                    {linkingCustomer && <span className="text-xs text-gray-400">{tOrders('linking')}</span>}
-                  </button>
-                ))}
-              </div>
+                    {sendingWaOrderId === order.id ? <Loader2 className="animate-spin" /> : isWhatsAppReady ? <Send /> : <MessageCircle />}
+                  </Button>
+                )}
+                {order.bill && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-touch"
+                    onClick={handlePrintBill}
+                    disabled={printingBillId === order.bill.id}
+                    aria-label={(printHistory[order.bill.id]?.length ?? 0) > 0 ? tCommon('reprint') : tCommon('print')}
+                    title={(printHistory[order.bill.id]?.length ?? 0) > 0 ? tCommon('reprint') : tCommon('print')}
+                  >
+                    <Printer />
+                  </Button>
+                )}
+              </>
             )}
-          </div>
-        ) : null}
+          />
 
-        {/* Items — presented like a bill */}
-        <div className="px-4 py-3 flex-1">
-          <div className="divide-y divide-gray-50">
-            {activeItems.map((item: OrderItem) => {
-              const config = itemStatusConfig[item.status] || itemStatusConfig.pending;
-              const isMenuCourse = item.menu_role === 'course';
-              return (
-                <div key={item.id} className="py-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${config.dot}`} title={tOrders(config.labelKey)} />
-                      <span className={`text-sm font-medium ${config.color}`}>
-                        {item.quantity}x
-                      </span>
-                      <span className={`text-sm truncate ${isMenuCourse ? 'text-gray-500 ps-3' : 'text-gray-900'}`}>{item.product_name}</span>
-                      {awaitsPrice(item) && (
-                        <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[11px] font-medium">
-                          {tOrders('rowPriceMissing')}
-                        </span>
-                      )}
-                      {item.special_instructions && (
-                        <span className="text-xs text-red-500 italic break-words">&quot;{item.special_instructions}&quot;</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {/* A dish inside a menu is paid for by the package: it
-                          shows a surcharge or nothing, never a bare 0,00. */}
-                      <span className="text-sm text-gray-600">
-                        {isMenuCourse
-                          ? (Number(item.total) > 0 ? `+${fmt(Number(item.total))}` : '')
-                          : fmt(Number(item.total))}
-                      </span>
-                      {item.status === 'pending' && isOwnerOrManager && !paid && (
-                        <button
-                          onClick={() => deleteItem(order.id, item.id, item)}
-                          className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
-                          title={tCommon('removeItem')}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                      {isOwnerOrManager && !paid && !['completed', 'cancelled'].includes(order.status) && (
-                        <button
-                          onClick={() => openRowEdit(item)}
-                          className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
-                          title={tOrders('editRow')}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                      )}
-                      {(item.status === 'preparing' || item.status === 'ready') && isOwnerOrManager && !paid && (
-                        <button
-                          onClick={() => setVoidItemModal({ orderId: order.id, itemId: item.id, productName: item.product_name, overridePin: '' })}
-                          className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
-                          title={tOrders('voidItem')}
-                        >
-                          <Ban size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {item.addons && item.addons.length > 0 && (
-                    <div className="ps-4 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                      {item.addons.map((addon, idx) => (
-                        <span key={addon.id ?? `${item.id}-${idx}`} className="text-xs text-gray-400">
-                          + {addon.name}{(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}{addon.price ? ` (${fmt(Number(addon.price) * (addon.quantity || 1))})` : ''}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Bill summary */}
-          <div className="mt-3 pt-3 border-t border-dashed border-gray-200 space-y-1">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{tCommon('subtotal')}</span>
-              <span className="text-gray-700">{fmt(subtotal)}</span>
-            </div>
-            {discount > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-purple-600">{tCommon('discount')}</span>
-                <span className="text-purple-600">-{fmt(discount)}</span>
-              </div>
-            )}
-            {coverCharge > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">
-                  {tOrders('coverCharge')}
-                  {order.guest_count ? ` (${order.guest_count})` : ''}
-                </span>
-                <span className="text-gray-700">{fmt(coverCharge)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-base font-bold pt-1 border-t border-gray-100">
-              <span className="text-gray-900">{tCommon('total')}</span>
-              <span className="text-gray-900">{fmt(total)}</span>
-            </div>
-            {bill && payStatus === 'partial' && (
-              <div className="flex justify-between text-xs text-gray-500 pt-0.5">
-                <span>{tOrders('paid')} {fmt(paidSoFar)}</span>
-                <span>{tOrders('balance')} {fmt(stillOwed)}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Cancelled items */}
-          {cancelledItems.length > 0 && isOwnerOrManager && (
-            <div className="mt-2 pt-2 border-t border-gray-50">
-              {cancelledItems.map((item: OrderItem) => (
-                <div key={item.id} className="flex items-center justify-between py-1 opacity-50">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">❌</span>
-                    <span className="text-xs text-gray-400 line-through">
-                      {item.quantity}x {item.product_name}
-                    </span>
-                  </div>
-                  {!paid && order.status !== 'completed' && order.status !== 'cancelled' && (
-                    <button
-                      onClick={() => restoreItem(order.id, item.id)}
-                      className="p-1 rounded hover:bg-green-50 text-green-400 hover:text-green-600"
-                      title={tCommon('restore')}
-                    >
-                      <RotateCcw size={12} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+          {/* Order notes */}
+          {order.special_instructions && (
+            <p className="mx-4 mb-2 rounded-xl bg-table-reserved-soft px-3 py-2 text-sm font-medium break-words text-table-reserved">
+              {order.special_instructions}
+            </p>
           )}
 
-          {order.bill && printHistory[order.bill.id]?.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-gray-100">
-              <button
-                onClick={() => {
-                  setPrintHistoryExpanded(prev => ({ ...prev, [order.bill!.id]: !prev[order.bill!.id] }));
-                }}
-                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
-              >
-                {printHistoryExpanded[order.bill!.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} className="rtl-flip" />}
-                {tOrders('printHistory')}
-              </button>
-
-              {printHistoryExpanded[order.bill!.id] && (
-                <div className="mt-2 ps-4 space-y-1">
-                  {printHistory[order.bill!.id].map((print, index) => (
-                    <div key={print.id} className="text-xs text-gray-500">
-                      {index + 1}. {tOrders('printHistoryEntry', { printedType: print.print_type === 'reprint' ? tOrders('reprint') : tOrders('printed'), user: print.user_name, time: formatDateTime(print.printed_at) })}
-                    </div>
+          {/* Customer info strip */}
+          {order.customer ? (
+            <div className="mx-4 mb-2 flex items-center justify-between gap-2 rounded-xl bg-muted px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <User size={16} className="shrink-0 text-muted-foreground" />
+                <span className="truncate text-sm font-medium text-foreground">{order.customer.name}</span>
+                {order.customer.phone && (
+                  <span className="shrink-0 text-sm text-muted-foreground"><Ltr>{order.customer.phone}</Ltr></span>
+                )}
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => handleCreateNewOrderForCustomer(order)} title={tOrders('startNewOrderForCustomer')}>
+                <Plus /> {tOrders('newOrder')}
+              </Button>
+            </div>
+          ) : customersEnabled && isOwnerOrManager && orderOpen ? (
+            <div className="mx-4 mb-2">
+              {linkCustomerOrderId === order.id ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={linkCustomerSearch}
+                    onChange={(e) => {
+                      setLinkCustomerSearch(e.target.value);
+                      searchCustomersForLink(e.target.value);
+                    }}
+                    placeholder={tOrders('searchCustomer')}
+                    className={INPUT}
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-touch"
+                    aria-label={tCommon('cancel')}
+                    onClick={() => {
+                      setLinkCustomerOrderId(null);
+                      setLinkCustomerSearch('');
+                      setLinkCustomerResults([]);
+                    }}
+                  >
+                    <XCircle />
+                  </Button>
+                </div>
+              ) : (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setLinkCustomerOrderId(order.id)} className="text-muted-foreground">
+                  <UserPlus /> {tOrders('linkCustomer')}
+                </Button>
+              )}
+              {linkCustomerOrderId === order.id && linkCustomerResults.length > 0 && (
+                <div className="mt-2 flex flex-col gap-1">
+                  {linkCustomerResults.map((customer) => (
+                    <button
+                      key={customer.id}
+                      type="button"
+                      onClick={() => handleLinkCustomer(order.id, String(customer.id))}
+                      disabled={linkingCustomer}
+                      className="flex min-h-touch w-full items-center justify-between rounded-xl border border-border bg-card px-3 text-start transition active:bg-muted disabled:opacity-50"
+                    >
+                      <span>
+                        <span className="text-sm font-medium text-foreground">{customer.name}</span>
+                        {customer.phone && (
+                          <span className="ms-2 text-xs text-muted-foreground"><Ltr>{customer.phone}</Ltr></span>
+                        )}
+                      </span>
+                      {linkingCustomer && <span className="text-xs text-muted-foreground">{tOrders('linking')}</span>}
+                    </button>
                   ))}
                 </div>
               )}
             </div>
-          )}
+          ) : null}
+
+          {/* Items — presented like a bill */}
+          <div className="px-2 pb-4">
+            <OrderLines
+              items={activeItems}
+              menuGroups={menuGroups}
+              lastRowOfGroup={lastRowOfGroup}
+              canAct={canAct}
+              canFillCourses={!paid && orderOpen}
+              kotEnabled={kotPrintingEnabled}
+              awaitsPrice={awaitsPrice}
+              onLineTap={(item) => setLineSheetId(item.id)}
+              onFillCourse={(group, courseId) => setMenuFill({ group, courseId })}
+            />
+
+            {/* A menu still waiting on a course. A line, never a dialog: in a
+                house that routinely sells the menu without dessert, a dialog
+                every evening is a dialog nobody reads. Nothing here stops the
+                check being closed — sometimes the dessert is genuinely not
+                wanted. */}
+            {menusMissingCourses.length > 0 && !paid && (
+              <p className="mt-2 px-2 text-sm text-pending">
+                {tOrders('menuAwaitingCourses', {
+                  courses: menusMissingCourses
+                    .flatMap((entry) => entry.missingRequired.map((course) => course.label))
+                    .join(', '),
+                })}
+              </p>
+            )}
+
+            <div className="mt-3">
+              <OrderTotals
+                subtotal={subtotal}
+                discount={discount}
+                coverCharge={coverCharge}
+                guestCount={order.guest_count}
+                total={total}
+                partial={bill && payStatus === 'partial' ? { paid: paidSoFar, balance: stillOwed } : null}
+              />
+            </div>
+
+            {/* Cancelled items */}
+            {cancelledItems.length > 0 && isOwnerOrManager && (
+              <div className="mt-3 border-t border-border px-2 pt-2">
+                {cancelledItems.map((item: OrderItem) => (
+                  <div key={item.id} className="flex min-h-touch items-center justify-between gap-2">
+                    <span className="text-sm text-muted-foreground line-through">
+                      <Ltr>{item.quantity}×</Ltr> {item.product_name}
+                    </span>
+                    {!paid && orderOpen && (
+                      <Button type="button" variant="ghost" size="sm" onClick={() => restoreItem(order.id, item.id)} className="text-table-free">
+                        <RotateCcw /> {tCommon('restore')}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {order.bill && printHistory[order.bill.id]?.length > 0 && (
+              <div className="mt-3 border-t border-border px-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrintHistoryExpanded(prev => ({ ...prev, [order.bill!.id]: !prev[order.bill!.id] }));
+                  }}
+                  className="flex min-h-touch items-center gap-1 text-sm text-muted-foreground"
+                >
+                  {printHistoryExpanded[order.bill!.id] ? <ChevronDown size={16} /> : <ChevronRight size={16} className="rtl-flip" />}
+                  {tOrders('printHistory')}
+                </button>
+
+                {printHistoryExpanded[order.bill!.id] && (
+                  <div className="mt-1 flex flex-col gap-1 ps-5">
+                    {printHistory[order.bill!.id].map((print, index) => (
+                      <div key={print.id} className="text-sm text-muted-foreground">
+                        {index + 1}. {tOrders('printHistoryEntry', { printedType: print.print_type === 'reprint' ? tOrders('reprint') : tOrders('printed'), user: print.user_name, time: formatDateTime(print.printed_at) })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Footer with actions
-            Four things the floor does, then everything else behind "more":
-            voiding, discounting the whole check, converting and cancelling are
-            manager business, and putting them in the same row as "add a dish"
-            is how a footer becomes a wall of buttons. */}
-        <div className="px-4 py-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
-          {!['completed', 'cancelled'].includes(order.status) && (
-            <Button
-              variant="outline"
-              onClick={handleAddItems}
-              size="sm"
-              className="flex-1 justify-center border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
-            >
-              <Plus size={14} className="me-1.5" />
-              {tOrders('addItem')}
-            </Button>
-          )}
-          {pendingKotItems.length > 0 && kotPrintingEnabled && !['completed', 'cancelled'].includes(order.status) && (
-            <Button
-              variant="outline"
-              onClick={handleSendToKitchen}
-              disabled={sendingToKitchen}
-              size="sm"
-              className="flex-1 justify-center border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-            >
-              <ChefHat size={14} className="me-1.5" />
-              {sendingToKitchen ? tPos('kotSending') : tPos('sendToKitchen', { count: pendingKotItems.length })}
-            </Button>
-          )}
-          {/* The bill on paper, which in this fork is what goes to the table.
-              It used to appear only after checkout had opened the payment
-              window, so printing one meant going through cashing up first. */}
-          {order.status !== 'cancelled' && (
-            <Button
-              variant="outline"
-              onClick={handlePrintBill}
-              disabled={generatingBill === order.id || printingBillId === order.bill?.id}
-              size="sm"
-              className="flex-1 justify-center"
-            >
-              <Printer size={14} className="me-1.5" />
-              {tOrders('printBillAction')}
-            </Button>
-          )}
-          {showCheckout(order) && (
-            <Button
-              onClick={() => handleCheckout(order.id)}
-              disabled={generatingBill === order.id}
-              size="sm"
-              className="flex-1 justify-center"
-            >
-              <CreditCard size={14} className="me-1.5" />
-              {generatingBill === order.id ? tOrders('generating') : tOrders('checkout')}
-            </Button>
-          )}
-
-          {!['completed', 'cancelled'].includes(order.status) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="justify-center px-2" title={tCommon('more')}>
-                  <MoreHorizontal size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                {isOwnerOrManager && !paid && (
+        {(orderOpen || extraMenu) && (
+          <OrderActionBar
+            canAdd={orderOpen}
+            onAdd={handleAddItems}
+            pendingCount={kotPrintingEnabled && orderOpen && pendingKotRows.length > 0 ? pendingPlates : 0}
+            onSendToKitchen={handleSendToKitchen}
+            sendingToKitchen={sendingToKitchen}
+            canPrint={order.status !== 'cancelled'}
+            onPrint={handlePrintBill}
+            printing={generatingBill === order.id || printingBillId === order.bill?.id}
+            canCheckout={showCheckout(order)}
+            onCheckout={() => handleCheckout(order.id)}
+            generating={generatingBill === order.id}
+            menu={(orderOpen || extraMenu) ? (
+              <>
+                {orderOpen && isOwnerOrManager && !paid && (
                   <DropdownMenuItem onClick={() => setDiscountModal({
                     order,
                     type: defaultDiscountTypeForMode(discountMode),
                     value: 0,
                     reason: '',
                   })}>
-                    <Percent size={14} className="me-2" />
+                    <Percent className="me-2" />
                     {tOrders('orderDiscountAction')}
                   </DropdownMenuItem>
                 )}
-                {order.type === 'dine_in' && (
+                {orderOpen && order.type === 'dine_in' && (
                   <DropdownMenuItem onClick={() => setGuestEdit(String(order.guest_count || 1))}>
-                    <Users size={14} className="me-2" />
+                    <Users className="me-2" />
                     {tOrders('changeGuests')}
                   </DropdownMenuItem>
                 )}
-                {order.type === 'dine_in' && takeawayEnabled && (
+                {orderOpen && order.type === 'dine_in' && takeawayEnabled && (
                   <DropdownMenuItem
                     onClick={() => handleConvertToTakeaway(order)}
                     disabled={convertingOrderId === order.id}
                   >
-                    <ShoppingBag size={14} className="me-2" />
+                    <ShoppingBag className="me-2" />
                     {convertingOrderId === order.id ? tOrders('converting') : tOrders('convertToTakeaway')}
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => setCancelModal({ order, reason: '', freeTable: true, overridePin: '' })}
-                  disabled={cancellingOrderId === order.id}
-                  variant="destructive"
-                >
-                  <XCircle size={14} className="me-2" />
-                  {cancellingOrderId === order.id ? tOrders('cancelling') : tOrders('cancelOrderAction')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
+                {extraMenu && (
+                  <>
+                    {orderOpen && <DropdownMenuSeparator />}
+                    {extraMenu}
+                  </>
+                )}
+                {orderOpen && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setCancelModal({ order, reason: '', freeTable: true, overridePin: '' })}
+                      disabled={cancellingOrderId === order.id}
+                      variant="destructive"
+                    >
+                      <XCircle className="me-2" />
+                      {cancellingOrderId === order.id ? tOrders('cancelling') : tOrders('cancelOrderAction')}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </>
+            ) : undefined}
+          />
+        )}
       </div>
+
+      {/* One row, up close: everything that can be done to it. */}
+      {sheetItem && (
+        <LineActionSheet
+          item={sheetItem}
+          kotEnabled={kotPrintingEnabled}
+          canChangeRun={!paid && orderOpen}
+          canEditPrice={isOwnerOrManager && !paid && orderOpen}
+          canDelete={sheetItem.status === 'pending' && isOwnerOrManager && !paid}
+          canVoid={(sheetItem.status === 'preparing' || sheetItem.status === 'ready') && isOwnerOrManager && !paid}
+          canSwap={Boolean(sheetSwappable?.menu)}
+          onChangeRun={(run) => changeServiceRun(sheetItem, run)}
+          onEditPrice={() => openRowEdit(sheetItem)}
+          onDelete={() => { void deleteItem(order.id, sheetItem.id, sheetItem); }}
+          onVoid={() => setVoidItemModal({ orderId: order.id, itemId: sheetItem.id, productName: sheetItem.product_name, overridePin: '' })}
+          onSwap={() => { if (sheetSwappable) setMenuFill({ group: sheetSwappable, courseId: String(sheetItem.menu_course_id) }); }}
+          onClose={() => setLineSheetId(null)}
+        />
+      )}
 
       {/* Payment Modal */}
       {paymentBill && (
@@ -1146,421 +1112,386 @@ export function OrderPanel({
         />
       )}
 
-      {/* Print Confirmation Modal */}
+      {/* Print confirmation */}
       {confirmPrintBillId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-2">
+        <Modal open onOpenChange={(open) => { if (!open) setConfirmPrintBillId(null); }} size="sm">
+          <ModalHeader closeLabel={tCommon('close')}>
+            <ModalTitle>
               {(printHistory[confirmPrintBillId]?.length ?? 0) > 0 ? tOrders('reprintReceiptTitle') : tOrders('printReceiptTitle')}
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">
+            </ModalTitle>
+            <ModalDescription>
               {(printHistory[confirmPrintBillId]?.length ?? 0) > 0
                 ? tOrders('reprintReceiptWarning')
                 : tOrders('printReceiptConfirm')}
-            </p>
-            {/* Warned rather than blocked: a genuinely free row exists, and a
-                block would push the floor into inventing a workaround. */}
-            {unpricedItems.length > 0 && (
-              <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-4">
+            </ModalDescription>
+          </ModalHeader>
+          {/* Warned rather than blocked: a genuinely free row exists, and a
+              block would push the floor into inventing a workaround. */}
+          {unpricedItems.length > 0 && (
+            <ModalBody className="py-3">
+              <p className="rounded-xl bg-pending-soft px-3 py-2 text-sm text-pending">
                 {tOrders('unpricedRowsWarning', { count: unpricedItems.length })}
               </p>
-            )}
-            <div className="flex justify-end gap-2 mt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setConfirmPrintBillId(null)}
-              >
-                {tCommon('cancel')}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDownloadPrintPreview(confirmPrintBillId)}
-                disabled={previewingBillId === confirmPrintBillId}
-                title={tOrders('downloadPrintPreview')}
-                aria-label={tOrders('downloadPrintPreview')}
-                className="w-9 px-0"
-              >
-                {previewingBillId === confirmPrintBillId
-                  ? <Loader2 size={14} className="animate-spin" />
-                  : <Download size={14} />}
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => handlePrint(confirmPrintBillId)}
-                disabled={printingBillId === confirmPrintBillId}
-              >
-                <Printer size={14} className="me-1.5" />
-                {printingBillId === confirmPrintBillId
-                  ? tOrders('printing')
-                  : (printHistory[confirmPrintBillId]?.length ?? 0) > 0
-                    ? tOrders('confirmReprint')
-                    : tOrders('confirmPrint')}
-              </Button>
-            </div>
-          </div>
-        </div>
+            </ModalBody>
+          )}
+          <ModalFooter className="flex-row justify-end">
+            <Button type="button" variant="outline" size="touch" onClick={() => setConfirmPrintBillId(null)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-touch"
+              onClick={() => handleDownloadPrintPreview(confirmPrintBillId)}
+              disabled={previewingBillId === confirmPrintBillId}
+              title={tOrders('downloadPrintPreview')}
+              aria-label={tOrders('downloadPrintPreview')}
+            >
+              {previewingBillId === confirmPrintBillId ? <Loader2 className="animate-spin" /> : <Download />}
+            </Button>
+            <Button type="button" size="touch" onClick={() => handlePrint(confirmPrintBillId)} disabled={printingBillId === confirmPrintBillId}>
+              <Printer />
+              {printingBillId === confirmPrintBillId
+                ? tOrders('printing')
+                : (printHistory[confirmPrintBillId]?.length ?? 0) > 0
+                  ? tOrders('confirmReprint')
+                  : tOrders('confirmPrint')}
+            </Button>
+          </ModalFooter>
+        </Modal>
       )}
 
-      {/* Cancel Order Modal */}
+      {/* Cancel Order */}
       {cancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">{tOrders('cancel')} #<Ltr>{cancelModal.order.order_number}</Ltr></h2>
-
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="cancelReason" className="block text-sm font-medium text-gray-700 mb-1">
-                  {tCommon('reasonOptional')}
-                </label>
-                <input
-                  id="cancelReason"
-                  type="text"
-                  value={cancelModal.reason}
-                  onChange={(e) => updateCancelModal({ reason: e.target.value })}
-                  placeholder={tOrders('cancelReason')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                />
-              </div>
-
-              {cancelModal.order.type === 'dine_in' && cancelModal.order.table && (
-                <div className="flex items-center gap-2">
-                  <input
-                    id="freeTable"
-                    type="checkbox"
-                    checked={cancelModal.freeTable}
-                    onChange={(e) => updateCancelModal({ freeTable: e.target.checked })}
-                    className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-                  />
-                  <label htmlFor="freeTable" className="text-sm text-gray-700">
-                    {tOrders('freeTable', { name: cancelModal.order.table.name })}
-                  </label>
-                </div>
-              )}
-
-              {(cancelModal.order.status !== 'pending' || cancelModal.order.items?.some((i) => ['preparing', 'ready', 'served', 'completed'].includes(i.status))) && (
-                <div>
-                  <label htmlFor="overridePin" className="block text-sm font-medium text-gray-700 mb-1">
-                    {tOrders('overridePinLabel')}
-                  </label>
-                  <input
-                    id="overridePin"
-                    type="password"
-                    value={cancelModal.overridePin}
-                    onChange={(e) => updateCancelModal({ overridePin: e.target.value })}
-placeholder={tOrders('managerPin')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2 mt-6">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCancelModal(null)}
-              >
-                {tCommon('cancel')}
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleCancelOrder}
-                disabled={cancellingOrderId === cancelModal.order.id}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                {cancellingOrderId === cancelModal.order.id ? tOrders('cancelling') : tOrders('confirmCancel')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Void In-Progress Item Modal */}
-      {voidItemModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-1">{tOrders('voidItem')}</h2>
-            <p className="text-sm text-gray-500 mb-4">{tOrders('voidItemConfirm', { name: voidItemModal.productName })}</p>
-
+        <Modal open onOpenChange={(open) => { if (!open) setCancelModal(null); }} size="sm">
+          <ModalHeader closeLabel={tCommon('close')}>
+            <ModalTitle>{tOrders('cancel')} #<Ltr>{cancelModal.order.order_number}</Ltr></ModalTitle>
+          </ModalHeader>
+          <ModalBody className="flex flex-col gap-4">
             <div>
-              <label htmlFor="voidOverridePin" className="block text-sm font-medium text-gray-700 mb-1">
-                {tOrders('overridePinLabel')}
-              </label>
+              <label htmlFor="cancelReason" className={LABEL}>{tCommon('reasonOptional')}</label>
               <input
-                id="voidOverridePin"
-                type="password"
-                autoFocus
-                value={voidItemModal.overridePin}
-                onChange={(e) => setVoidItemModal({ ...voidItemModal, overridePin: e.target.value })}
-                placeholder={tOrders('managerPin')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                id="cancelReason"
+                type="text"
+                value={cancelModal.reason}
+                onChange={(e) => updateCancelModal({ reason: e.target.value })}
+                placeholder={tOrders('cancelReason')}
+                className={INPUT}
               />
             </div>
 
-            <div className="flex justify-end gap-2 mt-6">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setVoidItemModal(null)}
-              >
-                {tCommon('cancel')}
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleVoidItem}
-                disabled={voidingItem || !voidItemModal.overridePin}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                {voidingItem ? tOrders('voidingItem') : tOrders('confirmVoidItem')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Discount Modal */}
-      {discountModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">{tOrders('applyDiscountTitle', { number: discountModal.order.order_number })}</h2>
-
-            <div className="space-y-4">
-              {/* Discount Type Toggle */}
-              <div className="flex rounded-lg overflow-hidden border border-gray-200">
-                {isDiscountTypeAllowed(discountMode, 'percentage') && (
-                  <button
-                    onClick={() => updateDiscountModal({ type: 'percentage', value: 0 })}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${
-                      discountModal.type === 'percentage'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Percent size={14} />
-                    {tCommon('percentage')}
-                  </button>
-                )}
-                {isDiscountTypeAllowed(discountMode, 'amount') && (
-                  <button
-                    onClick={() => updateDiscountModal({ type: 'amount', value: 0 })}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${
-                      discountModal.type === 'amount'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Banknote size={14} />
-                    {tCommon('amount')}
-                  </button>
-                )}
-              </div>
-
-              {/* Discount Value */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {discountModal.type === 'percentage' ? tOrders('discountPercentageLabel') : tOrders('discountAmountLabel')}
-                </label>
-                <div className="relative">
-                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                    {discountModal.type === 'percentage' ? '%' : currency}
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={discountModal.type === 'percentage' ? 100 : Number(discountModal.order.total)}
-                    step={discountModal.type === 'percentage' ? 1 : 0.01}
-                    value={discountModal.value || ''}
-                    onChange={(e) => updateDiscountModal({ value: Number(e.target.value) })}
-                    placeholder={discountModal.type === 'percentage' ? '0' : '0.00'}
-                    className="w-full ps-8 pe-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              {/* Discount Reason */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {tCommon('reasonOptional')}
-                </label>
+            {cancelModal.order.type === 'dine_in' && cancelModal.order.table && (
+              <label htmlFor="freeTable" className="flex min-h-touch items-center gap-3 text-base text-foreground">
                 <input
-                  type="text"
-                  value={discountModal.reason}
-                  onChange={(e) => updateDiscountModal({ reason: e.target.value })}
-                  placeholder={tOrders('discountReason')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  id="freeTable"
+                  type="checkbox"
+                  checked={cancelModal.freeTable}
+                  onChange={(e) => updateCancelModal({ freeTable: e.target.checked })}
+                  className="size-5 rounded border-input accent-brand"
+                />
+                {tOrders('freeTable', { name: cancelModal.order.table.name })}
+              </label>
+            )}
+
+            {(cancelModal.order.status !== 'pending' || cancelModal.order.items?.some((i) => ['preparing', 'ready', 'served', 'completed'].includes(i.status))) && (
+              <div>
+                <label htmlFor="overridePin" className={LABEL}>{tOrders('overridePinLabel')}</label>
+                <input
+                  id="overridePin"
+                  type="password"
+                  value={cancelModal.overridePin}
+                  onChange={(e) => updateCancelModal({ overridePin: e.target.value })}
+                  placeholder={tOrders('managerPin')}
+                  className={INPUT}
+                  dir="ltr"
                 />
               </div>
+            )}
+          </ModalBody>
+          <ModalFooter className="flex-row justify-end">
+            <Button type="button" variant="outline" size="touch" onClick={() => setCancelModal(null)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button type="button" variant="destructive" size="touch" onClick={handleCancelOrder} disabled={cancellingOrderId === cancelModal.order.id}>
+              {cancellingOrderId === cancelModal.order.id ? tOrders('cancelling') : tOrders('confirmCancel')}
+            </Button>
+          </ModalFooter>
+        </Modal>
+      )}
 
-              {/* Preview */}
-              <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">{tCommon('subtotal')}</span>
-                  <span className="text-gray-900">{fmt(Number(discountModal.order.subtotal))}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-purple-600">
-                    {tCommon('discount')}
-                    {discountModal.type === 'percentage' && discountModal.value > 0 && (
-                      <span className="text-gray-400 ms-1">{tOrders('percentOnSubtotal', { value: discountModal.value })}</span>
-                    )}
-                  </span>
-                  <span className="text-purple-600">
-                    -{fmt(
-                      discountModal.type === 'percentage'
-                        ? Number(discountModal.order.subtotal) * discountModal.value / 100
-                        : Number(discountModal.value)
-                    )}
-                  </span>
-                </div>
-                <div className="border-t border-gray-200 pt-1.5 flex justify-between text-sm font-bold">
-                  <span className="text-gray-900">{tOrders('newTotal')}</span>
-                  <span className="text-gray-900">
-                    {fmt(
-                      discountModal.type === 'percentage'
-                        ? Number(discountModal.order.subtotal) * (1 - discountModal.value / 100)
-                        : Number(discountModal.order.subtotal) - Number(discountModal.value)
-                    )}
-                  </span>
-                </div>
+      {/* Void In-Progress Item */}
+      {voidItemModal && (
+        <Modal open onOpenChange={(open) => { if (!open) setVoidItemModal(null); }} size="sm">
+          <ModalHeader closeLabel={tCommon('close')}>
+            <ModalTitle>{tOrders('voidItem')}</ModalTitle>
+            <ModalDescription>{tOrders('voidItemConfirm', { name: voidItemModal.productName })}</ModalDescription>
+          </ModalHeader>
+          <ModalBody>
+            <label htmlFor="voidOverridePin" className={LABEL}>{tOrders('overridePinLabel')}</label>
+            <input
+              id="voidOverridePin"
+              type="password"
+              autoFocus
+              value={voidItemModal.overridePin}
+              onChange={(e) => setVoidItemModal({ ...voidItemModal, overridePin: e.target.value })}
+              placeholder={tOrders('managerPin')}
+              className={INPUT}
+              dir="ltr"
+            />
+          </ModalBody>
+          <ModalFooter className="flex-row justify-end">
+            <Button type="button" variant="outline" size="touch" onClick={() => setVoidItemModal(null)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button type="button" variant="destructive" size="touch" onClick={handleVoidItem} disabled={voidingItem || !voidItemModal.overridePin}>
+              {voidingItem ? tOrders('voidingItem') : tOrders('confirmVoidItem')}
+            </Button>
+          </ModalFooter>
+        </Modal>
+      )}
+
+      {/* Discount */}
+      {discountModal && (
+        <Modal open onOpenChange={(open) => { if (!open) setDiscountModal(null); }} size="sm">
+          <ModalHeader closeLabel={tCommon('close')}>
+            <ModalTitle>{tOrders('applyDiscountTitle', { number: discountModal.order.order_number })}</ModalTitle>
+          </ModalHeader>
+          <ModalBody className="flex flex-col gap-4">
+            {/* Discount type */}
+            <div className="flex gap-1 rounded-xl bg-muted p-1">
+              {isDiscountTypeAllowed(discountMode, 'percentage') && (
+                <button
+                  type="button"
+                  aria-pressed={discountModal.type === 'percentage'}
+                  onClick={() => updateDiscountModal({ type: 'percentage', value: 0 })}
+                  className={`flex h-touch flex-1 items-center justify-center gap-2 rounded-lg text-base font-semibold transition ${
+                    discountModal.type === 'percentage' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
+                  }`}
+                >
+                  <Percent size={16} />
+                  {tCommon('percentage')}
+                </button>
+              )}
+              {isDiscountTypeAllowed(discountMode, 'amount') && (
+                <button
+                  type="button"
+                  aria-pressed={discountModal.type === 'amount'}
+                  onClick={() => updateDiscountModal({ type: 'amount', value: 0 })}
+                  className={`flex h-touch flex-1 items-center justify-center gap-2 rounded-lg text-base font-semibold transition ${
+                    discountModal.type === 'amount' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
+                  }`}
+                >
+                  <Banknote size={16} />
+                  {tCommon('amount')}
+                </button>
+              )}
+            </div>
+
+            {/* Discount value */}
+            <div>
+              <label htmlFor="discountValue" className={LABEL}>
+                {discountModal.type === 'percentage' ? tOrders('discountPercentageLabel') : tOrders('discountAmountLabel')}
+              </label>
+              <div className="relative">
+                <span className="absolute start-4 top-1/2 -translate-y-1/2 text-base text-muted-foreground">
+                  {discountModal.type === 'percentage' ? '%' : currency}
+                </span>
+                <input
+                  id="discountValue"
+                  type="number"
+                  min={0}
+                  max={discountModal.type === 'percentage' ? 100 : Number(discountModal.order.total)}
+                  step={discountModal.type === 'percentage' ? 1 : 0.01}
+                  value={discountModal.value || ''}
+                  onChange={(e) => updateDiscountModal({ value: Number(e.target.value) })}
+                  placeholder={discountModal.type === 'percentage' ? '0' : '0.00'}
+                  className={`${INPUT} ps-10`}
+                  dir="ltr"
+                />
+              </div>
+            </div>
+
+            {/* Discount reason */}
+            <div>
+              <label htmlFor="discountReason" className={LABEL}>{tCommon('reasonOptional')}</label>
+              <input
+                id="discountReason"
+                type="text"
+                value={discountModal.reason}
+                onChange={(e) => updateDiscountModal({ reason: e.target.value })}
+                placeholder={tOrders('discountReason')}
+                className={INPUT}
+              />
+            </div>
+
+            {/* Preview */}
+            <div className="flex flex-col gap-1.5 rounded-xl bg-muted p-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">{tCommon('subtotal')}</span>
+                <Ltr className="text-foreground">{fmt(Number(discountModal.order.subtotal))}</Ltr>
+              </div>
+              <div className="flex justify-between text-sm text-table-held">
+                <span>
+                  {tCommon('discount')}
+                  {discountModal.type === 'percentage' && discountModal.value > 0 && (
+                    <span className="ms-1 text-muted-foreground">{tOrders('percentOnSubtotal', { value: discountModal.value })}</span>
+                  )}
+                </span>
+                <Ltr>
+                  -{fmt(
+                    discountModal.type === 'percentage'
+                      ? Number(discountModal.order.subtotal) * discountModal.value / 100
+                      : Number(discountModal.value)
+                  )}
+                </Ltr>
+              </div>
+              <div className="flex justify-between border-t border-border pt-1.5 text-base font-bold text-foreground">
+                <span>{tOrders('newTotal')}</span>
+                <Ltr>
+                  {fmt(
+                    discountModal.type === 'percentage'
+                      ? Number(discountModal.order.subtotal) * (1 - discountModal.value / 100)
+                      : Number(discountModal.order.subtotal) - Number(discountModal.value)
+                  )}
+                </Ltr>
               </div>
             </div>
 
             {discountRequiresApproval && discountModal.value > 0 && (
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">{tOrders('managerPinLabel')}</label>
+              <div>
+                <label htmlFor="discountPin" className={LABEL}>{tOrders('managerPinLabel')}</label>
                 <input
+                  id="discountPin"
                   type="password"
                   value={discountPin}
                   onChange={(e) => setDiscountPin(e.target.value)}
-placeholder={tOrders('managerPin')}
-                maxLength={6}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder={tOrders('managerPin')}
+                  maxLength={6}
+                  className={INPUT}
+                  dir="ltr"
                 />
               </div>
             )}
-
-            <div className="flex justify-end gap-2 mt-6">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDiscountModal(null)}
-              >
-                {tCommon('cancel')}
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleApplyDiscount}
-                disabled={discountModal.value <= 0}
-                className="bg-purple-600 hover:bg-purple-700 text-white"
-              >
-                <Percent size={14} className="me-1.5" />
-                {tOrders('applyDiscount')}
-              </Button>
-            </div>
-          </div>
-        </div>
+          </ModalBody>
+          <ModalFooter className="flex-row justify-end">
+            <Button type="button" variant="outline" size="touch" onClick={() => setDiscountModal(null)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button type="button" size="touch" onClick={handleApplyDiscount} disabled={discountModal.value <= 0}>
+              <Percent />
+              {tOrders('applyDiscount')}
+            </Button>
+          </ModalFooter>
+        </Modal>
       )}
 
       {/* One row, up close: what it costs and what comes off it. The price can
           go up as well as down — a dish agreed at the table has no list price
           to discount from. */}
       {rowEdit && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
-            <div className="flex justify-between items-start mb-1">
-              <h3 className="font-bold text-gray-900">{rowEdit.item.product_name}</h3>
-              <button onClick={() => setRowEdit(null)} className="text-gray-400 hover:text-gray-600">
-                <XCircle size={18} />
-              </button>
-            </div>
-            <p className="text-sm text-gray-500 mb-4">
+        <Modal open onOpenChange={(open) => { if (!open) setRowEdit(null); }} size="sm">
+          <ModalHeader closeLabel={tCommon('close')}>
+            <ModalTitle>{rowEdit.item.product_name}</ModalTitle>
+            <ModalDescription>
               {tOrders('rowCurrentPrice')} <Ltr>{fmt(Number(rowEdit.item.unit_price))}</Ltr>
-              {' × '}{rowEdit.item.quantity}
-            </p>
+              {' × '}<Ltr>{String(rowEdit.item.quantity)}</Ltr>
+            </ModalDescription>
+          </ModalHeader>
+          <ModalBody className="flex flex-col gap-4">
             {awaitsPrice(rowEdit.item) && (
-              <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-4">
+              <p className="rounded-xl bg-pending-soft px-3 py-2 text-sm text-pending">
                 {tOrders('rowPriceAwaitingHint')}
               </p>
             )}
-
-            <label className="block text-sm font-medium text-gray-700 mb-1">{tOrders('rowNewPrice')}</label>
-            <div className="flex gap-2 mb-5">
+            <div>
+              <label htmlFor="rowNewPrice" className={LABEL}>{tOrders('rowNewPrice')}</label>
               <input
+                id="rowNewPrice"
                 type="text"
                 inputMode="decimal"
                 value={rowEdit.unitPrice}
                 onChange={(e) => setRowEdit({ ...rowEdit, unitPrice: e.target.value })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                className={`${INPUT} text-lg font-semibold`}
                 dir="ltr"
                 autoFocus
               />
-              <Button type="button" onClick={saveRowPrice} disabled={savingRow}>
-                {awaitsPrice(rowEdit.item) ? tOrders('rowConfirmPrice') : tOrders('rowSavePrice')}
-              </Button>
             </div>
-
             {discountRequiresApproval && (
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">{tOrders('managerPin')}</label>
+              <div>
+                <label htmlFor="rowPin" className={LABEL}>{tOrders('managerPin')}</label>
                 <input
+                  id="rowPin"
                   type="password"
                   value={rowEdit.overridePin}
                   onChange={(e) => setRowEdit({ ...rowEdit, overridePin: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  className={INPUT}
                   dir="ltr"
                 />
               </div>
             )}
-          </div>
-        </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button type="button" size="touch-lg" onClick={saveRowPrice} disabled={savingRow} className="w-full">
+              {awaitsPrice(rowEdit.item) ? tOrders('rowConfirmPrice') : tOrders('rowSavePrice')}
+            </Button>
+          </ModalFooter>
+        </Modal>
       )}
 
       {/* How many are at the table. Its own little window because it changes
           what the guests pay, not just what the screen says. */}
       {guestEdit !== null && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-xs">
-            <h3 className="font-bold text-gray-900 mb-1">{tOrders('changeGuests')}</h3>
-            <p className="text-sm text-gray-500 mb-4">{tOrders('changeGuestsHint')}</p>
-            <div className="flex items-center justify-center gap-3 mb-5">
-              <button
-                type="button"
-                onClick={() => setGuestEdit(String(Math.max(1, Number(guestEdit) - 1)))}
-                className="size-9 rounded-full bg-gray-100 flex items-center justify-center"
-                aria-label={tPos('decreasePax')}
-              >
-                −
-              </button>
-              <input
-                type="number"
-                min="1"
-                max="99"
-                value={guestEdit}
-                onChange={(e) => setGuestEdit(e.target.value)}
-                className="w-16 text-center text-lg font-semibold border border-gray-300 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-brand"
-                dir="ltr"
-              />
-              <button
-                type="button"
-                onClick={() => setGuestEdit(String(Math.min(99, Number(guestEdit) + 1)))}
-                className="size-9 rounded-full bg-gray-100 flex items-center justify-center"
-                aria-label={tPos('increasePax')}
-              >
-                +
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setGuestEdit(null)} disabled={savingRow}>
-                {tCommon('cancel')}
-              </Button>
-              <Button type="button" className="flex-1" onClick={saveGuestCount} disabled={savingRow}>
-                {tCommon('save')}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <Modal open onOpenChange={(open) => { if (!open) setGuestEdit(null); }} size="sm">
+          <ModalHeader closeLabel={tCommon('close')}>
+            <ModalTitle>{tOrders('changeGuests')}</ModalTitle>
+            <ModalDescription>{tOrders('changeGuestsHint')}</ModalDescription>
+          </ModalHeader>
+          <ModalBody className="flex justify-center py-6">
+            <Stepper
+              size="lg"
+              min={1}
+              max={99}
+              value={Math.max(1, Number(guestEdit) || 1)}
+              onChange={(count) => setGuestEdit(String(count))}
+              decreaseLabel={tPos('decreasePax')}
+              increaseLabel={tPos('increasePax')}
+            />
+          </ModalBody>
+          <ModalFooter className="flex-row">
+            <Button type="button" variant="outline" size="touch-lg" className="flex-1" onClick={() => setGuestEdit(null)} disabled={savingRow}>
+              {tCommon('cancel')}
+            </Button>
+            <Button type="button" size="touch-lg" className="flex-1" onClick={saveGuestCount} disabled={savingRow}>
+              {tCommon('save')}
+            </Button>
+          </ModalFooter>
+        </Modal>
+      )}
+
+      {/* Filling in a course of a menu already on the check. The same window
+          the till uses, told to show one course — props in, callback out, no
+          API client of its own, which is what lets it mount here at all. */}
+      {menuFill?.group.menu && (
+        <FixedMenuPicker
+          menu={menuFill.group.menu}
+          products={catalogProducts}
+          categories={catalogCategories}
+          mode="fill"
+          restrictToCourseId={menuFill.courseId}
+          // Every course the menu already holds, not only the one on show:
+          // the window reads "still missing" and the line price off the whole
+          // selection, and with the others left out it listed courses that
+          // were full and priced a menu without its surcharges. onAdd keeps
+          // only the shown course, so nothing else is rewritten.
+          initialSelection={menuFill.group.slots
+            .flatMap((slot) => slot.filled.map((row) => ({ course_id: slot.course.id, product_id: String(row.product_id) })))}
+          onClose={() => { if (!fillingMenu) setMenuFill(null); }}
+          onAdd={(_menu, selection) => setCourseDishes(
+            menuFill.group.group_id,
+            menuFill.courseId,
+            selection.filter((choice) => choice.course_id === menuFill.courseId).map((choice) => choice.product_id),
+          )}
+        />
       )}
 
       {ConfirmDialog}

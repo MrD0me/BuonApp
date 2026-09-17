@@ -9,6 +9,7 @@ import { COVER_CHARGE_SETTING_KEY, parseCoverChargeAmount } from '../money';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
 import { correlationId, type FloErrorCode } from '../errors';
+import { groupItemsByServiceRun } from '../services/service-runs';
 
 export type PrintResult = {
   ok: boolean;
@@ -1333,6 +1334,7 @@ interface KotLabels {
   reprint: string;
   orderNote: string;
   other: string;
+  serviceRun: (n: number) => string;
   summary: (lines: number, pieces: number) => string;
 }
 
@@ -1346,6 +1348,7 @@ const KOT_LABELS: Record<string, KotLabels> = {
     reprint: '*** RE-PRINT ***',
     orderNote: 'ORDER NOTE',
     other: 'OTHER',
+    serviceRun: (n) => `RUN ${n}`,
     summary: (lines, pieces) => `${lines} lines - ${pieces} items`,
   },
   it: {
@@ -1357,6 +1360,7 @@ const KOT_LABELS: Record<string, KotLabels> = {
     reprint: '*** RISTAMPA ***',
     orderNote: 'NOTA TAVOLO',
     other: 'ALTRO',
+    serviceRun: (n) => `${n}ª USCITA`,
     summary: (lines, pieces) => `${lines} righe - ${pieces} pezzi`,
   },
 };
@@ -1459,30 +1463,51 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   lines.push(`{CENTER}{FONT_B}${truncate(meta, cols)}{/FONT_B}{/CENTER}`);
   lines.push(rule);
 
-  const groups = groupKotItemsByCategory(items);
-  // A single-category ticket needs no headers - they would only add noise.
-  const showCategoryHeaders = groups.length > 1;
+  // Two levels, and the run is the outer one: it says *when* the food leaves,
+  // which the cook has to act on, while the category only says what kind of
+  // thing it is. Runs go in numerical order; categories keep the order they
+  // first appear in, as they always have.
+  //
+  // A house that never touches a run has every row on run 1, so there is one
+  // run, no run header, and the ticket below is the one that printed before
+  // any of this existed.
+  const runs = groupItemsByServiceRun(items);
+  const showRunHeaders = runs.length > 1;
 
-  groups.forEach((group, groupIndex) => {
-    if (showCategoryHeaders) {
-      if (groupIndex > 0) lines.push('');
-      lines.push(`{BOLD}${labelledRule((group.name || L.other).toUpperCase(), cols, '=')}{/BOLD}`);
+  runs.forEach((run, runIndex) => {
+    if (showRunHeaders) {
+      if (runIndex > 0) lines.push('');
+      // Louder than a category rule, in both the character and the type: of
+      // the two headings this is the one that must not be skimmed past.
+      lines.push(`{DOUBLE_HEIGHT}{BOLD}${labelledRule(L.serviceRun(run.run), wideCols, '#')}{/BOLD}{/DOUBLE_HEIGHT}`);
     }
-    group.items.forEach((item, itemIndex) => {
-      // A thin rule between dishes: without it a dish carrying two lines of
-      // notes runs straight into the next one.
-      if (itemIndex > 0) lines.push(thinRule);
-      pushKotItemName(lines, item.quantity, String(item.product_name ?? ''), cols);
-      for (const addon of parseAddons(item.addons)) {
-        if (addon?.name) {
-          pushKotDetail(lines, '+', String(addon.name), cols, false);
+
+    const groups = groupKotItemsByCategory(run.items);
+    // A single-category ticket needs no headers - they would only add noise.
+    // Decided per run: a wave that is all mains reads better without one.
+    const showCategoryHeaders = groups.length > 1;
+
+    groups.forEach((group, groupIndex) => {
+      if (showCategoryHeaders) {
+        if (groupIndex > 0) lines.push('');
+        lines.push(`{BOLD}${labelledRule((group.name || L.other).toUpperCase(), cols, '=')}{/BOLD}`);
+      }
+      group.items.forEach((item, itemIndex) => {
+        // A thin rule between dishes: without it a dish carrying two lines of
+        // notes runs straight into the next one.
+        if (itemIndex > 0) lines.push(thinRule);
+        pushKotItemName(lines, item.quantity, String(item.product_name ?? ''), cols);
+        for (const addon of parseAddons(item.addons)) {
+          if (addon?.name) {
+            pushKotDetail(lines, '+', String(addon.name), cols, false);
+          }
         }
-      }
-      if (item.special_instructions) {
-        // Notes carry a different marker from add-ons and are bold: they are
-        // the line a cook cannot afford to skim past.
-        pushKotDetail(lines, '>>', String(item.special_instructions), cols, true);
-      }
+        if (item.special_instructions) {
+          // Notes carry a different marker from add-ons and are bold: they are
+          // the line a cook cannot afford to skim past.
+          pushKotDetail(lines, '>>', String(item.special_instructions), cols, true);
+        }
+      });
     });
   });
 

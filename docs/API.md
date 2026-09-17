@@ -10,7 +10,7 @@ The desktop app runs three HTTP servers on the local network, advertised over mD
 | --- | --- | --- |
 | `3001` | Express API and WebSocket | Every endpoint documented here, plus the POS interface |
 | `3002` | Standalone KDS | The kitchen display and its WebSocket. Enabled by default; with `kds_enabled` switched off, `/api/kds-info`, `/api/kitchen/*`, and `/api/kds/*` answer `403` |
-| `3003` | Server App | The tableside handheld interface. It forwards a deliberately narrow allowlist of API calls to `:3001`, including `POST /api/printers/print-kot`, and of the table routes forwards only `GET /tables` |
+| `3003` | Server App | The tableside handheld interface (`docs/palmare.md`). It forwards a deliberately narrow allowlist to `:3001` — the catalogue, `GET /settings`, `GET /rooms` and `GET /tables` read-only, the order routes a waiter needs (`POST /orders`, `POST /orders/:id/items`, `PATCH .../guests`, `PATCH .../service-run`, `PUT .../menu-groups/...`), and `POST /api/printers/print-kot` — and answers `404` to everything else under `/api`. No table write, no bill, no payment, no customer route is forwarded |
 
 None of the three should ever be reachable from the public internet.
 
@@ -569,18 +569,30 @@ Create new order.
 
 Order item `addons` reference catalog add-ons by `id`. Each add-on must be active and linked to the product's add-on group. Add-on name and price are resolved from the catalog (client-supplied names and prices are ignored). Quantity defaults to `1` when omitted and must be a positive integer.
 
+`guest_count` (1–99) is the number of covers and drives the cover charge; `service_run` (1–9) says which wave of the meal a row leaves the kitchen in and falls back to the category's default when omitted; `menu_selection` is only for a product that is a fixed menu and lists one chosen dish per course, each with its own optional note and run. `user_id` is never read from the body: the order is stamped with the authenticated caller.
+
 **Request:**
 ```json
 {
   "type": "dine_in",
   "table_id": "table-1",
-  "customer_id": "cust-1",
+  "guest_count": 4,
+  "special_instructions": "Birthday at the table",
   "items": [
     {
       "product_id": "prod-1",
       "quantity": 2,
       "addons": [{ "id": "addon-1", "quantity": 1 }],
-      "special_instructions": "No onions"
+      "special_instructions": "No onions",
+      "service_run": 2
+    },
+    {
+      "product_id": "prod-menu",
+      "quantity": 1,
+      "menu_selection": [
+        { "course_id": "course-starter", "product_id": "prod-bruschetta" },
+        { "course_id": "course-main", "product_id": "prod-steak", "note": "rare", "service_run": 3 }
+      ]
     }
   ]
 }
@@ -717,6 +729,10 @@ Cancel an order item.
 - A new cancellation on a completed, cancelled, paid, or partially paid order
   is rejected. Repeating cancellation of a terminal item is an idempotent
   no-op for an owner or manager.
+- On a fixed menu, cancelling the package row takes the whole menu off the
+  check; cancelling one of its dish rows takes only that dish, so a guest can
+  change their main without losing the starter they have eaten. Restore
+  follows the same split.
 
 ### PATCH `/api/orders/:orderId/items/:itemId/restore`
 Restore a cancelled item (owner or manager only). The item returns to `pending`
@@ -730,6 +746,8 @@ Append items to an existing order.
 
 For a retry-safe append, send an `Idempotency-Key` header containing 1–128 printable, non-whitespace ASCII characters. Reuse the same key only for the same authenticated user's identical append request (order, items, and order notes) until its response is confirmed. A matching retry returns the original `200` response without adding items again, including if the order has since become non-editable; reusing the key for different data returns `409`.
 
+Items take the same shape as on `POST /api/orders`, `service_run` and `menu_selection` included. Any waiter may append to any open order; the order keeps the `user_id` of whoever opened it.
+
 **Request:**
 ```json
 {
@@ -738,7 +756,8 @@ For a retry-safe append, send an `Idempotency-Key` header containing 1–128 pri
       "product_id": "prod-1",
       "quantity": 2,
       "addons": [{ "id": "addon-1", "quantity": 1 }],
-      "special_instructions": "No onions"
+      "special_instructions": "No onions",
+      "service_run": 2
     }
   ],
   "special_instructions": "Add drinks when ready"
@@ -820,6 +839,52 @@ Apply item-level discount.
 ```
 
 **Validations:** Same as order-level discount.
+
+### PATCH `/api/orders/:id/items/:itemId/service-run`
+Move one row to another service run — which wave of the meal the dish leaves
+the kitchen in. Owner, manager, cashier, or waiter — any waiter, on any order.
+
+**Request:**
+```json
+{ "service_run": 2 }
+```
+
+**Validations:** `service_run` is a whole number from 1 to 9. Rejected on a
+completed or cancelled order, and on a row that is cancelled, voided, or a void
+adjustment. No money moves, so no manager PIN is asked for.
+
+`kot_batch` is deliberately untouched: a row already on a printed ticket still
+moves, nothing is re-sent, and the kitchen's copy is simply out of date. Runs
+are labels, not gates — what is pending stays pending whatever run it is on.
+
+### PUT `/api/orders/:id/menu-groups/:groupId/courses/:courseId`
+Fill in, swap, or clear one course of a fixed menu already on the check. Owner,
+manager, cashier, or waiter — any waiter, on any order.
+
+**Request:**
+```json
+{ "product_ids": ["prod-steak"] }
+```
+
+`product_ids` is what the course holds afterwards, not what to do to it: an
+empty list clears it, a different dish swaps it, one more adds. Replaying the
+same list changes nothing, so a retry after a lost response cannot double a
+dish. Prices come from the menu's own surcharges — a price sent by the client is
+ignored, as everywhere else.
+
+Rows written here are born with `kot_batch` NULL, so they go out on the next
+round on their own. Nothing is printed by this endpoint.
+
+**Validations:** the menu group exists on this order and its package row is
+live (`404`); the course is still on that menu (`409` `course_no_longer_exists`);
+at most `max_choices` dishes, each active and allowed by the course (`400`).
+Rejected on a completed or cancelled order (`400`) and on a paid or partially
+paid one (`409`).
+
+A dish the kitchen has already started returns `409` with
+`code: "course_in_progress"` and the `item_id` holding it up, and writes
+nothing: taking that row off the check is the cancel endpoint's business, with
+the manager PIN and void adjustment it already enforces.
 
 ---
 

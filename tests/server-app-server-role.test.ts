@@ -52,6 +52,19 @@ async function getJson(baseUrl: string, pathName: string, token: string) {
   return { status: response.status, body: await response.json() };
 }
 
+async function send(baseUrl: string, method: string, pathName: string, token?: string) {
+  const response = await fetch(`${baseUrl}${pathName}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: ['GET', 'HEAD'].includes(method) ? undefined : JSON.stringify({}),
+  });
+  await response.text();
+  return response.status;
+}
+
 async function main() {
   console.log('Integration Test: Server App server-only auth');
   console.log('='.repeat(52));
@@ -109,6 +122,46 @@ async function main() {
 
     const unauthenticatedKot = await postJson(baseUrl, '/api/printers/print-kot', { orderId: 999999 });
     assert.equal(unauthenticatedKot.status, 401, 'print-kot on the Server App still requires a token');
+
+    // The whole allowlist, same reasoning: exposed, past the role gate, and
+    // closed without a token. What the main API says is its own business.
+    const forwarded: [string, string][] = [
+      ['GET', '/api/categories'],
+      ['GET', '/api/products'],
+      ['GET', '/api/tables'],
+      ['GET', '/api/rooms'],
+      ['GET', '/api/settings'],
+      ['GET', '/api/orders'],
+      ['GET', '/api/orders/1'],
+      ['POST', '/api/orders'],
+      ['POST', '/api/orders/1/items'],
+      ['PATCH', '/api/orders/1/guests'],
+      ['PATCH', '/api/orders/1/items/2/service-run'],
+      ['PUT', '/api/orders/1/menu-groups/g1/courses/c1'],
+    ];
+    for (const [method, route] of forwarded) {
+      const withToken = await send(baseUrl, method, route, serverLogin.body.access_token);
+      assert.notEqual(withToken, 404, `${method} ${route} is exposed on the Server App`);
+      assert.notEqual(withToken, 403, `${method} ${route} lets a server through`);
+      assert.equal(await send(baseUrl, method, route), 401, `${method} ${route} requires a token`);
+    }
+
+    // Handhelds do not file guests, and they do not touch tables, bills or
+    // payments: none of that is forwarded, whoever asks.
+    const closed: [string, string][] = [
+      ['GET', '/api/customers-search'],
+      ['GET', '/api/crm/lookup'],
+      ['POST', '/api/customers'],
+      ['POST', '/api/tables'],
+      ['PUT', '/api/tables/1'],
+      ['PATCH', '/api/tables/1/status'],
+      ['POST', '/api/bills/generate'],
+      ['PATCH', '/api/orders/1/discount'],
+      ['PATCH', '/api/orders/1/items/2/price'],
+    ];
+    for (const [method, route] of closed) {
+      assert.equal(await send(baseUrl, method, route, serverLogin.body.access_token), 404, `${method} ${route} is not forwarded`);
+    }
   } finally {
     await stopServerApp();
     closeDatabase();

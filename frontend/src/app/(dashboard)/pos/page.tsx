@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
@@ -8,14 +8,20 @@ import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
-import { ShoppingCart, X } from 'lucide-react';
+
 import type { Addon, Category, Product, Table, Bill, Order, CartItem, FixedMenuSelection } from '@/lib/types';
-import { isFixedMenu } from '@/lib/fixed-menu';
+import {
+  isFixedMenu, menuGroupsOfOrder, menuLinesOfCart, menuLinesOfOrder, openSlotsForProduct,
+  type OpenSlot,
+} from '@/lib/fixed-menu';
+import AttachToMenuModal from '@/components/pos/AttachToMenuModal';
+import { needsOptionsDialog } from '@/lib/product-options';
+import { validCovers } from '@/lib/table-covers';
+import { Modal, ModalBody, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { cartItemToPayload } from '@/lib/cart-payload';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
-  Drawer, DrawerContent, DrawerTrigger,
 } from '@/components/ui/drawer';
 
 import ProductGrid from '@/components/pos/ProductGrid';
@@ -83,6 +89,7 @@ export default function POSPage() {
   const { customerMandatory, autoPrintBill, billingType, tablesRequired, customersEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
+  const tCommon = useTranslations('common');
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
 
@@ -92,22 +99,44 @@ export default function POSPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [menuProduct, setMenuProduct] = useState<Product | null>(null);
+  // A dish that could go inside a menu, waiting for the floor to say whether
+  // it does. Null whenever there is nothing to ask.
+  const [attachProduct, setAttachProduct] = useState<{ product: Product; slots: OpenSlot[] } | null>(null);
   const [editingMenuItem, setEditingMenuItem] = useState<CartItem | null>(null);
   // The last set of choices, so "one more like it" is a tap rather than
   // another pass through every course.
-  const [lastMenuChoice, setLastMenuChoice] = useState<{ menuId: string; selection: FixedMenuSelection; instructions: string } | null>(null);
+
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
-  const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [appendOrder, setAppendOrder] = useState<Order | null>(null);
+  /**
+   * The order the next send will be appended to — but only while the cart is
+   * still pointed at its table.
+   *
+   * Coming from a table sheet with "add items" points the cart at that order,
+   * and picking a different table afterwards used to move only the label: the
+   * screen said table 10 while everything sent still landed on table 2's
+   * check. Derived rather than kept in step by hand, because the picker, the
+   * held-order restore and the ?append= parameter all set the table, and only
+   * one of them was ever going to remember to clear this. Deriving it also
+   * leaves no instant where the two disagree.
+   *
+   * Takeaway and delivery have no table to disagree with.
+   */
+  const pendingOrder = useMemo(() => {
+    if (!appendOrder || cart.orderType !== 'dine_in') return appendOrder;
+    const orderTable = appendOrder.table_id != null ? String(appendOrder.table_id) : null;
+    if (!orderTable || !cart.tableId) return appendOrder;
+    return String(cart.tableId) === orderTable ? appendOrder : null;
+  }, [appendOrder, cart.tableId, cart.orderType]);
   const [supportError, setSupportError] = useState<{ code: string; message: string; payload: Record<string, unknown> } | null>(null);
   const activeUserId = user?.id == null ? null : String(user.id);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
@@ -395,6 +424,13 @@ export default function POSPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
 
+  // Menus with room left, wherever they are: still in the cart, or already on
+  // the check of an open table the floor is adding to.
+  const openMenuLines = useMemo(() => [
+    ...menuLinesOfCart(cart.items),
+    ...menuLinesOfOrder(menuGroupsOfOrder(pendingOrder?.items || [], products)),
+  ], [cart.items, pendingOrder, products]);
+
   const handleProductClick = (product: Product) => {
     // A fixed menu is not ordered, it is composed: the window that opens asks
     // for a dish per course and writes them as real rows.
@@ -402,26 +438,68 @@ export default function POSPage() {
       setMenuProduct(product);
       return;
     }
-    // Always open modal so user can add notes and adjust quantity
-    setAddonProduct(product);
+
+    // The table took two menus and this dish fits a course still open on one
+    // of them. Asking now is the only moment anyone can answer it: at the
+    // till, with two guests on the menu and a third who ordered the same
+    // dish, nothing in the check says which was inside. With no open menus
+    // this list is empty and the flow below is the one it has always been.
+    const slots = openSlotsForProduct(product, openMenuLines);
+    if (slots.length > 0) {
+      setAttachProduct({ product, slots });
+      return;
+    }
+
+    // A dish with options — or one whose price is decided at the till —
+    // opens its window; anything else goes straight onto the ticket. The
+    // pencil on the tile still opens the window for a note or a quantity.
+    if (needsOptionsDialog(product)) {
+      setAddonProduct(product);
+      return;
+    }
+    cart.addItem(product, 1, [], '');
   };
 
-  const handleMenuAdd = (menu: Product, selection: FixedMenuSelection, instructions: string) => {
-    cart.addFixedMenu(menu, selection, instructions);
-    setLastMenuChoice({ menuId: menu.id, selection, instructions });
+  /** Inside the menu: the dish becomes one of its choices, priced by it. */
+  const handleAttachToMenu = async (slot: OpenSlot) => {
+    const chosen = attachProduct;
+    if (!chosen) return;
+    setAttachProduct(null);
+
+    if (slot.target.kind === 'cart') {
+      cart.attachToMenu(slot.target.cartItemId, slot.course.id, chosen.product.id);
+      return;
+    }
+
+    // A menu already sent: the backend prices it and the row goes out on the
+    // next round by itself.
+    if (!pendingOrder) return;
+    try {
+      await api.put(
+        `/orders/${pendingOrder.id}/menu-groups/${slot.target.groupId}/courses/${slot.course.id}`,
+        { product_ids: [...slot.taken, chosen.product.id] },
+      );
+      const { data } = await api.get(`/orders/${pendingOrder.id}`);
+      setAppendOrder(data.order);
+    } catch {
+      toast.error(t('menuAttachFailed'));
+    }
+  };
+
+  const handleMenuAdd = (menu: Product, selection: FixedMenuSelection) => {
+    cart.addFixedMenu(menu, selection);
     setMenuProduct(null);
   };
 
   // Adds this menu and leaves the window open with the same choices, ready for
   // the next guest taking the same thing.
-  const handleMenuAddAnother = (menu: Product, selection: FixedMenuSelection, instructions: string) => {
-    cart.addFixedMenu(menu, selection, instructions);
-    setLastMenuChoice({ menuId: menu.id, selection, instructions });
+  const handleMenuAddAnother = (menu: Product, selection: FixedMenuSelection) => {
+    cart.addFixedMenu(menu, selection);
   };
 
-  const handleMenuEditSave = (_menu: Product, selection: FixedMenuSelection, instructions: string) => {
+  const handleMenuEditSave = (_menu: Product, selection: FixedMenuSelection) => {
     if (!editingMenuItem) return;
-    cart.updateMenuSelection(editingMenuItem.id, selection, instructions);
+    cart.updateMenuSelection(editingMenuItem.id, selection);
     setEditingMenuItem(null);
   };
 
@@ -499,7 +577,7 @@ export default function POSPage() {
         orderForKot = data.order as Order;
         if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
         addItemsAttemptRef.current = null;
-        setPendingOrder(null);
+        setAppendOrder(null);
       } else {
         const orderPayload = {
           table_id: cart.tableId,
@@ -535,7 +613,6 @@ export default function POSPage() {
         }
       }
       cart.clearCart();
-      setMobileCartOpen(false);
       await refreshTables();
 
       await printKotIfEnabled(orderForKot);
@@ -553,7 +630,7 @@ export default function POSPage() {
         const attempt = addItemsAttemptRef.current;
         if (attempt) clearAppendAttempt(getAppendAttemptStorage(), attempt);
         addItemsAttemptRef.current = null;
-        setPendingOrder(null);
+        setAppendOrder(null);
         toast.error(t('appendAttemptDropped'));
       } else {
         toast.error(t('placeOrderFailed'));
@@ -746,7 +823,6 @@ export default function POSPage() {
       }
       cart.clearCart();
       clearPrepaidAttempt();
-      setMobileCartOpen(false);
       await refreshTables();
 
       await printKotIfEnabled(orderData.order);
@@ -760,8 +836,8 @@ export default function POSPage() {
   };
 
 
-  const handleSelectAvailableTable = (tableId: string, customer?: { id: string | number; name: string; phone: string } | null) => {
-    cart.setTableId(tableId);
+  const handleSelectAvailableTable = (tableId: string, customer: { id: string | number; name: string; phone: string } | null, covers: number) => {
+    cart.setTableId(tableId, covers);
     if (customer) {
       cart.setCustomer({ ...customer, email: null, visits_count: 0, total_spent: 0, last_visit_at: null, country_code: '' });
     }
@@ -848,7 +924,7 @@ export default function POSPage() {
     }
     cart.setGuestCount(order.guest_count || 1);
     cart.setOrderNotes(order.special_instructions || '');
-    setPendingOrder(order);
+    setAppendOrder(order);
     toast(`${t('addingItemsToOrder', { number: order.order_number })} ${t('placeOrderReady')}`, { icon: 'ℹ️' });
   };
 
@@ -878,14 +954,18 @@ export default function POSPage() {
   }, [appendOrderId]);
 
   /**
-   * `?table=<id>` is the floor plan asking for a first order on a free table.
+   * `?table=<id>&covers=<n>` is the floor plan asking for a first order on a
+   * free table, with the covers the panel worked out for it: the booking's
+   * party, or the seats.
    *
    * It checks first: a handheld may have opened one in the seconds since the
    * panel was drawn, and two open orders on the same table means two bills for
-   * one party. If there is already an order, this becomes an append to it.
+   * one party. If there is already an order, this becomes an append to it, and
+   * the covers are that order's.
    */
   useEffect(() => {
     if (!takeOrderTableId) return;
+    const tableCovers = validCovers(searchParams?.get('covers')) ?? undefined;
     let cancelled = false;
     api.get('/orders', {
       params: { table_id: takeOrderTableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
@@ -898,7 +978,7 @@ export default function POSPage() {
           return;
         }
         cart.setOrderType('dine_in');
-        cart.setTableId(takeOrderTableId);
+        cart.setTableId(takeOrderTableId, tableCovers);
       })
       .catch(() => toast.error(t('loadOrderFailed')))
       .finally(() => { if (!cancelled) router.replace('/pos'); });
@@ -968,6 +1048,7 @@ export default function POSPage() {
   const cartPanelProps = {
     tables,
     products,
+    categories,
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
@@ -978,8 +1059,6 @@ export default function POSPage() {
     onEditItem: (item: CartItem) => (item.menu_selection ? setEditingMenuItem(item) : setEditingCartItem(item)),
     existingOrder: pendingOrder,
   };
-
-  const itemCount = cart.itemCount();
 
   return (
     <>
@@ -1000,12 +1079,13 @@ export default function POSPage() {
           </div>
         </div>
       )}
-      <PosTopbar tables={tables} onShowTablePicker={() => setShowTablePicker(true)} />
+      <PosTopbar />
 
-      {/* Main content area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
-        {/* Product Grid — full width on mobile, flex-1 on desktop */}
-        <div className="flex-1 min-w-0 h-full flex flex-col">
+      {/* Main content area: the menu, and the ticket always in view beside it.
+          The cash desk is never narrower than 1024 px, so there is no phone
+          layout here — the phone has its own app. */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-w-0 h-full flex flex-col p-4">
           <ProductGrid
             categories={categories}
             products={products}
@@ -1015,34 +1095,14 @@ export default function POSPage() {
             setSearch={setSearch}
             currency={currency}
             onProductClick={handleProductClick}
+            onProductOptions={setAddonProduct}
             sidebarOpen={leftSidebarOpen}
           />
         </div>
-
-        {/* Desktop Cart — always open, hidden on mobile */}
-        <div className="hidden md:flex md:w-80 md:shrink-0 h-full">
+        <div className="flex h-full w-80 shrink-0 xl:w-96">
           <CartPanel {...cartPanelProps} />
         </div>
       </div>
-
-      {/* Mobile: Floating Cart Button + Bottom Sheet — outside flex container */}
-      <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
-        <DrawerTrigger asChild>
-          <button className="fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg flex items-center justify-center hover:bg-brand-hover transition-colors md:hidden">
-            <ShoppingCart size={22} />
-            {itemCount > 0 && (
-              <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                {itemCount}
-              </span>
-            )}
-          </button>
-        </DrawerTrigger>
-        <DrawerContent className="max-h-[85vh]">
-          <div className="overflow-y-auto max-h-[80vh] px-2 pb-2">
-            <CartPanel {...cartPanelProps} variant="drawer" />
-          </div>
-        </DrawerContent>
-      </Drawer>
 
       {/* Modals */}
       {isRestaurant && showTablePicker && (
@@ -1071,11 +1131,28 @@ export default function POSPage() {
         <FixedMenuPicker
           menu={menuProduct}
           products={products}
-          initialSelection={lastMenuChoice?.menuId === menuProduct.id ? lastMenuChoice.selection : undefined}
-          initialInstructions={lastMenuChoice?.menuId === menuProduct.id ? lastMenuChoice.instructions : ''}
+          categories={categories}
           onAdd={handleMenuAdd}
-          onAddAnother={(selection, instructions) => handleMenuAddAnother(menuProduct, selection, instructions)}
+          onAddAnother={(selection) => handleMenuAddAnother(menuProduct, selection)}
           onClose={() => setMenuProduct(null)}
+        />
+      )}
+
+      {/* Asked only when the dish genuinely fits a course with room left, so a
+          house with no set menus never meets it. "On its own" is always one
+          of the answers. */}
+      {attachProduct && (
+        <AttachToMenuModal
+          product={attachProduct.product}
+          slots={attachProduct.slots}
+          onAttach={handleAttachToMenu}
+          onSeparate={() => {
+            const chosen = attachProduct.product;
+            setAttachProduct(null);
+            if (needsOptionsDialog(chosen)) setAddonProduct(chosen);
+            else cart.addItem(chosen, 1, [], '');
+          }}
+          onClose={() => setAttachProduct(null)}
         />
       )}
 
@@ -1083,9 +1160,9 @@ export default function POSPage() {
         <FixedMenuPicker
           menu={editingMenuItem.product}
           products={products}
+          categories={categories}
           mode="edit"
           initialSelection={editingMenuItem.menu_selection || []}
-          initialInstructions={editingMenuItem.special_instructions}
           onAdd={handleMenuEditSave}
           onClose={() => setEditingMenuItem(null)}
         />
@@ -1127,18 +1204,15 @@ export default function POSPage() {
       )}
 
       {showCustomerPrompt && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">{t('selectCustomer')}</h3>
-              <button onClick={() => setShowCustomerPrompt(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-gray-500 mb-4">{t('customerRequiredBeforeOrder')}</p>
+        <Modal open onOpenChange={(open) => { if (!open) setShowCustomerPrompt(false); }} size="sm">
+          <ModalHeader closeLabel={tCommon('close')}>
+            <ModalTitle>{t('selectCustomer')}</ModalTitle>
+            <ModalDescription>{t('customerRequiredBeforeOrder')}</ModalDescription>
+          </ModalHeader>
+          <ModalBody>
             <CustomerSearch onSelected={() => setShowCustomerPrompt(false)} />
-          </div>
-        </div>
+          </ModalBody>
+        </Modal>
       )}
 
       {ConfirmDialog}

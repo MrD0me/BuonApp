@@ -5,7 +5,7 @@ import { categoryRoutes } from './categories';
 import { productRoutes } from './products';
 import { addonGroupRoutes } from './addon-groups';
 import { fixedMenuRoutes } from './fixed-menus';
-import { menuGroupRowIds } from '../services/fixed-menu';
+import { cancelTargetIds } from '../services/fixed-menu';
 import { orderRoutes, orderCoverCharge } from './orders';
 import { orderItemRoutes } from './order-items';
 import { billRoutes, syncUnpaidBillsForOrder } from './bills';
@@ -171,9 +171,6 @@ export function registerRoutes(app: Express): void {
           throw Object.assign(new Error('Authentication required'), { statusCode: 403 });
         }
         const userRole = actor.role;
-        if (userRole === 'server' && String(currentOrder.user_id) !== actorId) {
-          throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
-        }
 
         // A repeated request against an already terminal item is an
         // intentional idempotent no-op. Check it before the parent terminal
@@ -258,14 +255,15 @@ export function registerRoutes(app: Express): void {
           }
         }
 
-        // A fixed menu goes off the check whole, from whichever of its rows the
-        // floor happened to press. Half a menu — the package with no dishes, or
-        // dishes with nothing priced — is not something anybody ordered.
-        const groupIds = menuGroupRowIds(db, currentItem);
-        const targets = (groupIds.length > 0
-          ? groupIds.map((id) => db.prepare('SELECT * FROM order_items WHERE id = ?').get(id) as any)
-          : [currentItem]
-        ).filter((row) => row && !['cancelled', 'voided', 'void_adjustment'].includes(row.status));
+        // Pressing the menu's own row takes the whole menu off the check —
+        // half a menu, the package with no dishes or dishes with nothing
+        // priced, is not something anybody ordered. Pressing one of its dishes
+        // takes only that dish, so the guest who changes their mind about the
+        // main does not lose the starter they have already eaten.
+        const targetIds = cancelTargetIds(db, currentItem);
+        const targets = targetIds
+          .map((id) => (id === currentItem.id ? currentItem : db.prepare('SELECT * FROM order_items WHERE id = ?').get(id) as any))
+          .filter((row) => row && !['cancelled', 'voided', 'void_adjustment'].includes(row.status));
 
         for (const target of targets) {
           if (isItemVoid) {
@@ -433,12 +431,12 @@ export function registerRoutes(app: Express): void {
           return { updatedOrder: currentOrder, items, changed: false };
         }
 
-        // A fixed menu comes back whole, the same way it went off the check.
-        const groupIds = menuGroupRowIds(db, currentItem);
-        const targets = (groupIds.length > 0
-          ? groupIds.map((id) => db.prepare('SELECT * FROM order_items WHERE id = ?').get(id) as any)
-          : [currentItem]
-        ).filter((row) => row && row.status === 'cancelled');
+        // Whatever went off the check together comes back together: the menu
+        // from its own row, a single dish from its own.
+        const targetIds = cancelTargetIds(db, currentItem);
+        const targets = targetIds
+          .map((id) => (id === currentItem.id ? currentItem : db.prepare('SELECT * FROM order_items WHERE id = ?').get(id) as any))
+          .filter((row) => row && row.status === 'cancelled');
 
         for (const target of targets) {
           // Re-deduct the inventory quantity originally consumed by the item

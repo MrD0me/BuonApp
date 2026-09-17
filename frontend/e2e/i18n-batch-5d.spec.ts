@@ -135,22 +135,23 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   }, serverToken);
   await page.reload();
 
-  // 1f. Server App Main UI (EN)
-  await expect(page.getByRole('heading', { name: 'Server App' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Tables' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Current ticket' })).toBeVisible();
-  await expect(page.getByText('New items', { exact: true })).toBeVisible();
-  await expect(page.getByText('Draft total', { exact: true })).toBeVisible();
-  await expect(page.getByText('All', { exact: true })).toBeVisible();
-  await expect(page.getByPlaceholder('Search menu')).toBeVisible();
-  await expect(page.getByPlaceholder('Customer name')).toBeVisible();
-  await expect(page.getByPlaceholder('Phone')).toBeVisible();
+  // 1f. Server App floor, table screen and order screen (EN)
+  await expect(page.getByRole('heading', { level: 1, name: 'Floor' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  // Click a table and an item
+  // Open the table, then take an order on it
   await page.getByRole('button', { name: /Table 1/i }).first().click();
-  await page.getByText('E2E Coffee').first().click();
-  await expect(page.getByPlaceholder('Item note')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Send to kitchen' })).toBeVisible();
+  await expect(page.getByText('No open order', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Take order' }).click();
+  await expect(page.getByPlaceholder('Search menu')).toBeVisible();
+  await expect(page.getByText('All', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Ticket/ })).toBeVisible();
+  // A dish with nothing to choose goes straight onto the ticket.
+  await page.getByRole('button', { name: 'E2E Coffee', exact: false }).first().click();
+  await expect(page.getByRole('button', { name: /Ticket/ })).toContainText('1');
+  // A dish with add-ons opens its options first.
+  await page.getByRole('button', { name: 'E2E Tea', exact: false }).first().click();
+  await expect(page.getByText('Special Instructions')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Add to Cart/ })).toBeVisible();
   await captureScreenshot(page, 'server-standalone-en.png');
 
   // =========================================================================
@@ -230,23 +231,19 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     }, serverToken);
     await page.reload();
 
-    // 2f. Server App Main UI (FA)
+    // 2f. Server App floor, table screen and order screen (FA)
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { name: 'برنامه سرور' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'میزها' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'صورتحساب جاری' })).toBeVisible();
-    await expect(page.getByText('کالاهای تازه', { exact: true })).toBeVisible();
-    await expect(page.getByText('جمع پیش‌نویس', { exact: true })).toBeVisible();
-    await expect(page.getByText('همه', { exact: true })).toBeVisible();
-    await expect(page.getByPlaceholder('جست‌وجو در منو')).toBeVisible();
-    await expect(page.getByPlaceholder('نام مشتری')).toBeVisible();
-    await expect(page.getByPlaceholder('تلفن')).toBeVisible();
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    // Select table and item
+    await expect(page.getByRole('heading', { level: 1, name: 'سالن' })).toBeVisible();
+    // Open the table, then take an order on it
     await page.getByRole('button', { name: /Table 1/i }).first().click();
-    await page.getByText('E2E Coffee').first().click();
-    await expect(page.getByPlaceholder('یادداشت کالا')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'ارسال به آشپزخانه' })).toBeVisible();
+    await expect(page.getByText('سفارش بازی وجود ندارد', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'ثبت سفارش' }).click();
+    await expect(page.getByPlaceholder('جست‌وجو در منو')).toBeVisible();
+    await expect(page.getByText('همه', { exact: true })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await page.getByRole('button', { name: 'E2E Tea', exact: false }).first().click();
+    await expect(page.getByText('دستورهای ویژه')).toBeVisible();
+    await expect(page.getByRole('button', { name: /افزودن به سبد/ })).toBeVisible();
     await captureScreenshot(page, 'server-standalone-fa.png');
 
   } finally {

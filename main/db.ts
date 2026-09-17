@@ -4527,6 +4527,112 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_menu_group ON order_items(menu_group_id)`);
     },
   },
+  {
+    version: 93,
+    name: 'add_fixed_menu_course_product_exceptions',
+    up: () => {
+      // A course draws from categories, which is right nearly always and wrong
+      // in two ways a house hits sooner or later: the lobster that sits in
+      // Mains but is not in the menu, and the one starter from a category the
+      // menu otherwise ignores. These are those exceptions, in both directions.
+      //
+      // A table of its own rather than a column on fixed_menu_course_surcharges:
+      // an explicit include is by definition a dish whose category is not on the
+      // course, and the editor prunes surcharges when a category leaves — it
+      // would delete the inclusion on every save. The two facts are independent
+      // anyway: the off-category fish main is both included and 3 € more.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS fixed_menu_course_products (
+          course_id TEXT NOT NULL,
+          product_id TEXT NOT NULL,
+          mode TEXT NOT NULL CHECK (mode IN ('include', 'exclude')),
+          PRIMARY KEY (course_id, product_id),
+          FOREIGN KEY (course_id) REFERENCES fixed_menu_courses(id)
+        );
+      `);
+    },
+  },
+  {
+    version: 94,
+    name: 'add_service_runs',
+    up: () => {
+      // Which wave of the meal a dish leaves the kitchen in: the starters,
+      // then the pasta, then the mains. Not the same thing as kot_batch,
+      // which says what has already been sent — a table orders everything at
+      // once and still wants its food in three goes, and one primo comes out
+      // with the starters because its guest is not having one.
+      //
+      // NOT NULL DEFAULT 1 is the whole compatibility story: every row that
+      // exists lands in run 1, and a ticket where everything is run 1 prints
+      // exactly as it did before. The per-category default is what keeps the
+      // floor from having to touch it at all on an ordinary table.
+      if (!getColumns(db, 'order_items').includes('service_run')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN service_run INTEGER NOT NULL DEFAULT 1`);
+      }
+      if (!getColumns(db, 'categories').includes('default_service_run')) {
+        db.exec(`ALTER TABLE categories ADD COLUMN default_service_run INTEGER NOT NULL DEFAULT 1`);
+      }
+    },
+  },
+  {
+    version: 95,
+    name: 'add_order_item_menu_course_id',
+    up: () => {
+      // Which course of the menu a chosen dish satisfies.
+      //
+      // Until now it was inferred from the dish's category, and that stops
+      // being an answer the moment a course takes a dish in from outside its
+      // categories (v93), or two courses share one — "fruit or dessert" next
+      // to "dessert" is a real menu. Naming the course is what lets a menu be
+      // filled in later: which slot is still empty, and how many picks weigh
+      // against max_choices, are both questions about courses.
+      if (!getColumns(db, 'order_items').includes('menu_course_id')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN menu_course_id TEXT`);
+      }
+
+      // Fill in what can be worked out with certainty. A dish whose category
+      // matches exactly one course of its own menu is that course; anything
+      // ambiguous is left NULL, which reads as "inside this menu, course
+      // unknown" — precisely what menu_role='course' has meant on its own
+      // until now, so nothing is lost by not guessing.
+      const orphans = db.prepare(`
+        SELECT oi.id, p.category_id AS dish_category, pkg.product_id AS menu_product_id
+        FROM order_items oi
+        JOIN products p ON p.id = oi.product_id
+        JOIN order_items pkg ON pkg.order_id = oi.order_id
+             AND pkg.menu_group_id = oi.menu_group_id AND pkg.menu_role = 'package'
+        WHERE oi.menu_role = 'course' AND oi.menu_course_id IS NULL
+      `).all() as { id: number; dish_category: string | null; menu_product_id: string }[];
+
+      if (orphans.length > 0) {
+        const coursesOf = db.prepare(`
+          SELECT c.id, cat.category_id
+          FROM fixed_menu_courses c
+          JOIN fixed_menu_course_categories cat ON cat.course_id = c.id
+          WHERE c.product_id = ?
+        `);
+        const stamp = db.prepare('UPDATE order_items SET menu_course_id = ? WHERE id = ?');
+        const cache = new Map<string, { id: string; category_id: string }[]>();
+        let filled = 0;
+        for (const row of orphans) {
+          if (!row.dish_category) continue;
+          let courses = cache.get(row.menu_product_id);
+          if (!courses) {
+            courses = coursesOf.all(row.menu_product_id) as { id: string; category_id: string }[];
+            cache.set(row.menu_product_id, courses);
+          }
+          const matches = [...new Set(
+            courses.filter((course) => course.category_id === row.dish_category).map((course) => course.id),
+          )];
+          if (matches.length === 1) {
+            stamp.run(matches[0], row.id);
+            filled++;
+          }
+        }
+        console.log(`[DB] v95: ${filled} of ${orphans.length} menu dish row(s) matched to a course`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4669,6 +4775,10 @@ function createSchema(): void {
       slug TEXT,
       color TEXT,
       icon TEXT,
+      -- Which wave dishes of this category go out in by default: starters 1,
+      -- pasta 2, mains 3. It is only the default — the floor moves a single
+      -- row without touching the category.
+      default_service_run INTEGER NOT NULL DEFAULT 1,
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -4749,6 +4859,18 @@ function createSchema(): void {
       course_id TEXT NOT NULL,
       product_id TEXT NOT NULL,
       surcharge REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (course_id, product_id),
+      FOREIGN KEY (course_id) REFERENCES fixed_menu_courses(id)
+    );
+
+    -- The exceptions to drawing by category, both ways round: a dish taken
+    -- out of a category the course does list, or one taken in from a category
+    -- it does not. Explicit beats category. No index: the primary key already
+    -- covers the only way this is read, course by course.
+    CREATE TABLE IF NOT EXISTS fixed_menu_course_products (
+      course_id TEXT NOT NULL,
+      product_id TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK (mode IN ('include', 'exclude')),
       PRIMARY KEY (course_id, product_id),
       FOREIGN KEY (course_id) REFERENCES fixed_menu_courses(id)
     );
@@ -4953,6 +5075,11 @@ function createSchema(): void {
       -- Sequential kitchen-ticket batch. NULL = not yet sent to the kitchen;
       -- 1 = first ticket for this order, 2 = the next round, and so on.
       kot_batch INTEGER,
+      -- Which wave of the meal this dish leaves the kitchen in. Read off the
+      -- category when the row is written, moved by hand when a guest wants
+      -- their primo with the starters. Not kot_batch: that says what has
+      -- already been sent, this says when it should come out.
+      service_run INTEGER NOT NULL DEFAULT 1,
       -- Someone has settled what this row costs. Only meaningful on a row whose
       -- product is priced when ordered: until it is set, the row is flagged as
       -- waiting. Saving a price is the confirmation — zero included, because a
@@ -4967,6 +5094,10 @@ function createSchema(): void {
       -- back off the product for the same reason product_name is a copy: the
       -- row has to still say what it is once the catalogue has moved on.
       menu_role TEXT,
+      -- Which course of the menu this dish was chosen for. NULL on an ordinary
+      -- row, and on a menu row from before the column existed whose course
+      -- could not be told apart from another.
+      menu_course_id TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id)
@@ -5052,8 +5183,8 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_bills_order       ON bills(order_id);
     CREATE INDEX IF NOT EXISTS idx_fixed_menu_courses_product ON fixed_menu_courses(product_id);
     -- No index on order_items(menu_group_id) here: this function also runs
-    -- against an install that has not reached v91 yet, where the column does
-    -- not exist and indexing it throws. Migration v91 creates it, on every
+    -- against an install that has not reached v92 yet, where the column does
+    -- not exist and indexing it throws. Migration v92 creates it, on every
     -- install including a fresh one. Same reason as idx_order_items_kot_batch.
   `);
 }
@@ -5410,6 +5541,10 @@ export function projectKdsItem(item: any, restricted: boolean): any {
     'id', 'order_id', 'product_id', 'product_name', 'product_sku',
     'quantity', 'status', 'special_instructions', 'created_at', 'updated_at',
     'order_number', 'type', 'table_name', 'order_status', 'order_notes', 'order_time',
+    // Which wave the dish goes out in. The allowlist is here to keep money and
+    // customer data off a station screen, and a run number is neither: a
+    // kitchen on a screen needs it exactly as much as one on paper.
+    'service_run',
   ];
   const projected = Object.fromEntries(allowedFields.filter((field) => field in item).map((field) => [field, item[field]]));
   if (Array.isArray(item.addons)) {

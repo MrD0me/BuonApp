@@ -15,6 +15,8 @@ export interface OrderItemPayload {
   addons: { id: string | number; name: string; price?: number; quantity: number }[] | null;
   special_instructions: string | null;
   menu_selection?: { course_id: string; product_id: string }[];
+  /** Which wave it goes out in. Left off, the backend reads the category. */
+  service_run?: number;
 }
 
 export function cartItemToPayload(item: CartItem): OrderItemPayload {
@@ -26,5 +28,6 @@ export function cartItemToPayload(item: CartItem): OrderItemPayload {
       : null,
     special_instructions: item.special_instructions || null,
     ...(item.menu_selection ? { menu_selection: item.menu_selection } : {}),
+    ...(item.service_run ? { service_run: item.service_run } : {}),
   };
 }

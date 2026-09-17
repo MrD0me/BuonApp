@@ -213,6 +213,30 @@ function seedManagerUser(db: any): { userId: string; token: string; authHeader: 
   return { userId, token, authHeader: { Authorization: `Bearer ${token}` } };
 }
 
+/**
+ * A waiter. Any waiter may read and work any table (docs/palmare.md), so
+ * the tests that use this one mostly check that an order somebody else
+ * opened still answers 200 to them.
+ */
+function seedServerUser(db: any): { userId: string; token: string; authHeader: Record<string, string> } {
+  const { getJWTSecret } = require('../../main/routes/auth');
+  const userId = 'server-test-001';
+  const passwordHash = bcrypt.hashSync('testpass123', 10);
+
+  db.prepare(
+    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(userId, 'Test Server', 'server@test.local', passwordHash, 'server', 1, now(), now());
+
+  const token = jwt.sign(
+    { userId, email: 'server@test.local', role: 'server' },
+    getJWTSecret(),
+    { expiresIn: '1h' }
+  );
+
+  return { userId, token, authHeader: { Authorization: `Bearer ${token}` } };
+}
+
 function seedCategory(db: any, id: string, name: string) {
   db.prepare(
     `INSERT OR IGNORE INTO categories (id, name, sort_order, is_active, created_at, updated_at)
@@ -303,6 +327,7 @@ module.exports = {
 
   // Seed data
   seedOwnerUser,
+  seedServerUser,
   seedManagerUser,
   seedCategory,
   seedProduct,

@@ -146,9 +146,10 @@ onto another moves the order via the already-existing `POST /tables/:id/move-ord
 ## Device boundary
 
 Table writes must come from the central PC only. This is already guaranteed structurally: the waiter
-Server App on `:3003` forwards an explicit allowlist of endpoints (`main/server-app.ts`) and exposes
-only `GET /tables`. **Do not add table write forwards to that allowlist.** Handhelds read the map and
-take orders; they do not change table state, reservations, or layout.
+Server App on `:3003` forwards an explicit allowlist of endpoints (`main/server-app.ts`) and of the
+floor exposes only `GET /tables` and `GET /rooms`, both read-only. **Do not add table write forwards
+to that allowlist.** Handhelds read the floor and take orders (see [palmare.md](palmare.md)); they
+do not change table state, reservations, or layout.
 
 ## What phase 1 shipped
 

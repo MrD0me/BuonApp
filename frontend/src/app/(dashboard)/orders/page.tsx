@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { Search } from 'lucide-react';
+import { Search, SlidersHorizontal } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/hooks/use-confirm';
 import type { Table } from '@/lib/types';
@@ -17,6 +17,7 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { OrderPanel, paymentStatusOf } from '@/components/orders/OrderPanel';
+import { OrderListRow } from '@/components/orders/OrderListRow';
 import {
   normalizeDiscountMode,
   type DiscountMode,
@@ -28,10 +29,16 @@ import {
   readAppendAttempt,
   type AppendAttempt,
 } from '@/lib/append-attempt';
-import { CurrentDayCard } from '@/components/service-days/CurrentDayCard';
+import { PageToolbar } from '@/components/layout/PageToolbar';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import { EmptyState } from '@/components/ui/empty-state';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { SidePanel, SidePanelDescription, SidePanelHeader, SidePanelTitle } from '@/components/ui/side-panel';
+import { ServiceDayChip } from '@/components/service-days/ServiceDayChip';
+import { Ltr } from '@/components/layout/Ltr';
+import { ORDER_STATUS_TONE } from '@/lib/status-styles';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
-
 
 type FilterType = 'all' | 'active' | 'unpaid' | 'held';
 
@@ -50,6 +57,14 @@ interface Filters {
   status: string;
 }
 
+const SELECT = 'h-touch rounded-xl border border-input bg-card px-3 text-base text-foreground outline-none focus:ring-2 focus:ring-brand';
+
+/**
+ * The service day in progress: every order taken since it opened, as a list.
+ * A line says who, when, how much and where it stands; tapping it opens the
+ * same panel the floor map opens on a table, beside the list. The page used
+ * to draw every order as a full panel with every action, in a grid — a wall.
+ */
 export default function OrdersPage() {
   const { user } = useAuthStore();
   const heldOrdersStore = useHeldOrdersStore();
@@ -68,16 +83,16 @@ export default function OrdersPage() {
   const [tabFilter, setTabFilter] = useState<FilterType>('active');
   const [tables, setTables] = useState<Table[]>([]);
   const [kdsEnabled, setKdsEnabled] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  // The order open in the panel, by id: a refetch under it keeps it fresh.
+  const [openOrderId, setOpenOrderId] = useState<number | null>(null);
   const { confirm, ConfirmDialog } = useConfirm();
 
   // Consolidated filter state
   const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '', status: '' });
 
-
   const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
-
-
 
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
   const appendRecoveryStartedUsersRef = useRef<Set<string>>(new Set());
@@ -183,7 +198,7 @@ export default function OrdersPage() {
     const connectWS = () => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/kds`;
-      
+
       try {
         ws = new WebSocket(wsUrl);
 
@@ -227,7 +242,7 @@ export default function OrdersPage() {
         ws.close();
       }
     };
-     
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setTablesRequired]);
 
@@ -282,175 +297,190 @@ export default function OrdersPage() {
     return true;
   });
 
+  const counts: Record<FilterType, number> = {
+    all: orders.length,
+    active: orders.filter(isOrderActive).length,
+    unpaid: orders.filter((order) => ['unpaid', 'partial'].includes(paymentStatusOf(order) || '')).length,
+    held: Object.keys(heldOrdersStore.orders).length,
+  };
+  const activeFilters = [filters.search, filters.table, filters.type, filters.status].filter(Boolean).length;
+
+  // Read fresh from the list on every render, so the panel follows the poll.
+  const openOrder = openOrderId != null ? orders.find((order) => order.id === openOrderId) ?? null : null;
+
+  const resumeHeld = async (tableId: string) => {
+    try {
+      const held = await heldOrdersStore.restoreOrder(tableId);
+      if (held) {
+        cartStore.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes, held.id);
+        cartStore.setOrderType('dine_in');
+        router.push('/pos');
+      } else {
+        await heldOrdersStore.fetchHeldOrders();
+        toast.error(tOrders('resumeFailed'));
+      }
+    } catch {
+      toast.error(tOrders('resumeFailed'));
+    }
+  };
+
+  const removeHeld = async (tableId: string, heldId?: string) => {
+    if (!await confirm(tOrders('deleteHeldConfirm'), { destructive: true })) return;
+    try {
+      const deleted = await heldOrdersStore.removeHeldOrder(tableId, heldId);
+      if (deleted) {
+        toast.success(tOrders('heldOrderRemoved'));
+      } else {
+        await heldOrdersStore.fetchHeldOrders();
+        toast.error(tOrders('removeHeldOrderFailed'));
+      }
+    } catch {
+      toast.error(tOrders('removeHeldOrderFailed'));
+    }
+  };
+
+  const spinner = (
+    <div className="flex flex-1 items-center justify-center py-16">
+      <div className="size-8 animate-spin rounded-full border-4 border-brand border-t-transparent" />
+    </div>
+  );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-4">
       {/* The day this page is showing, and the ritual that ends it. */}
-      <CurrentDayCard onChanged={fetchOrders} />
+      <PageToolbar
+        title={tNav('orders')}
+        actions={<ServiceDayChip showStats onChanged={fetchOrders} />}
+      />
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">{tNav('orders')}</h1>
-        <div className="flex gap-2">
-          {(['all', 'active', 'unpaid', 'held'] as FilterType[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setTabFilter(f)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium ${
-                tabFilter === f
-                  ? 'bg-brand text-white'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-400'
-              }`}
-            >
-              {tOrders(tabLabelKey[f])}
-            </button>
-          ))}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SegmentedControl
+          size="lg"
+          aria-label={tOrders('allStatuses')}
+          value={tabFilter}
+          onValueChange={(value) => setTabFilter(value as FilterType)}
+          items={(['all', 'active', 'unpaid', 'held'] as FilterType[]).map((f) => ({ value: f, label: tOrders(tabLabelKey[f]), count: counts[f] }))}
+        />
+        <div className="flex items-center gap-2">
+          <div className="relative w-64 max-w-full">
+            <Search size={18} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder={tOrders('search')}
+              aria-label={tOrders('search')}
+              value={filters.search}
+              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              className="h-touch w-full rounded-xl border border-input bg-card ps-10 pe-3 text-base outline-none focus:ring-2 focus:ring-brand"
+            />
+          </div>
+          <Button type="button" variant={filtersOpen || activeFilters > 0 ? 'default' : 'outline'} size="touch" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen}>
+            <SlidersHorizontal /> {tOrders('filters')}{activeFilters > 0 ? ` (${activeFilters})` : ''}
+          </Button>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        {/* Search by order number */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder={tOrders('search')}
-            value={filters.search}
-            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-            className="w-full ps-9 pe-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white"
-          />
+      {filtersOpen && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+          <select
+            value={filters.table}
+            onChange={(e) => setFilters(prev => ({ ...prev, table: e.target.value }))}
+            aria-label={tOrders('allTables')}
+            className={SELECT}
+          >
+            <option value="">{tOrders('allTables')}</option>
+            {tables.map((table: Table) => (
+              <option key={table.id} value={String(table.id)}>
+                {table.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filters.type}
+            onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
+            aria-label={tOrders('allTypes')}
+            className={SELECT}
+          >
+            <option value="">{tOrders('allTypes')}</option>
+            {typeFilterOptions.map((type) => (
+              <option key={type} value={type}>{tOrders(ORDER_TYPE_LABEL_KEYS[type])}</option>
+            ))}
+          </select>
+
+          <select
+            value={filters.status}
+            onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+            aria-label={tOrders('allStatuses')}
+            className={SELECT}
+          >
+            <option value="">{tOrders('allStatuses')}</option>
+            <option value="active">{tOrders('active')}</option>
+            <option value="completed">{tOrders('completed')}</option>
+            <option value="cancelled">{tOrders('cancelled')}</option>
+          </select>
         </div>
+      )}
 
-        {/* Table filter */}
-        <select
-          value={filters.table}
-          onChange={(e) => setFilters(prev => ({ ...prev, table: e.target.value }))}
-          className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        >
-          <option value="">{tOrders('allTables')}</option>
-          {tables.map((table: Table) => (
-            <option key={table.id} value={String(table.id)}>
-              {table.name}
-            </option>
-          ))}
-        </select>
-
-        {/* Type filter */}
-        <select
-          value={filters.type}
-          onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
-          className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        >
-          <option value="">{tOrders('allTypes')}</option>
-          {typeFilterOptions.map((type) => (
-            <option key={type} value={type}>{tOrders(ORDER_TYPE_LABEL_KEYS[type])}</option>
-          ))}
-        </select>
-
-        {/* Status filter */}
-        <select
-          value={filters.status}
-          onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-          className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        >
-          <option value="">{tOrders('allStatuses')}</option>
-          <option value="active">{tOrders('active')}</option>
-          <option value="completed">{tOrders('completed')}</option>
-          <option value="cancelled">{tOrders('cancelled')}</option>
-        </select>
-      </div>
-
-      {/* Orders List */}
+      {/* The list */}
       {tabFilter === 'held' ? (
-        loading ? (
-          <div className="flex items-center justify-center flex-1">
-            <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : Object.keys(heldOrdersStore.orders).length === 0 ? (
-          <div className="flex items-center justify-center flex-1 text-gray-400">
-            <p>{tOrders('heldEmpty')}</p>
-          </div>
+        loading ? spinner : Object.keys(heldOrdersStore.orders).length === 0 ? (
+          <EmptyState className="flex-1" title={tOrders('heldEmpty')} />
         ) : (
-          <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
+          <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
             {Object.values(heldOrdersStore.orders).map((heldOrder) => (
-              <div key={heldOrder.tableId} className="bg-white rounded-xl border border-blue-200 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
-                 <div className="p-4 border-b border-gray-100 bg-blue-50/50 flex justify-between items-center">
-                   <div>
-                     <p className="font-bold text-gray-900">{tables.find(t => t.id === heldOrder.tableId)?.name || tCommon('tableFallback')}</p>
-                     <p className="text-xs text-gray-500">{formatTime(heldOrder.heldAt)}</p>
-                   </div>
-                   <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-bold tracking-wide">{tOrders('held')}</span>
-                 </div>
-                 <div className="p-4 flex-1">
-                   {heldOrder.items.map((item, idx) => (
-                     <div key={idx} className="flex justify-between text-sm py-1 text-gray-700">
-                       <span>{item.quantity}x {item.product.name}</span>
-                     </div>
-                   ))}
-                   {heldOrder.orderNotes && (
-                     <div className="mt-3 text-sm italic text-gray-500 bg-gray-50 p-2 rounded-lg">
-                       &quot;{heldOrder.orderNotes}&quot;
-                     </div>
-                   )}
-                 </div>
-                 <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-2">
-                    <Button onClick={async () => {
-                      try {
-                        const held = await heldOrdersStore.restoreOrder(heldOrder.tableId);
-                        if (held) {
-                          cartStore.loadItems(held.items, heldOrder.tableId, held.customerId, held.guestCount, held.orderNotes, held.id);
-                          cartStore.setOrderType('dine_in');
-                          router.push('/pos');
-                        } else {
-                          await heldOrdersStore.fetchHeldOrders();
-                          toast.error(tOrders('resumeFailed'));
-                        }
-                      } catch {
-                        toast.error(tOrders('resumeFailed'));
-                      }
-                    }} variant="default" className="flex-1 bg-brand hover:bg-brand/90 text-white">{tOrders('resumeInPos')}</Button>
-                    <Button onClick={async () => {
-                      if (await confirm(tOrders('deleteHeldConfirm'), { destructive: true })) {
-                        try {
-                          const deleted = await heldOrdersStore.removeHeldOrder(heldOrder.tableId, heldOrder.id);
-                          if (deleted) {
-                            toast.success(tOrders('heldOrderRemoved'));
-                          } else {
-                            await heldOrdersStore.fetchHeldOrders();
-                            toast.error(tOrders('removeHeldOrderFailed'));
-                          }
-                        } catch {
-                          toast.error(tOrders('removeHeldOrderFailed'));
-                        }
-                      }
-                    }} variant="outline" className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50">{tOrders('delete')}</Button>
-                 </div>
+              <div key={heldOrder.tableId} className="flex flex-wrap items-center gap-4 rounded-2xl border border-table-held bg-card px-4 py-3">
+                <span className="w-28 shrink-0 truncate text-lg font-bold text-foreground">{tables.find(t => t.id === heldOrder.tableId)?.name || tCommon('tableFallback')}</span>
+                <Ltr className="w-14 shrink-0 text-sm text-muted-foreground">{formatTime(heldOrder.heldAt)}</Ltr>
+                <StatusBadge tone="held" size="sm">{tOrders('held')}</StatusBadge>
+                <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                  {heldOrder.items.map((item) => `${item.quantity}× ${item.product.name}`).join(', ')}
+                  {heldOrder.orderNotes ? ` — ${heldOrder.orderNotes}` : ''}
+                </span>
+                <div className="flex shrink-0 gap-2">
+                  <Button type="button" size="touch" onClick={() => { void resumeHeld(heldOrder.tableId); }} className="bg-brand text-white hover:bg-brand-hover">{tOrders('resumeInPos')}</Button>
+                  <Button type="button" variant="outline" size="touch" onClick={() => { void removeHeld(heldOrder.tableId, heldOrder.id); }} className="text-table-occupied">{tOrders('delete')}</Button>
+                </div>
               </div>
             ))}
           </div>
         )
-      ) : loading ? (
-        <div className="flex items-center justify-center flex-1">
-          <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : filteredOrders.length === 0 ? (
-        <div className="flex items-center justify-center flex-1 text-gray-400">
-          <p>{tOrders('empty')}</p>
-        </div>
+      ) : loading ? spinner : filteredOrders.length === 0 ? (
+        <EmptyState className="flex-1" title={tOrders('empty')} />
       ) : (
-        <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
-            {filteredOrders.map((order) => (
-              <OrderPanel
-                key={order.id}
-                order={order}
-                onChanged={fetchOrders}
-                discountMode={discountMode}
-                discountRequiresApproval={discountRequiresApproval}
-                nowMs={now}
-              />
-            ))}
+        <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
+          {filteredOrders.map((order) => (
+            <OrderListRow
+              key={order.id}
+              order={order}
+              selected={order.id === openOrderId}
+              onOpen={(picked) => setOpenOrderId(picked.id)}
+            />
+          ))}
         </div>
+      )}
+
+      {/* One order, beside the list: the same panel the floor map opens on a table. */}
+      {openOrder && (
+        <SidePanel open onOpenChange={(open) => { if (!open) setOpenOrderId(null); }}>
+          <SidePanelHeader closeLabel={tCommon('close')}>
+            <div className="flex flex-wrap items-center gap-2">
+              <SidePanelTitle>{openOrder.table?.name ?? tOrders(ORDER_TYPE_LABEL_KEYS[openOrder.type])}</SidePanelTitle>
+              <StatusBadge tone={ORDER_STATUS_TONE[openOrder.status] ?? 'neutral'}>
+                {tOrders(openOrder.status === 'pending' ? 'pending' : openOrder.status === 'preparing' ? 'preparing' : openOrder.status === 'ready' ? 'ready' : openOrder.status === 'served' ? 'served' : openOrder.status === 'completed' ? 'completed' : 'cancelled')}
+              </StatusBadge>
+            </div>
+            <SidePanelDescription>
+              <Ltr>#{openOrder.order_number}</Ltr> · {tOrders(ORDER_TYPE_LABEL_KEYS[openOrder.type])} · <Ltr>{formatTime(openOrder.created_at)}</Ltr>
+            </SidePanelDescription>
+          </SidePanelHeader>
+          <OrderPanel
+            order={openOrder}
+            onChanged={fetchOrders}
+            discountMode={discountMode}
+            discountRequiresApproval={discountRequiresApproval}
+            nowMs={now}
+          />
+        </SidePanel>
       )}
 
       {ConfirmDialog}

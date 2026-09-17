@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Search, Trash2, X } from 'lucide-react';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { Category, FixedMenuCourse, Product } from '@/lib/types';
+import { courseAllowsProduct } from '@/lib/fixed-menu';
 
 /**
  * Building a fixed menu: its courses, where each draws from, and what a single
@@ -16,6 +17,12 @@ import type { Category, FixedMenuCourse, Product } from '@/lib/types';
  * A course points at categories rather than a list of dishes. That is the whole
  * point: switch off the tart because it ran out and the "fruit or dessert"
  * course follows by itself, with nothing to maintain by hand.
+ *
+ * The dish list under the categories is where the two exceptions to that live:
+ * unticking a dish takes it out of a category the course does draw from, and
+ * the search box under it takes one in from a category it does not. Both sit
+ * in the same grid as the surcharges, because "is it in, and what does it cost
+ * extra" is one question the owner asks dish by dish.
  */
 interface Props {
   menu: Product;
@@ -31,6 +38,8 @@ type DraftCourse = {
   max_choices: number;
   category_ids: string[];
   surcharges: { product_id: string; surcharge: number }[];
+  included_product_ids: string[];
+  excluded_product_ids: string[];
 };
 
 function toDraft(course: FixedMenuCourse, index: number): DraftCourse {
@@ -41,6 +50,8 @@ function toDraft(course: FixedMenuCourse, index: number): DraftCourse {
     max_choices: course.max_choices,
     category_ids: course.category_ids,
     surcharges: course.surcharges,
+    included_product_ids: course.included_product_ids || [],
+    excluded_product_ids: course.excluded_product_ids || [],
   };
 }
 
@@ -51,6 +62,7 @@ export default function FixedMenuEditor({ menu, categories, products, onClose }:
   const [courses, setCourses] = useState<DraftCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [dishQuery, setDishQuery] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -71,16 +83,43 @@ export default function FixedMenuEditor({ menu, categories, products, onClose }:
     setCourses((current) => current.map((course) => (course.key === key ? { ...course, ...changes } : course)));
   };
 
+  const inCategory = (productId: string, categoryId: string) => (
+    String(products.find((p) => p.id === productId)?.category_id ?? '') === categoryId
+  );
+
   const toggleCategory = (course: DraftCourse, categoryId: string) => {
     const has = course.category_ids.includes(categoryId);
     patch(course.key, {
       category_ids: has
         ? course.category_ids.filter((id) => id !== categoryId)
-        // A dish that leaves the course keeps no surcharge behind it.
         : [...course.category_ids, categoryId],
+      // A dish that leaves the course keeps no surcharge behind it, and no
+      // exclusion either: with its category gone the exclusion says nothing,
+      // and left in place it would spring back the day the category returns.
+      // Inclusions are the opposite — a dish taken in explicitly is not the
+      // category's to take away.
       surcharges: has
-        ? course.surcharges.filter((entry) => products.find((p) => p.id === entry.product_id)?.category_id !== categoryId)
+        ? course.surcharges.filter((entry) => !inCategory(entry.product_id, categoryId))
         : course.surcharges,
+      excluded_product_ids: has
+        ? course.excluded_product_ids.filter((id) => !inCategory(id, categoryId))
+        : course.excluded_product_ids,
+    });
+  };
+
+  /** In or out of the course, whatever its category says. */
+  const toggleDish = (course: DraftCourse, dish: Product, wanted: boolean) => {
+    const byCategory = dish.category_id != null && course.category_ids.includes(String(dish.category_id));
+    patch(course.key, {
+      included_product_ids: wanted && !byCategory
+        ? [...course.included_product_ids, dish.id]
+        : course.included_product_ids.filter((id) => id !== dish.id),
+      excluded_product_ids: !wanted && byCategory
+        ? [...course.excluded_product_ids, dish.id]
+        : course.excluded_product_ids.filter((id) => id !== dish.id),
+      // Dropping a dish drops what it charged extra: leaving that behind would
+      // quietly reprice it the day somebody puts it back.
+      surcharges: wanted ? course.surcharges : course.surcharges.filter((entry) => entry.product_id !== dish.id),
     });
   };
 
@@ -110,6 +149,8 @@ export default function FixedMenuEditor({ menu, categories, products, onClose }:
           sort_order: index,
           category_ids: course.category_ids,
           surcharges: course.surcharges,
+          included_product_ids: course.included_product_ids,
+          excluded_product_ids: course.excluded_product_ids,
         })),
       });
       toast.success(t('fixedMenuSaved'));
@@ -137,9 +178,17 @@ export default function FixedMenuEditor({ menu, categories, products, onClose }:
           {!loading && courses.length === 0 && <p className="text-sm text-gray-500">{t('fixedMenuNoCourses')}</p>}
 
           {courses.map((course) => {
-            const eligible = products.filter((product) => (
-              product.category_id != null && course.category_ids.includes(String(product.category_id)) && !product.is_fixed_menu
-            ));
+            // What the waiter will be offered, worked out with the same helper
+            // the till uses — so this list is a preview and not a second
+            // opinion. A menu is never a course of another menu.
+            const selectable = products.filter((product) => product.is_active && !product.is_fixed_menu);
+            const eligible = selectable.filter((product) => courseAllowsProduct(course, product));
+            const query = (dishQuery[course.key] || '').trim().toLowerCase();
+            const takeable = query
+              ? selectable.filter((product) => (
+                !courseAllowsProduct(course, product) && product.name.toLowerCase().includes(query)
+              )).slice(0, 8)
+              : [];
             return (
               <div key={course.key} className="border border-gray-200 rounded-xl p-4 space-y-3">
                 <div className="flex items-center gap-3">
@@ -149,7 +198,10 @@ export default function FixedMenuEditor({ menu, categories, products, onClose }:
                     placeholder={t('fixedMenuCourseLabel')}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
                   />
-                  <label className="flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap">
+                  <label
+                    className="flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap"
+                    title={t('fixedMenuCourseRequiredHint')}
+                  >
                     <input
                       type="checkbox"
                       checked={course.is_required}
@@ -195,23 +247,77 @@ export default function FixedMenuEditor({ menu, categories, products, onClose }:
                   </div>
                 </div>
 
-                {eligible.length > 0 && (
+                {course.category_ids.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-gray-700 mb-1">{t('fixedMenuCourseSurcharges')}</p>
-                    <p className="text-xs text-gray-500 mb-2">{t('fixedMenuCourseSurchargesHint')}</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {eligible.map((dish) => (
-                        <label key={dish.id} className="flex items-center justify-between gap-2 text-sm">
-                          <span className="truncate text-gray-700">{dish.name}</span>
-                          <input
-                            type="number" min="0" step="0.5"
-                            value={course.surcharges.find((entry) => entry.product_id === dish.id)?.surcharge ?? ''}
-                            onChange={(e) => setSurcharge(course, dish.id, e.target.value)}
-                            placeholder="0"
-                            className="w-20 px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
-                          />
-                        </label>
-                      ))}
+                    <p className="text-xs font-medium text-gray-700 mb-1">{t('fixedMenuCourseDishes')}</p>
+                    <p className="text-xs text-gray-500 mb-2">{t('fixedMenuCourseDishesHint')}</p>
+
+                    {eligible.length === 0
+                      ? <p className="text-xs text-gray-400 mb-2">{t('fixedMenuCourseNoDishes')}</p>
+                      : (
+                        <div className="grid grid-cols-2 gap-2">
+                          {eligible.map((dish) => {
+                            const fromOutside = dish.category_id == null
+                              || !course.category_ids.includes(String(dish.category_id));
+                            return (
+                              <div key={dish.id} className="flex items-center justify-between gap-2 text-sm">
+                                <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked
+                                    onChange={() => toggleDish(course, dish, false)}
+                                    className="rounded border-gray-300 text-brand focus:ring-brand shrink-0"
+                                  />
+                                  <span className="truncate text-gray-700">{dish.name}</span>
+                                  {fromOutside && (
+                                    <span className="text-[10px] text-sky-600 bg-sky-50 rounded px-1 shrink-0">
+                                      {t('fixedMenuDishTakenIn')}
+                                    </span>
+                                  )}
+                                </label>
+                                <input
+                                  type="number" min="0" step="0.5"
+                                  value={course.surcharges.find((entry) => entry.product_id === dish.id)?.surcharge ?? ''}
+                                  onChange={(e) => setSurcharge(course, dish.id, e.target.value)}
+                                  placeholder="0"
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none shrink-0"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                    <div className="mt-3">
+                      <div className="relative">
+                        <Search size={14} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          value={dishQuery[course.key] || ''}
+                          onChange={(e) => setDishQuery((current) => ({ ...current, [course.key]: e.target.value }))}
+                          placeholder={t('fixedMenuAddDishPlaceholder')}
+                          className="w-full ps-8 pe-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        />
+                      </div>
+                      {query && takeable.length === 0 && (
+                        <p className="text-xs text-gray-400 mt-1">{t('fixedMenuNoDishMatches')}</p>
+                      )}
+                      {takeable.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {takeable.map((dish) => (
+                            <button
+                              key={dish.id}
+                              type="button"
+                              onClick={() => {
+                                toggleDish(course, dish, true);
+                                setDishQuery((current) => ({ ...current, [course.key]: '' }));
+                              }}
+                              className="px-2.5 py-1 rounded-full text-xs border border-dashed border-gray-300 text-gray-600 hover:border-brand hover:text-brand"
+                            >
+                              <Plus size={12} className="inline -mt-0.5 me-1" />{dish.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -224,6 +330,7 @@ export default function FixedMenuEditor({ menu, categories, products, onClose }:
             onClick={() => setCourses((current) => [...current, {
               key: `new-${Date.now()}-${current.length}`,
               label: '', is_required: true, max_choices: 1, category_ids: [], surcharges: [],
+              included_product_ids: [], excluded_product_ids: [],
             }])}
           >
             <Plus size={16} /> {t('fixedMenuAddCourse')}

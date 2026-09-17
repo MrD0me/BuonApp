@@ -42,12 +42,25 @@ export interface FixedMenuCourse {
   sort_order: number;
   category_ids: string[];
   surcharges: FixedMenuSurcharge[];
+  /** Dishes taken into the course from a category it does not draw from. */
+  included_product_ids: string[];
+  /** Dishes taken out of a category the course does draw from. */
+  excluded_product_ids: string[];
 }
 
-/** One dish the guest picked, as the client sends it. */
+/**
+ * One dish the guest picked, as the client sends it.
+ *
+ * The note and the run belong to the dish, not to the menu: a menu's package
+ * row never reaches a station, so a note written against the menu as a whole
+ * was read by nobody. And a primo inside a menu leaves with the primi, which
+ * is a fact about that dish and not about the menu it was chosen from.
+ */
 export interface FixedMenuChoiceInput {
   course_id: string;
   product_id: string;
+  note?: string | null;
+  service_run?: unknown;
 }
 
 /**
@@ -64,13 +77,38 @@ export interface ExpandedOrderItem {
   addons?: unknown;
   menu_group_id: string | null;
   menu_role: 'package' | 'course' | null;
+  /** Which course of the menu a dish row satisfies. Null on every other row. */
+  menu_course_id: string | null;
   /** Set only on course rows: the surcharge, or zero. Package rows use the product price. */
   unit_price_override: number | null;
+  /**
+   * The run the floor asked for, straight off the request and unvalidated —
+   * `insertOrderItemRows` resolves it against the dish's category. Left unset
+   * on the rows of a menu: a primo inside a menu is a primo and goes out with
+   * the primi, so its own category answers.
+   */
+  service_run?: unknown;
 }
+
+/** A row in one of these is off the check and no longer part of its menu. */
+const TERMINAL_STATUSES = ['cancelled', 'voided', 'void_adjustment'];
 
 const MAX_COURSES_PER_MENU = 20;
 const MAX_CHOICES_PER_COURSE = 10;
 const MAX_MENUS_PER_LINE = 20;
+/** Same ceiling the ordinary item note is held to by default. */
+const MAX_CHOICE_NOTE = 100;
+
+/**
+ * A note as it goes on a row: trimmed, capped, and empty means none.
+ *
+ * Cut rather than refused. The window already stops at the same length, and
+ * an order is the wrong thing to fail over a note two characters too long.
+ */
+function choiceNote(value: unknown): string | null {
+  const note = String(value ?? '').trim().slice(0, MAX_CHOICE_NOTE);
+  return note || null;
+}
 
 function invalid(message: string): Error {
   return Object.assign(new Error(message), { statusCode: 400 });
@@ -98,6 +136,9 @@ export function readFixedMenuCourses(db: Db, productId: string): FixedMenuCourse
   const surcharges = db.prepare(
     `SELECT course_id, product_id, surcharge FROM fixed_menu_course_surcharges WHERE course_id IN (${placeholders})`
   ).all(...ids) as { course_id: string; product_id: string; surcharge: number }[];
+  const exceptions = db.prepare(
+    `SELECT course_id, product_id, mode FROM fixed_menu_course_products WHERE course_id IN (${placeholders})`
+  ).all(...ids) as { course_id: string; product_id: string; mode: string }[];
 
   return courses.map((course) => ({
     id: String(course.id),
@@ -109,6 +150,12 @@ export function readFixedMenuCourses(db: Db, productId: string): FixedMenuCourse
     surcharges: surcharges
       .filter((row) => row.course_id === course.id)
       .map((row) => ({ product_id: row.product_id, surcharge: Number(row.surcharge) || 0 })),
+    included_product_ids: exceptions
+      .filter((row) => row.course_id === course.id && row.mode === 'include')
+      .map((row) => row.product_id),
+    excluded_product_ids: exceptions
+      .filter((row) => row.course_id === course.id && row.mode === 'exclude')
+      .map((row) => row.product_id),
   }));
 }
 
@@ -123,6 +170,77 @@ export function attachFixedMenuCourses<T extends { id: string; is_fixed_menu?: n
       ? Object.assign({}, product, { courses: readFixedMenuCourses(db, product.id) })
       : product
   ));
+}
+
+/** A product that still exists and has not been soft-deleted. */
+function liveProduct(db: Db, productId: string): { id: string; category_id?: string | null; is_fixed_menu?: number } | undefined {
+  return db.prepare('SELECT id, category_id, is_fixed_menu FROM products WHERE id = ? AND deleted_at IS NULL')
+    .get(productId) as any;
+}
+
+/**
+ * Whether a dish belongs to a course.
+ *
+ * The categories are the rule and the two lists are the exceptions to it,
+ * with the explicit winning: a dish named in the course is in it whatever its
+ * category says, and a dish struck off is out of it for the same reason. This
+ * is the one place that answers the question — `buildMenuRows` calls it when
+ * an order arrives, and `courseAllowsProduct` in the interface mirrors it so
+ * the till offers exactly what the check will accept.
+ */
+export function courseAllowsDish(course: FixedMenuCourse, dish: { id: string; category_id?: string | null }): boolean {
+  if (course.excluded_product_ids.includes(dish.id)) return false;
+  if (course.included_product_ids.includes(dish.id)) return true;
+  return Boolean(dish.category_id) && course.category_ids.includes(String(dish.category_id));
+}
+
+/**
+ * The two exception lists, cleaned up.
+ *
+ * Entries that cannot change any answer are dropped in silence — an include
+ * for a dish a listed category already covers, an exclude for a dish no
+ * listed category reaches. The editor cannot produce either, and storing them
+ * would only leave rows that come back to life if a category is toggled
+ * later, changing a menu nobody edited.
+ */
+function normalizeExceptions(
+  db: Db,
+  label: string,
+  raw: any,
+  categoryIds: string[],
+): { included: string[]; excluded: string[] } {
+  const readList = (value: unknown, what: string): string[] => {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value)) throw invalid(`${label}: ${what} must be a list of dishes`);
+    return [...new Set((value as unknown[]).map((entry) => String(entry ?? '')))].filter(Boolean);
+  };
+
+  const requested = {
+    include: readList(raw?.included_product_ids, 'the dishes taken into the course'),
+    exclude: readList(raw?.excluded_product_ids, 'the dishes taken out of the course'),
+  };
+
+  for (const productId of requested.include) {
+    if (requested.exclude.includes(productId)) {
+      throw invalid(`${label}: a dish cannot be both taken in and left out`);
+    }
+  }
+
+  const included: string[] = [];
+  const excluded: string[] = [];
+  for (const [mode, productIds] of Object.entries(requested) as ['include' | 'exclude', string[]][]) {
+    for (const productId of productIds) {
+      const product = liveProduct(db, productId);
+      if (!product) continue;
+      if (Number(product.is_fixed_menu || 0) === 1) {
+        throw invalid(`${label}: a fixed menu cannot be a course of another menu`);
+      }
+      const coveredByCategory = Boolean(product.category_id) && categoryIds.includes(String(product.category_id));
+      if (mode === 'include' && !coveredByCategory) included.push(productId);
+      if (mode === 'exclude' && coveredByCategory) excluded.push(productId);
+    }
+  }
+  return { included, excluded };
 }
 
 /**
@@ -147,7 +265,9 @@ export function saveFixedMenuCourses(db: Db, productId: string, courses: unknown
       throw invalid(`${label}: the number of choices must be between 1 and ${MAX_CHOICES_PER_COURSE}`);
     }
 
-    const categoryIds = Array.isArray(raw?.category_ids) ? [...new Set(raw.category_ids.map(String))] : [];
+    const categoryIds: string[] = Array.isArray(raw?.category_ids)
+      ? [...new Set((raw.category_ids as unknown[]).map((entry) => String(entry ?? '')))]
+      : [];
     if (categoryIds.length === 0) throw invalid(`${label}: pick at least one category to draw from`);
     for (const categoryId of categoryIds) {
       if (!db.prepare('SELECT 1 FROM categories WHERE id = ? AND deleted_at IS NULL').get(categoryId)) {
@@ -155,16 +275,21 @@ export function saveFixedMenuCourses(db: Db, productId: string, courses: unknown
       }
     }
 
-    const surcharges = (Array.isArray(raw?.surcharges) ? raw.surcharges : []).map((entry: any) => {
-      const surchargeProductId = String(entry?.product_id ?? '');
-      const amount = Number(entry?.surcharge);
-      if (!surchargeProductId) throw invalid(`${label}: a surcharge is missing its dish`);
-      if (!Number.isFinite(amount) || amount < 0) throw invalid(`${label}: a surcharge must be zero or more`);
-      if (!db.prepare('SELECT 1 FROM products WHERE id = ? AND deleted_at IS NULL').get(surchargeProductId)) {
-        throw invalid(`${label}: a dish with a surcharge no longer exists`);
-      }
-      return { product_id: surchargeProductId, surcharge: roundMoney(amount) };
-    });
+    // A dish that vanished between the editor loading and the owner pressing
+    // save is dropped, not thrown over: refusing to save a whole menu because
+    // an unrelated dish was deleted elsewhere leaves the owner with no way
+    // out. Three lists reference products now, so the exposure is threefold.
+    const surcharges = (Array.isArray(raw?.surcharges) ? raw.surcharges : [])
+      .map((entry: any) => {
+        const surchargeProductId = String(entry?.product_id ?? '');
+        const amount = Number(entry?.surcharge);
+        if (!surchargeProductId) throw invalid(`${label}: a surcharge is missing its dish`);
+        if (!Number.isFinite(amount) || amount < 0) throw invalid(`${label}: a surcharge must be zero or more`);
+        return { product_id: surchargeProductId, surcharge: roundMoney(amount) };
+      })
+      .filter((entry: FixedMenuSurcharge) => Boolean(liveProduct(db, entry.product_id)));
+
+    const { included, excluded } = normalizeExceptions(db, label, raw, categoryIds);
 
     return {
       label,
@@ -173,6 +298,8 @@ export function saveFixedMenuCourses(db: Db, productId: string, courses: unknown
       sort_order: Number.isSafeInteger(Number(raw?.sort_order)) ? Number(raw.sort_order) : index,
       categoryIds,
       surcharges,
+      included,
+      excluded,
     };
   });
 
@@ -182,6 +309,7 @@ export function saveFixedMenuCourses(db: Db, productId: string, courses: unknown
     const placeholders = oldIds.map(() => '?').join(',');
     db.prepare(`DELETE FROM fixed_menu_course_categories WHERE course_id IN (${placeholders})`).run(...oldIds);
     db.prepare(`DELETE FROM fixed_menu_course_surcharges WHERE course_id IN (${placeholders})`).run(...oldIds);
+    db.prepare(`DELETE FROM fixed_menu_course_products WHERE course_id IN (${placeholders})`).run(...oldIds);
     db.prepare('DELETE FROM fixed_menu_courses WHERE product_id = ?').run(productId);
   }
 
@@ -190,12 +318,15 @@ export function saveFixedMenuCourses(db: Db, productId: string, courses: unknown
   );
   const insertCategory = db.prepare('INSERT INTO fixed_menu_course_categories (course_id, category_id) VALUES (?, ?)');
   const insertSurcharge = db.prepare('INSERT OR REPLACE INTO fixed_menu_course_surcharges (course_id, product_id, surcharge) VALUES (?, ?, ?)');
+  const insertException = db.prepare('INSERT OR REPLACE INTO fixed_menu_course_products (course_id, product_id, mode) VALUES (?, ?, ?)');
 
   for (const course of normalized) {
     const courseId = randomUUID();
     insertCourse.run(courseId, productId, course.label, course.is_required, course.max_choices, course.sort_order, timestamp, timestamp);
     for (const categoryId of course.categoryIds) insertCategory.run(courseId, categoryId);
     for (const entry of course.surcharges) insertSurcharge.run(courseId, entry.product_id, entry.surcharge);
+    for (const productId of course.included) insertException.run(courseId, productId, 'include');
+    for (const productId of course.excluded) insertException.run(courseId, productId, 'exclude');
   }
 
   return readFixedMenuCourses(db, productId);
@@ -231,7 +362,9 @@ export function expandFixedMenuItems(db: Db, items: any[]): ExpandedOrderItem[] 
         quantity: item?.quantity,
         menu_group_id: null,
         menu_role: null,
+        menu_course_id: null,
         unit_price_override: null,
+        service_run: item?.service_run,
       });
       continue;
     }
@@ -264,13 +397,18 @@ function buildMenuRows(
   db: Db,
   menu: any,
   selection: unknown,
-  base: Omit<ExpandedOrderItem, 'quantity' | 'menu_group_id' | 'menu_role' | 'unit_price_override'>,
+  base: Omit<ExpandedOrderItem, 'quantity' | 'menu_group_id' | 'menu_role' | 'menu_course_id' | 'unit_price_override'>,
 ): ExpandedOrderItem[] {
   const courses = readFixedMenuCourses(db, menu.id);
   if (courses.length === 0) throw invalid(`${menu.name} has no courses configured yet`);
 
   const choices: FixedMenuChoiceInput[] = Array.isArray(selection)
-    ? selection.map((entry: any) => ({ course_id: String(entry?.course_id ?? ''), product_id: String(entry?.product_id ?? '') }))
+    ? selection.map((entry: any) => ({
+      course_id: String(entry?.course_id ?? ''),
+      product_id: String(entry?.product_id ?? ''),
+      note: choiceNote(entry?.note),
+      service_run: entry?.service_run,
+    }))
     : [];
 
   const courseIds = new Set(courses.map((course) => course.id));
@@ -278,19 +416,28 @@ function buildMenuRows(
     if (!courseIds.has(choice.course_id)) throw invalid(`${menu.name}: a choice refers to a course that is not on this menu`);
   }
 
-  // The package carries the price; the dishes carry the surcharge or nothing.
+  // The package carries the price; the dishes carry the surcharge or nothing,
+  // and each its own note — the package row is filtered out of every kitchen
+  // ticket, so a note written against the menu itself reached no cook.
   const rows: ExpandedOrderItem[] = [{
     ...base,
+    special_instructions: null,
     product_id: menu.id,
     quantity: 1,
     menu_group_id: null,
     menu_role: 'package',
+    menu_course_id: null,
     unit_price_override: null,
   }];
 
   for (const course of courses) {
     const picked = choices.filter((choice) => choice.course_id === course.id);
-    if (course.is_required && picked.length === 0) throw invalid(`${menu.name}: choose a ${course.label}`);
+    // A required course left empty is allowed through on purpose. The table
+    // orders the starters, the ticket goes, and the main is decided half an
+    // hour later — refusing the menu until every course is filled meant the
+    // floor could not take the order it was actually being given. What is
+    // still missing is shown on the check and asked for again at the till;
+    // it is never a reason to refuse the order.
     if (picked.length > course.max_choices) {
       throw invalid(`${menu.name}: ${course.label} allows at most ${course.max_choices} ${course.max_choices === 1 ? 'choice' : 'choices'}`);
     }
@@ -299,23 +446,25 @@ function buildMenuRows(
       const dish = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(choice.product_id) as any;
       if (!dish) throw invalid(`${menu.name}: a dish chosen for ${course.label} no longer exists`);
       if (!dish.is_active) throw invalid(`${dish.name} is off the menu right now`);
-      // Courses draw from categories, so this is what makes a choice legal —
-      // not a list of dishes the owner has to maintain by hand.
-      if (!dish.category_id || !course.category_ids.includes(String(dish.category_id))) {
+      // Categories are the rule and the owner's two lists are the exceptions
+      // to it. One helper answers it, shared with the till.
+      if (!courseAllowsDish(course, dish)) {
         throw invalid(`${menu.name}: ${dish.name} is not a ${course.label}`);
       }
 
       const surcharge = course.surcharges.find((entry) => entry.product_id === dish.id)?.surcharge ?? 0;
       rows.push({
         product_id: dish.id,
-        special_instructions: null,
+        special_instructions: choice.note ?? null,
         variant_selection: null,
         modifier_selection: null,
         addons: undefined,
         quantity: 1,
         menu_group_id: null,
         menu_role: 'course',
+        menu_course_id: course.id,
         unit_price_override: roundMoney(surcharge),
+        service_run: choice.service_run,
       });
     }
   }
@@ -346,8 +495,7 @@ export function coveredGuestCount(db: Db, orderId: string | number): number {
 
 /**
  * Every row of the menu one row belongs to, itself included — empty for an
- * ordinary row. A menu is cancelled whole, from whichever row the floor
- * happens to press: half a menu is not a thing anybody ordered.
+ * ordinary row.
  */
 export function menuGroupRowIds(db: Db, item: { id: number; order_id: number; menu_group_id?: string | null }): number[] {
   if (!item?.menu_group_id) return [];
@@ -355,4 +503,158 @@ export function menuGroupRowIds(db: Db, item: { id: number; order_id: number; me
     'SELECT id FROM order_items WHERE order_id = ? AND menu_group_id = ?'
   ).all(item.order_id, item.menu_group_id) as { id: number }[];
   return rows.map((row) => Number(row.id));
+}
+
+/**
+ * What a cancel takes with it.
+ *
+ * The package is the menu: taking it off the check takes its dishes with it,
+ * because half a menu — the price with no food, or food nobody is paying for
+ * — is not a thing anyone ordered. A single dish is only itself, so the guest
+ * who changes their mind about the main changes their main, and does not lose
+ * the starter they have already eaten.
+ *
+ * That split is the whole difference between a menu you have to redo and one
+ * you can correct.
+ */
+export function cancelTargetIds(
+  db: Db,
+  item: { id: number; order_id: number; menu_group_id?: string | null; menu_role?: string | null },
+): number[] {
+  if (item?.menu_role === 'package') return menuGroupRowIds(db, item);
+  return [Number(item.id)];
+}
+
+/** A row of a menu group, as the fill planner reads it back. */
+interface MenuGroupRow {
+  id: number;
+  product_id: string;
+  status: string;
+  menu_role: string | null;
+  menu_course_id: string | null;
+  special_instructions: string | null;
+  service_run: number | null;
+}
+
+export interface MenuCoursePlan {
+  /** Rows to write, priced here and never by the client. */
+  insert: ExpandedOrderItem[];
+  /** Rows this replaces. Every one of them is still `pending`. */
+  cancel: number[];
+  /** Set when a row this would have replaced is already being cooked. */
+  blocked: { item_id: number; status: string } | null;
+}
+
+/**
+ * "This course now holds exactly these dishes."
+ *
+ * One shape covers adding a choice, swapping one, and clearing a course, and
+ * that is deliberate: three endpoints would be three places to get the void
+ * policy right. Replaying the same set is a no-op, so a retry after a lost
+ * response cannot double a dish.
+ *
+ * A row that would have to go but is already `preparing` or beyond is not
+ * quietly overridden — the whole plan is refused and handed back as `blocked`.
+ * The kitchen has that dish; taking it off the check is the cancel endpoint's
+ * business, with the manager PIN and the void adjustment it already owns.
+ */
+export function planCourseFill(
+  db: Db,
+  orderId: string | number,
+  menuGroupId: string,
+  courseId: string,
+  productIds: unknown,
+): MenuCoursePlan {
+  const rows = db.prepare(`
+    SELECT id, product_id, status, menu_role, menu_course_id, special_instructions, service_run
+    FROM order_items WHERE order_id = ? AND menu_group_id = ? ORDER BY id
+  `).all(orderId, menuGroupId) as MenuGroupRow[];
+
+  const pkg = rows.find((row) => row.menu_role === 'package' && !TERMINAL_STATUSES.includes(row.status));
+  if (!pkg) throw Object.assign(new Error('Menu not found on this order'), { statusCode: 404 });
+
+  const menu = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(pkg.product_id) as any;
+  if (!menu || Number(menu.is_fixed_menu || 0) !== 1) {
+    throw Object.assign(new Error('That product is no longer a fixed menu'), { statusCode: 409 });
+  }
+
+  const course = readFixedMenuCourses(db, menu.id).find((entry) => entry.id === courseId);
+  if (!course) {
+    throw Object.assign(new Error(`${menu.name}: that course is no longer on this menu`), {
+      statusCode: 409, code: 'course_no_longer_exists',
+    });
+  }
+
+  // Either bare ids or the full shape — the window sends a note and a run
+  // with each dish, the same as it does when the menu is first composed.
+  if (!Array.isArray(productIds)) throw invalid('product_ids must be a list of dishes');
+  const wanted = productIds.map((entry: any) => (
+    entry && typeof entry === 'object'
+      ? {
+        product_id: String(entry.product_id ?? ''),
+        note: choiceNote(entry.note),
+        service_run: entry.service_run,
+      }
+      : { product_id: String(entry ?? ''), note: null, service_run: undefined }
+  ));
+  if (wanted.some((dish) => !dish.product_id)) throw invalid('product_ids must be a list of dishes');
+  if (wanted.length > course.max_choices) {
+    throw invalid(`${menu.name}: ${course.label} allows at most ${course.max_choices} ${course.max_choices === 1 ? 'choice' : 'choices'}`);
+  }
+
+  // What the course holds now. A row from before v95 carries no course, so it
+  // is left alone rather than being claimed by the first course to ask.
+  const held = rows.filter((row) => (
+    row.menu_role === 'course'
+    && row.menu_course_id === courseId
+    && !TERMINAL_STATUSES.includes(row.status)
+  ));
+
+  // Match one for one by dish, so asking for what is already there changes
+  // nothing and only the difference moves.
+  const insert: ExpandedOrderItem[] = [];
+  const spare = [...held];
+  for (const wantedDish of wanted) {
+    const { product_id: productId } = wantedDish;
+    // Matched on the note and the run as well as the dish, so correcting
+    // "no garlic" on a pending row rewrites it — and a row the kitchen has
+    // already taken is caught below rather than quietly edited underneath
+    // the cook.
+    const already = spare.findIndex((row) => (
+      row.product_id === productId
+      && (row.special_instructions || null) === (wantedDish.note || null)
+      && (wantedDish.service_run === undefined || Number(row.service_run) === Number(wantedDish.service_run))
+    ));
+    if (already >= 0) {
+      spare.splice(already, 1);
+      continue;
+    }
+
+    const dish = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(productId) as any;
+    if (!dish) throw invalid(`${menu.name}: a dish chosen for ${course.label} no longer exists`);
+    if (!dish.is_active) throw invalid(`${dish.name} is off the menu right now`);
+    if (Number(dish.is_fixed_menu || 0) === 1) throw invalid(`${menu.name}: a menu cannot be a course of another menu`);
+    if (!courseAllowsDish(course, dish)) throw invalid(`${menu.name}: ${dish.name} is not a ${course.label}`);
+
+    insert.push({
+      product_id: dish.id,
+      special_instructions: wantedDish.note ?? null,
+      variant_selection: null,
+      modifier_selection: null,
+      addons: undefined,
+      quantity: 1,
+      menu_group_id: menuGroupId,
+      menu_role: 'course',
+      menu_course_id: course.id,
+      unit_price_override: roundMoney(course.surcharges.find((entry) => entry.product_id === dish.id)?.surcharge ?? 0),
+      service_run: wantedDish.service_run,
+    });
+  }
+
+  const cooking = spare.find((row) => row.status !== 'pending');
+  if (cooking) {
+    return { insert: [], cancel: [], blocked: { item_id: cooking.id, status: cooking.status } };
+  }
+
+  return { insert, cancel: spare.map((row) => row.id), blocked: null };
 }

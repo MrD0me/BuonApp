@@ -90,15 +90,35 @@ async function main() {
       method: 'PATCH', body: { status: 'preparing' }, headers: waiterAuth,
     });
     assertEqual(waiterCanAdvance.status, 200, 'server can advance their own order');
+    // Any waiter works any table: who opened the order says who took it,
+    // not who may touch it (docs/palmare.md). The manager PIN still gates
+    // the void itself.
     const otherOrder = seedOrderWithItem(db, 'WAITER-OTHER', 'cashier-authz');
-    const waiterOtherStatus = await api(baseUrl, `/api/orders/${otherOrder.orderId}/status`, {
-      method: 'PATCH', body: { status: 'cancelled', override_pin: '1234' }, headers: waiterAuth,
-    });
-    assertEqual(waiterOtherStatus.status, 403, 'server cannot cancel another user\'s order');
     const waiterOtherItem = await api(baseUrl, `/api/orders/${otherOrder.orderId}/items/${otherOrder.itemId}/cancel`, {
       method: 'PATCH', body: { override_pin: '1234' }, headers: waiterAuth,
     });
-    assertEqual(waiterOtherItem.status, 403, 'server cannot void another user\'s item');
+    assertEqual(waiterOtherItem.status, 200, 'server can void an item on a colleague\'s order with a manager PIN');
+    const waiterOtherStatus = await api(baseUrl, `/api/orders/${otherOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'cancelled', override_pin: '1234' }, headers: waiterAuth,
+    });
+    assertEqual(waiterOtherStatus.status, 200, 'server can cancel a colleague\'s order with a manager PIN');
+
+    const sharedOrder = seedOrderWithItem(db, 'WAITER-SHARED', 'cashier-authz');
+    const waiterAppends = await api(baseUrl, `/api/orders/${sharedOrder.orderId}/items`, {
+      method: 'POST', body: { items: [{ product_id: 'authz-product', quantity: 1 }] }, headers: waiterAuth,
+    });
+    assertEqual(waiterAppends.status, 200, 'server can add rows to an order a colleague opened');
+    assertEqual(
+      (db.prepare('SELECT user_id FROM orders WHERE id = ?').get(sharedOrder.orderId) as any).user_id, 'cashier-authz',
+      'adding rows does not rewrite who opened the order',
+    );
+    const waiterReadsOther = await api(baseUrl, `/api/orders/${sharedOrder.orderId}`, { headers: waiterAuth });
+    assertEqual(waiterReadsOther.status, 200, 'server can read a colleague\'s order');
+    const waiterOpens = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'takeaway', items: [{ product_id: 'authz-product', quantity: 1 }] }, headers: waiterAuth,
+    });
+    assertEqual(waiterOpens.status, 201, 'server opens an order of their own');
+    assertEqual(waiterOpens.data.order.user_id, 'server-authz', 'and it is stamped with who took it');
 
     const invalidPinOrder = seedOrderWithItem(db, 'INVALID-PIN', 'cashier-authz');
     const invalidPin = await api(baseUrl, `/api/orders/${invalidPinOrder.orderId}/items/${invalidPinOrder.itemId}/cancel`, {

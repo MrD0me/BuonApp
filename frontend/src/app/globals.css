@@ -111,6 +111,63 @@ body {
   --color-success: #00cc61;
   --color-success-light: #dcfce7;
   --color-success-hover: #00b355;
+
+  /* ── Colori di stato ──────────────────────────────────────────────────────
+   * Il linguaggio della sala: verde libero, rosso occupato, ambra prenotato,
+   * arancio "da mandare in cucina". Sono gli stessi sul PC e sul palmare e
+   * non coincidono mai col colore del brand (per questo "in sospeso" è viola
+   * e non blu). Le mappe in `lib/status-styles.ts` sono l'unico posto che li
+   * traduce in classi. */
+  --color-table-free: #16a34a;
+  --color-table-free-soft: #dcfce7;
+  --color-table-occupied: #dc2626;
+  --color-table-occupied-soft: #fee2e2;
+  --color-table-reserved: #d97706;
+  --color-table-reserved-soft: #fef3c7;
+  --color-table-cleaning: #6b7280;
+  --color-table-cleaning-soft: #f3f4f6;
+  --color-table-held: #7c3aed;
+  --color-table-held-soft: #ede9fe;
+  --color-pending: #ea580c;
+  --color-pending-soft: #ffedd5;
+  --color-paid: #15803d;
+  --color-paid-soft: #dcfce7;
+  --color-partial: #b45309;
+  --color-partial-soft: #fef3c7;
+  --color-unpaid: #be123c;
+  --color-unpaid-soft: #ffe4e6;
+  --color-kitchen-waiting: #6b7280;
+  --color-kitchen-waiting-soft: #f3f4f6;
+  --color-kitchen-preparing: #ea580c;
+  --color-kitchen-preparing-soft: #ffedd5;
+  --color-kitchen-ready: #059669;
+  --color-kitchen-ready-soft: #d1fae5;
+  --color-kitchen-served: #1d4ed8;
+  --color-kitchen-served-soft: #dbeafe;
+
+  /* ── Misure touch ─────────────────────────────────────────────────────────
+   * Il PC di cassa è un monitor touch e il palmare è un telefono: 44 px è il
+   * minimo per un bersaglio, 48 per un'azione, 56 per l'azione principale di
+   * una schermata. Vivono nello spazio delle spaziature, così esistono
+   * `h-touch`, `size-touch-lg`, `min-h-touch-xl` e via dicendo. */
+  --spacing-touch: 44px;
+  --spacing-touch-lg: 48px;
+  --spacing-touch-xl: 56px;
+}
+
+/* ── Livelli ────────────────────────────────────────────────────────────────
+ * Un pannello laterale o un cassetto sta a 50, una finestra modale sopra di
+ * lui a 60, una conferma sopra tutto a 70. Prima erano tutti a 50 e vinceva
+ * chi era montato dopo nel DOM, che è il motivo per cui il palmare smontava
+ * il cassetto per far vedere la finestra del menu. */
+@utility z-panel {
+  z-index: 50;
+}
+@utility z-modal {
+  z-index: 60;
+}
+@utility z-confirm {
+  z-index: 70;
 }
 
 .dark {

@@ -21,6 +21,7 @@ import {
 import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
 import { useTranslations } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
+import { runsAreInPlay, serviceRunOf } from '@/lib/service-runs';
 import { Ltr } from '@/components/layout/Ltr';
 
 export interface KdsKanbanBoardProps {
@@ -199,6 +200,8 @@ function KanbanOrderCard({
 }) {
   const t = useTranslations('kds');
   const tOrders = useTranslations('orders');
+  const tPos = useTranslations('pos');
+  const runsInPlay = runsAreInPlay(items);
   const config = STATUS_CONFIG[status];
   const itemIds = items.map((i) => i.id);
   const busy = items.some((i) => updating === i.id);
@@ -257,6 +260,14 @@ function KanbanOrderCard({
               <div className="flex items-center gap-2">
                 <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
                 <span className="text-lg text-gray-900 font-medium flex-1 truncate">{item.product_name}</span>
+                {/* Which wave it goes out in, shown only once something on
+                    the board is not on the first one. A column of identical
+                    "1ª" badges tells a cook nothing. */}
+                {runsInPlay && (
+                  <span className="text-[11px] font-semibold text-gray-500 bg-white/70 border border-gray-200 rounded px-1 shrink-0">
+                    {tPos('serviceRunShort', { n: serviceRunOf(item) })}
+                  </span>
+                )}
                 {item.addons && item.addons.length > 0 && (
                   <span className="text-[10px] text-blue-600">+{item.addons.length}</span>
                 )}

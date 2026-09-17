@@ -47,7 +47,7 @@ test('Batch 5C Pages (Orders, Tables, Customers, OrderHistoryGrid) render correc
   // 1c. Tables (EN)
   await page.goto(`${BASE}/tables`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tables');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Floor');
   // The page opens in service mode, where 'Add Table' does not exist: it lives
   // inside edit mode. The control that is always there is the mode toggle.
   await expect(page.getByText('Edit map')).toBeVisible();
@@ -85,7 +85,7 @@ test('Batch 5C Pages (Orders, Tables, Customers, OrderHistoryGrid) render correc
     // 2c. Tables (FA)
     await page.goto(`${BASE}/tables`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('میزها');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('سالن');
     await expect(page.getByText('ویرایش نقشه')).toBeVisible();
     await captureScreenshot(page, 'tables-fa.png');
 

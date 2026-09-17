@@ -604,6 +604,63 @@ console.log('\n✅ Test 6b: KOT groups dishes by category and keeps accents');
   assert('re-print is marked on the ticket', reprint.includes('RISTAMPA'));
 }
 
+console.log('\n✅ Test 6c: KOT sections the ticket by service run');
+{
+  const order = { order_number: 'ORD-2', created_at: '2026-09-05 20:41:00', table: { name: '7' } };
+  const starters = { quantity: 2, product_name: 'Bruschette miste', category_id: 'c1', category_name: 'Antipasti', addons: [] };
+  const pasta = { quantity: 1, product_name: 'Tagliatelle', category_id: 'c2', category_name: 'Primi', addons: [] };
+  const main = { quantity: 1, product_name: 'Tagliata', category_id: 'c3', category_name: 'Secondi', addons: [] };
+
+  // The no-regression contract, in one assertion: a house that never touches
+  // a run prints the ticket it printed before any of this existed. Rows with
+  // no run at all and rows explicitly on run 1 have to come out identical.
+  const noRuns = formatKOT(order, [starters, pasta], 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 1, 'it', false, 16);
+  const allRunOne = formatKOT(
+    order,
+    [{ ...starters, service_run: 1 }, { ...pasta, service_run: 1 }],
+    'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 1, 'it', false, 16,
+  );
+  assert('a ticket with every row on run 1 is byte-identical to one with no runs at all', noRuns.equals(allRunOne));
+  assert('and it carries no run heading', !noRuns.toString('latin1').includes('USCITA'));
+
+  // The case this is all for: one guest is not having a starter, so their
+  // pasta goes out with the starters and the rest follows.
+  const twoRuns = formatKOT(
+    order,
+    [{ ...main, service_run: 2 }, { ...starters, service_run: 1 }, { ...pasta, service_run: 1 }],
+    'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 1, 'it', false, 16,
+  ).toString('latin1');
+  assert('the first wave is called out', twoRuns.includes('1\u00AA USCITA'));
+  assert('and so is the second', twoRuns.includes('2\u00AA USCITA'));
+  assert('waves print in order however the rows arrived', twoRuns.indexOf('1\u00AA USCITA') < twoRuns.indexOf('2\u00AA USCITA'));
+  assert('a dish moved to the second wave leaves the first', twoRuns.indexOf('TAGLIATA') > twoRuns.indexOf('2\u00AA USCITA'));
+
+  // Categories still separate dishes, but the decision is made inside each
+  // wave: the second one is all mains and needs no rule.
+  assert('the mixed wave keeps its category rules', twoRuns.includes('== ANTIPASTI =') && twoRuns.includes('== PRIMI ='));
+  assert('the single-category wave gets none', !twoRuns.includes('== SECONDI ='));
+
+  // English says it in English; anything else falls back to English rather
+  // than printing half-translated, as the rest of the ticket already does.
+  const english = formatKOT(
+    order,
+    [{ ...starters, service_run: 1 }, { ...main, service_run: 3 }],
+    'Kitchen', 48, false, 'full', 'en-US', undefined, [], false, 1, 'en', false, 16,
+  ).toString('latin1');
+  assert('the English ticket calls it a run', english.includes('RUN 1') && english.includes('RUN 3'));
+
+  // The ad-hoc print path hands over rows the database never saw, so a
+  // missing or nonsense run has to land somewhere rather than on a wave of
+  // its own.
+  const rubbish = formatKOT(
+    order,
+    [{ ...starters, service_run: 1 }, { ...pasta, service_run: 'later' }, { ...main, service_run: 99 }],
+    'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 1, 'it', false, 16,
+  ).toString('latin1');
+  assert('a nonsense run falls back to the first wave', !rubbish.includes('2\u00AA USCITA') && !rubbish.includes('99'));
+  assert('and its dish still reaches the kitchen', rubbish.includes('TAGLIATELLE') && rubbish.includes('TAGLIATA'));
+}
+
 console.log('\n✅ Test 7: Test page builder');
 {
   const buf80 = buildTestPage('80mm');

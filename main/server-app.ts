@@ -183,10 +183,6 @@ export function startServerApp(): Promise<void> {
         language: settings.language || null,
         country: settings.country || null,
         kds_enabled: settings.kds_enabled !== 'false',
-        // The waiter app asks for a name and a number to file the order under
-        // a customer. With the book switched off there is nobody to file it
-        // with, so those two fields come off the screen (see server-standalone).
-        customers_enabled: settings.customers_enabled !== 'false',
       });
     });
 
@@ -244,19 +240,32 @@ export function startServerApp(): Promise<void> {
       res.json({ success: true });
     });
 
+    // What a handheld may do (docs/palmare.md): read the catalogue, the floor
+    // and the open orders; open an order, add to it, fill in a menu, move a
+    // row to another wave, correct the covers; fire the kitchen ticket. No
+    // bill, no payment, no table write — those stay on the central PC. The
+    // main API still runs its own role checks behind every forward.
+    const segment = (value: unknown) => encodeURIComponent(String(value));
     app.get('/api/categories', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/categories'));
     app.get('/api/products', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/products'));
     app.get('/api/tables', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/tables'));
+    app.get('/api/rooms', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/rooms'));
+    app.get('/api/settings', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/settings'));
     app.get('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
+    app.get('/api/orders/:id', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${segment(req.params.id)}`));
     app.post('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
-    app.post('/api/orders/:id/items', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${encodeURIComponent(String(req.params.id))}/items`));
-    app.get('/api/customers-search', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers-search'));
-    app.get('/api/crm/lookup', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/crm/lookup'));
-    app.post('/api/customers', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers'));
+    app.post('/api/orders/:id/items', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${segment(req.params.id)}/items`));
+    app.patch('/api/orders/:id/guests', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${segment(req.params.id)}/guests`));
+    app.patch('/api/orders/:id/items/:itemId/service-run', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${segment(req.params.id)}/items/${segment(req.params.itemId)}/service-run`));
+    app.put('/api/orders/:id/menu-groups/:groupId/courses/:courseId', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${segment(req.params.id)}/menu-groups/${segment(req.params.groupId)}/courses/${segment(req.params.courseId)}`));
     // Sending an order from a handheld has to reach the kitchen printers, not
     // just the KDS. The main API still enforces kot_printing_enabled and the
     // role check, and only ever prints the rows that have not gone out yet.
     app.post('/api/printers/print-kot', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/printers/print-kot'));
+    // Anything else under /api is not forwarded, and says so: without this a
+    // GET the allowlist does not know would fall through to the static
+    // fallback below and come back as the app's HTML with a 200.
+    app.use('/api', (_req: Request, res: Response) => res.status(404).json({ error: 'Not found' }));
 
     const staticDir = getStaticDir();
     if (staticDir) {

@@ -66,7 +66,8 @@ const STATUS_CONFIG: Record<
   },
 };
 
-export default function PrinterStatus() {
+/** `compact`: the icon and its dot only, for a header that has no room for a label. */
+export default function PrinterStatus({ compact = false }: { compact?: boolean } = {}) {
   usePrinterStatusSync();
 
   const {
@@ -112,17 +113,20 @@ export default function PrinterStatus() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          size="sm"
-          className={`h-10 flex items-center gap-1.5 ${cfg.color} border-current/30`}
+          size={compact ? 'icon-touch' : 'touch'}
+          className={`${cfg.color} border-current/30`}
+          aria-label={hardwarePrinter ? hardwarePrinter.name : t(cfg.labelKey)}
+          title={hardwarePrinter ? hardwarePrinter.name : t(cfg.labelKey)}
         >
-          <Icon
-            size={16}
-            className={isConnecting ? 'animate-spin' : undefined}
-          />
-          <span className="hidden sm:inline text-xs font-medium truncate max-w-[140px]">
-            {hardwarePrinter ? hardwarePrinter.name : t(cfg.labelKey)}
-          </span>
-          <ChevronDown size={12} className="text-gray-400" />
+          <Icon className={isConnecting ? 'animate-spin' : undefined} />
+          {!compact && (
+            <>
+              <span className="hidden sm:inline text-sm font-medium truncate max-w-[140px]">
+                {hardwarePrinter ? hardwarePrinter.name : t(cfg.labelKey)}
+              </span>
+              <ChevronDown className="size-4 text-muted-foreground" />
+            </>
+          )}
         </Button>
       </DropdownMenuTrigger>
 

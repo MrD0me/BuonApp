@@ -33,6 +33,8 @@ import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesP
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import type { HealthCheckReport } from '@/types/electron';
 import { useLocale, useTranslations, type AppConfig } from 'use-intl';
+import { PageToolbar } from '@/components/layout/PageToolbar';
+
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
@@ -1858,10 +1860,7 @@ export default function SettingsPage() {
 
         {/* Settings sidebar nav */}
         <div className="w-full md:w-40 md:min-w-[10rem] shrink-0 md:h-full md:min-h-0 md:flex md:flex-col">
-          <div className="flex items-center gap-3 mb-6 shrink-0">
-            <Settings size={28} className="text-brand" />
-            <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
-          </div>
+          <PageToolbar title={t('title')} className="mb-6 shrink-0" />
 
            <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:flex-1 md:min-h-0 md:overflow-x-hidden md:overflow-y-auto md:overscroll-contain border-b md:border-b-0 md:border-e border-gray-200 pb-2 md:pb-0 md:pe-2">
 

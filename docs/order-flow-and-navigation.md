@@ -4,6 +4,10 @@
 2026-08-29 sul branch `riorganizzazione-interfaccia`. Restano fuori le cose elencate in
 [Fuori ambito](#fuori-ambito), che non sono state fatte per scelta.
 
+Il rifacimento grafico che questo documento rimandava **è stato fatto il 2026-09-16/17**: vedi
+[rifacimento-grafica.md](rifacimento-grafica.md). Quello che si legge qui — le cinque voci, il
+pannello ordine condiviso, la giornata di servizio — regge ancora; è cambiato come si presenta.
+
 Questo documento fissa la riorganizzazione dell'interfaccia decisa con l'utente, da fare **prima**
 del rifacimento grafico vero e proprio. Il problema dichiarato è che l'interfaccia è confusionaria;
 l'analisi del codice dice che la causa è l'architettura dell'informazione — dove stanno le cose —

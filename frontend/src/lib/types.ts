@@ -41,6 +41,8 @@ export interface Category {
   is_active: boolean;
   color: string | null;
   icon: string | null;
+  /** Which wave dishes of this category go out in unless moved by hand. */
+  default_service_run?: number;
   children?: Category[];
   products?: Product[];
 }
@@ -102,10 +104,25 @@ export interface FixedMenuCourse {
   sort_order: number;
   category_ids: string[];
   surcharges: { product_id: string; surcharge: number }[];
+  /** Dishes taken into the course from a category it does not draw from. */
+  included_product_ids: string[];
+  /** Dishes taken out of a category the course does draw from. */
+  excluded_product_ids: string[];
 }
 
-/** What the guest picked, course by course. */
-export type FixedMenuSelection = { course_id: string; product_id: string }[];
+/**
+ * What the guest picked, course by course.
+ *
+ * The note and the wave hang off the dish, not off the menu: the menu's own
+ * row never reaches a kitchen ticket, so anything written against it was
+ * read by nobody.
+ */
+export type FixedMenuSelection = {
+  course_id: string;
+  product_id: string;
+  note?: string;
+  service_run?: number;
+}[];
 
 export interface AddonGroup {
   id: string;
@@ -295,6 +312,17 @@ export interface OrderItem {
   addons: { id?: number | string | null; name: string; price?: number; quantity?: number }[] | null;
   special_instructions: string | null;
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided' | 'void_adjustment';
+  /**
+   * Which wave of the meal this dish leaves the kitchen in. Not the round:
+   * the round says what has already been sent, this says when it comes out.
+   */
+  service_run?: number;
+  /**
+   * Which course of the fixed menu this dish was chosen for. Null on an
+   * ordinary row, and on a menu row written before the column existed whose
+   * course could not be told apart from another.
+   */
+  menu_course_id?: string | null;
   /** Kitchen-ticket round this row went out on. null = still waiting to be sent. */
   kot_batch?: number | null;
   /** Its product is one whose price is only settled once ordered. */
@@ -368,4 +396,6 @@ export interface CartItem {
    * cannot be shared between six guests.
    */
   menu_line_id?: string;
+  /** Which wave this line goes out in. Unset means the category decides. */
+  service_run?: number;
 }

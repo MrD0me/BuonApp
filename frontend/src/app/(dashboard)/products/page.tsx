@@ -15,7 +15,10 @@ import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
 import { nameToColor } from '@/lib/image-utils';
+import { DEFAULT_SERVICE_RUN, SERVICE_RUNS, serviceRunOf } from '@/lib/service-runs';
 import { useTranslations, type AppConfig } from 'use-intl';
+import { PageToolbar } from '@/components/layout/PageToolbar';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type ProductsKey = keyof AppConfig['Messages']['products'];
@@ -85,7 +88,7 @@ export default function ProductsPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const { confirm, ConfirmDialog } = useConfirm();
   const [editingAddonGroup, setEditingAddonGroup] = useState<AddonGroup | null>(null);
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true });
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true, default_service_run: DEFAULT_SERVICE_RUN });
   const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
   const [showAddonModal, setShowAddonModal] = useState(false);
 
@@ -324,21 +327,21 @@ export default function ProductsPage() {
   };
 
   const resetCategoryForm = () => {
-    setCategoryForm({ name: '', description: '', color: '', is_active: true });
+    setCategoryForm({ name: '', description: '', color: '', is_active: true, default_service_run: DEFAULT_SERVICE_RUN });
     setEditingCategory(null);
     setShowForm(false);
   };
 
   const openEditCategory = (cat: Category) => {
     setEditingCategory(cat);
-    setCategoryForm({ name: cat.name, description: cat.description || '', color: cat.color || '', is_active: cat.is_active });
+    setCategoryForm({ name: cat.name, description: cat.description || '', color: cat.color || '', is_active: cat.is_active, default_service_run: serviceRunOf({ service_run: cat.default_service_run }) });
     setShowForm(true);
   };
 
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = { name: categoryForm.name, description: categoryForm.description || null, color: categoryForm.color || null, is_active: categoryForm.is_active };
+      const payload = { name: categoryForm.name, description: categoryForm.description || null, color: categoryForm.color || null, is_active: categoryForm.is_active, default_service_run: categoryForm.default_service_run };
       if (editingCategory) {
         await api.put(`/categories/${editingCategory.id}`, payload);
         toast.success(t('categoryUpdated'));
@@ -456,27 +459,23 @@ export default function ProductsPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
-      </div>
+      <PageToolbar title={t('title')} className="mb-4" />
 
-      <div className="flex gap-1 mb-6 border-b">
-        <button onClick={() => setActiveTab('products')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'products' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          <Package size={16} /> {t('tabProducts')}
-        </button>
-        <button onClick={() => setActiveTab('categories')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'categories' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          <Folder size={16} /> {t('tabCategories')}
-        </button>
-        {isRestaurant && (
-          <button onClick={() => setActiveTab('addons')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'addons' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            <Puzzle size={16} /> {t('tabAddonGroups')}
-          </button>
-        )}
-        {isRestaurant && (
-          <button onClick={() => setActiveTab('fixedMenus')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'fixedMenus' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            <UtensilsCrossed size={16} /> {t('tabFixedMenus')}
-          </button>
-        )}
+      <div className="mb-6">
+        <SegmentedControl
+          size="lg"
+          aria-label={t('title')}
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as typeof activeTab)}
+          items={[
+            { value: 'products', label: t('tabProducts'), icon: <Package size={18} /> },
+            { value: 'categories', label: t('tabCategories'), icon: <Folder size={18} /> },
+            ...(isRestaurant ? [
+              { value: 'addons', label: t('tabAddonGroups'), icon: <Puzzle size={18} /> },
+              { value: 'fixedMenus', label: t('tabFixedMenus'), icon: <UtensilsCrossed size={18} /> },
+            ] : []),
+          ]}
+        />
       </div>
 
       {activeTab === 'fixedMenus' && isRestaurant && (
@@ -991,6 +990,23 @@ export default function ProductsPage() {
                       ))}
                     </div>
                   </div>
+                  {/* Only a house that sends tickets to a kitchen has waves to
+                      put a category in. */}
+                  {isRestaurant && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t('categoryDefaultServiceRun')}</label>
+                      <select
+                        value={categoryForm.default_service_run}
+                        onChange={(e) => setCategoryForm({ ...categoryForm, default_service_run: Number(e.target.value) })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                      >
+                        {SERVICE_RUNS.map((run) => (
+                          <option key={run} value={run}>{tPos('serviceRunShort', { n: run })}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">{t('categoryDefaultServiceRunHint')}</p>
+                    </div>
+                  )}
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={categoryForm.is_active} onChange={(e) => setCategoryForm({ ...categoryForm, is_active: e.target.checked })} className="rounded border-gray-300 text-brand focus:ring-brand" />
                     <span className="text-sm text-gray-700">{t('fieldActive')}</span>
