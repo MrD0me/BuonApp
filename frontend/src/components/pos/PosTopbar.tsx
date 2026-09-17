@@ -2,55 +2,35 @@
 
 import PrinterStatus from './PrinterStatus';
 import CustomerSearch from './CustomerSearch';
-import { useCartStore } from '@/store/cart';
-import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { LayoutGrid } from 'lucide-react';
-import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 
-interface Props {
-  tables: Table[];
-  onShowTablePicker: () => void;
-}
-
-export default function PosTopbar({ tables, onShowTablePicker }: Props) {
-  const cart = useCartStore();
-  const { currentTenant } = useAuthStore();
-  const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
+/**
+ * The top of the ordering screen: the page's name, the customer search when
+ * the house keeps a customer book, and the printer as an icon. The table is
+ * not here any more — it heads the ticket, where "change" is next to it.
+ */
+export default function PosTopbar() {
   const customersEnabled = usePosSettingsStore((s) => s.customersEnabled);
-  const t = useTranslations('pos');
-  const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
-  const showTableBtn = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
+  const tNav = useTranslations('nav');
 
   return (
-    <div className="flex items-center gap-3 border-b bg-white shrink-0 px-4 py-2.5">
-      {/* No customer book on this business → nothing to search, and the
-          table button takes over the row. */}
-      <div className="flex-1 min-w-0">
-        {customersEnabled && <CustomerSearch variant="topbar" />}
-      </div>
-
-      {/* Select Table — between customer search and printer */}
-      {showTableBtn && (
-        <button
-          onClick={onShowTablePicker}
-          className={`h-10 shrink-0 flex items-center gap-1.5 px-3 text-sm rounded-lg border font-medium transition-colors whitespace-nowrap ${
-            cart.tableId
-              ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600'
-              : 'bg-amber-50 border-amber-400 text-amber-700 hover:bg-amber-100'
-          }`}
-        >
-          <LayoutGrid size={14} />
-          {cart.tableId
-            ? t('tableLabel', { name: tables.find(t => t.id === cart.tableId)?.name || cart.tableId })
-            : t('selectTable')}
-        </button>
-      )}
-
-      <div className="shrink-0">
-        <PrinterStatus />
-      </div>
+    <div className="shrink-0 border-b border-border bg-background px-4 py-2">
+      <PageToolbar
+        title={tNav('pos')}
+        actions={(
+          <>
+            {/* No customer book on this business → nothing to search. */}
+            {customersEnabled && (
+              <div className="w-72 max-w-full">
+                <CustomerSearch variant="topbar" />
+              </div>
+            )}
+            <PrinterStatus compact />
+          </>
+        )}
+      />
     </div>
   );
 }

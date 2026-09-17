@@ -240,7 +240,6 @@
     "wsConnected": "WebSocket conectado"
   },
   "nav": {
-    "collapse": "Contraer",
     "confirmLogout": "¿Estás seguro de que quieres cerrar la sesión?",
     "customers": "Clientes",
     "heapLabel": "Memoria: ",
@@ -268,6 +267,7 @@
     "whatsapp": "WhatsApp"
   },
   "orders": {
+    "filters": "Filtros",
     "active": "Activos",
     "addItem": "Agregar ítem",
     "addItemsCartClearConfirm": "Tienes artículos en el carrito de Pedir. Añadir líneas a este pedido los borrará. ¿Continuar?",
@@ -424,6 +424,7 @@
     "whatsappFailed": "No se pudo abrir WhatsApp"
   },
   "pos": {
+    "changeTable": "Cambiar",
     "addCustomer": "Agregar Cliente",
     "addItems": "Agregar ítems",
     "addItemsFailed": "No se pudieron agregar los ítems",
@@ -469,6 +470,7 @@
     "customerUpdated": "Cliente actualizado",
     "customisable": "Personalizable",
     "decreasePax": "Reducir comensales",
+    "decreaseQuantity": "Reducir cantidad",
     "delivery": "Delivery",
     "deliveryAddress": "Dirección de entrega",
     "discount": "Descuento",
@@ -491,6 +493,8 @@
     "holdOrderFailed": "No se pudo guardar el pedido",
     "holdTable": "Guardar mesa",
     "increasePax": "Aumentar comensales",
+    "increaseQuantity": "Aumentar cantidad",
+    "quantity": "Cantidad",
     "invalidPhone": "El número de teléfono no es válido para {country}",
     "itemCount": "{count, plural, one {# ítem} other {# ítems}}",
     "items": "Ítems",
@@ -614,6 +618,7 @@
     "serviceRun": "En qué salida va",
     "serviceRunAlreadySent": "Ya está en una comanda impresa: moverlo no la reimprime",
     "serviceRunShort": "{n}ª",
+    "serviceRunLabel": "{n}.º pase",
     "sendViaWhatsApp": "Enviar comprobante por WhatsApp",
     "specialInstructions": "Instrucciones especiales",
     "specialInstructionsPlaceholder": "ej. sin cebolla, alergias…",
@@ -950,6 +955,18 @@
     "success": "Base restaurada con éxito. Reiniciando..."
   },
   "serverApp": {
+    "inCart": "{count, plural, one {# en el pedido} other {# en el pedido}}",
+    "coversCount": "{count, plural, one {# comensal} other {# comensales}}",
+    "pendingToSend": "{count, plural, one {# por enviar} other {# por enviar}}",
+    "newOrder": "Pedido nuevo",
+    "noOpenOrderHint": "El primer pedido abre la mesa.",
+    "productOptions": "Opciones de {name}",
+    "backToMenu": "Volver al menú",
+    "categories": "Categorías",
+    "rooms": "Salas",
+    "dishes": "Platos",
+    "toSend": "Por enviar",
+    "dishCount": "{count, plural, one {# plato} other {# platos}}",
     "addItems": "Añadir platos",
     "addToOrder": "Agregar al pedido",
     "attemptDropped": "El envío pendiente se descartó: la cuenta ya no lo acepta",
@@ -994,6 +1011,7 @@
     "title": "App de mesero"
   },
   "serviceDays": {
+    "openSinceTime": "abierta desde las {time}",
     "alreadyOpen": "Ya hay una jornada abierta.",
     "bills": "Cuentas",
     "blockersCount": "{count} cosas por resolver antes de poder cerrar",
@@ -1722,6 +1740,7 @@
     "updatedToast": "Personal actualizado"
   },
   "tables": {
+    "legendPending": "por enviar a cocina",
     "add": "Agregar Mesa",
     "addRoom": "Añadir salón",
     "addTable": "Agregar Mesa",

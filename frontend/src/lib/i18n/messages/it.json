@@ -240,7 +240,6 @@
     "wsConnected": "WebSocket connesso"
   },
   "nav": {
-    "collapse": "Comprimi",
     "confirmLogout": "Sei sicuro di voler uscire?",
     "customers": "Clienti",
     "heapLabel": "Heap: ",
@@ -268,6 +267,7 @@
     "whatsapp": "WhatsApp"
   },
   "orders": {
+    "filters": "Filtri",
     "active": "Attivo",
     "addItem": "Aggiungi Articolo",
     "addItemsCartClearConfirm": "Hai articoli nel carrello di Ordina. Aggiungere righe a questo ordine li cancellerà. Procedere?",
@@ -424,6 +424,7 @@
     "whatsappFailed": "Impossibile aprire WhatsApp"
   },
   "pos": {
+    "changeTable": "Cambia",
     "addCustomer": "Aggiungi Cliente",
     "addItems": "Aggiungi Articoli",
     "addItemsFailed": "Impossibile aggiungere gli articoli",
@@ -469,6 +470,7 @@
     "customerUpdated": "Cliente aggiornato",
     "customisable": "Personalizzabile",
     "decreasePax": "Diminuisci coperti",
+    "decreaseQuantity": "Diminuisci quantità",
     "delivery": "Consegna",
     "deliveryAddress": "Indirizzo di consegna",
     "discount": "Sconto",
@@ -491,6 +493,8 @@
     "holdOrderFailed": "Impossibile sospendere l'ordine",
     "holdTable": "Sospendi Tavolo",
     "increasePax": "Aumenta coperti",
+    "increaseQuantity": "Aumenta quantità",
+    "quantity": "Quantità",
     "invalidPhone": "Il numero di telefono non è valido per {country}",
     "itemCount": "{count, plural, one {# articolo} other {# articoli}}",
     "items": "Articoli",
@@ -566,7 +570,7 @@
     "paymentRecordedWithPoints": "Pagamento registrato! {points} punti fedeltà accreditati.",
     "percentage": "Percentuale",
     "phone": "Telefono",
-    "placeOrderButton": "Effettua Ordine",
+    "placeOrderButton": "Invia ordine",
     "placeOrderFailed": "Impossibile effettuare l'ordine",
     "placeOrderReady": "Effettua l'ordine quando sei pronto.",
     "placing": "Invio in corso...",
@@ -614,6 +618,7 @@
     "serviceRun": "In che uscita va",
     "serviceRunAlreadySent": "Già su una comanda stampata — spostarlo non la ristampa",
     "serviceRunShort": "{n}ª",
+    "serviceRunLabel": "{n}ª uscita",
     "sendViaWhatsApp": "Invia il conto via WhatsApp",
     "specialInstructions": "Istruzioni Speciali",
     "specialInstructionsPlaceholder": "es. senza cipolla, extra piccante...",
@@ -950,6 +955,18 @@
     "success": "Database ripristinato con successo. Riavvio in corso..."
   },
   "serverApp": {
+    "inCart": "{count, plural, one {# in comanda} other {# in comanda}}",
+    "coversCount": "{count, plural, one {# coperto} other {# coperti}}",
+    "pendingToSend": "{count, plural, one {# da inviare} other {# da inviare}}",
+    "newOrder": "Nuovo ordine",
+    "noOpenOrderHint": "Il primo ordine apre il tavolo.",
+    "productOptions": "Opzioni per {name}",
+    "backToMenu": "Torna al menu",
+    "categories": "Categorie",
+    "rooms": "Sale",
+    "dishes": "Piatti",
+    "toSend": "Da inviare",
+    "dishCount": "{count, plural, one {# piatto} other {# piatti}}",
     "addItems": "Aggiungi piatti",
     "addToOrder": "Aggiungi all'ordine",
     "attemptDropped": "L'invio in sospeso è stato scartato: il conto non lo accetta più",
@@ -994,6 +1011,7 @@
     "title": "Server App"
   },
   "serviceDays": {
+    "openSinceTime": "aperta dalle {time}",
     "alreadyOpen": "C’è già una giornata aperta.",
     "bills": "Conti",
     "blockersCount": "{count} cose da sistemare prima di poter chiudere",
@@ -1722,6 +1740,7 @@
     "updatedToast": "Personale aggiornato"
   },
   "tables": {
+    "legendPending": "da mandare in cucina",
     "add": "Aggiungi Tavolo",
     "addRoom": "Aggiungi sala",
     "addTable": "Aggiungi Tavolo",

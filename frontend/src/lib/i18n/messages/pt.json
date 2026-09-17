@@ -240,7 +240,6 @@
     "wsConnected": "WebSocket conectado"
   },
   "nav": {
-    "collapse": "Recolher",
     "confirmLogout": "Tem certeza de que deseja sair?",
     "customers": "Clientes",
     "heapLabel": "Heap: ",
@@ -268,6 +267,7 @@
     "whatsapp": "WhatsApp"
   },
   "orders": {
+    "filters": "Filtros",
     "active": "Ativos",
     "addItem": "Adicionar Item",
     "addItemsCartClearConfirm": "Tens artigos no carrinho de Pedir. Adicionar linhas a este pedido vai apagá-los. Continuar?",
@@ -424,6 +424,7 @@
     "whatsappFailed": "Falha ao abrir o WhatsApp"
   },
   "pos": {
+    "changeTable": "Trocar",
     "addCustomer": "Adicionar Cliente",
     "addItems": "Adicionar Itens",
     "addItemsFailed": "Falha ao adicionar itens",
@@ -469,6 +470,7 @@
     "customerUpdated": "Cliente atualizado",
     "customisable": "Personalizável",
     "decreasePax": "Diminuir pessoas",
+    "decreaseQuantity": "Diminuir quantidade",
     "delivery": "Entrega",
     "deliveryAddress": "Endereço de entrega",
     "discount": "Desconto",
@@ -491,6 +493,8 @@
     "holdOrderFailed": "Falha ao segurar o pedido",
     "holdTable": "Segurar Mesa",
     "increasePax": "Aumentar pessoas",
+    "increaseQuantity": "Aumentar quantidade",
+    "quantity": "Quantidade",
     "invalidPhone": "O número de telefone não é válido para {country}",
     "itemCount": "{count, plural, one {# item} other {# itens}}",
     "items": "Itens",
@@ -614,6 +618,7 @@
     "serviceRun": "Em que saída vai",
     "serviceRunAlreadySent": "Já está numa comanda impressa — movê-lo não a reimprime",
     "serviceRunShort": "{n}ª",
+    "serviceRunLabel": "{n}.ª etapa",
     "sendViaWhatsApp": "Enviar comprovante via WhatsApp",
     "specialInstructions": "Instruções Especiais",
     "specialInstructionsPlaceholder": "ex.: sem cebola, extra picante...",
@@ -950,6 +955,18 @@
     "success": "Banco de dados restaurado com sucesso. Reiniciando..."
   },
   "serverApp": {
+    "inCart": "{count, plural, one {# no pedido} other {# no pedido}}",
+    "coversCount": "{count, plural, one {# pessoa} other {# pessoas}}",
+    "pendingToSend": "{count, plural, one {# a enviar} other {# a enviar}}",
+    "newOrder": "Novo pedido",
+    "noOpenOrderHint": "O primeiro pedido abre a mesa.",
+    "productOptions": "Opções de {name}",
+    "backToMenu": "Voltar ao cardápio",
+    "categories": "Categorias",
+    "rooms": "Salas",
+    "dishes": "Pratos",
+    "toSend": "A enviar",
+    "dishCount": "{count, plural, one {# prato} other {# pratos}}",
     "addItems": "Adicionar pratos",
     "addToOrder": "Adicionar ao pedido",
     "attemptDropped": "O envio pendente foi descartado: a conta não o aceita mais",
@@ -994,6 +1011,7 @@
     "title": "App do Garçom"
   },
   "serviceDays": {
+    "openSinceTime": "aberto desde as {time}",
     "alreadyOpen": "Já existe um dia aberto.",
     "bills": "Contas",
     "blockersCount": "{count} pendências antes de poder fechar",
@@ -1722,6 +1740,7 @@
     "updatedToast": "Funcionário atualizado"
   },
   "tables": {
+    "legendPending": "a enviar para a cozinha",
     "add": "Adicionar Mesa",
     "addRoom": "Adicionar salão",
     "addTable": "Adicionar Mesa",

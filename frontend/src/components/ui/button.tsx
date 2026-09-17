@@ -29,6 +29,12 @@ const buttonVariants = cva(
         "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
         "icon-sm": "size-8",
         "icon-lg": "size-10",
+        // Touch sizes: the cash-desk monitor and the handheld are worked
+        // with fingers (44 px minimum, 48 for an action, 56 for the main one).
+        touch: "h-touch rounded-lg px-5 text-base has-[>svg]:px-4 [&_svg:not([class*='size-'])]:size-5",
+        "touch-lg": "h-touch-lg rounded-lg px-5 text-base has-[>svg]:px-4 [&_svg:not([class*='size-'])]:size-5",
+        "touch-xl": "h-touch-xl rounded-xl px-6 text-lg has-[>svg]:px-5 [&_svg:not([class*='size-'])]:size-5",
+        "icon-touch": "size-touch rounded-lg [&_svg:not([class*='size-'])]:size-5",
       },
     },
     defaultVariants: {

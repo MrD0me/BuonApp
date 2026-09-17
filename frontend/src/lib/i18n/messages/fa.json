@@ -240,7 +240,6 @@
     "wsConnected": "WebSocket پیوند داده شد"
   },
   "nav": {
-    "collapse": "جمع کردن",
     "confirmLogout": "آیا از خروج مطمئن هستید؟",
     "customers": "مشتریان",
     "heapLabel": "حافظه: ",
@@ -268,6 +267,7 @@
     "whatsapp": "واتساپ"
   },
   "orders": {
+    "filters": "فیلترها",
     "active": "فعال",
     "addItem": "افزودن کالا",
     "addItemsCartClearConfirm": "در سبد صفحه سفارش کالا دارید. افزودن سطر به این سفارش آن‌ها را پاک می‌کند. ادامه می‌دهید؟",
@@ -424,6 +424,7 @@
     "whatsappFailed": "باز کردن واتساپ انجام نشد"
   },
   "pos": {
+    "changeTable": "تغییر",
     "addCustomer": "افزودن مشتری",
     "addItems": "افزودن کالاها",
     "addItemsFailed": "افزودن کالاها انجام نشد",
@@ -469,6 +470,7 @@
     "customerUpdated": "مشتری به‌روزرسانی شد",
     "customisable": "قابل سفارشی‌سازی",
     "decreasePax": "کاهش نفر",
+    "decreaseQuantity": "کاهش تعداد",
     "delivery": "رسانش",
     "deliveryAddress": "نشانی رسانش",
     "discount": "تخفیف",
@@ -491,6 +493,8 @@
     "holdOrderFailed": "نگه‌داشتن سفارش انجام نشد",
     "holdTable": "نگه‌داشتن میز",
     "increasePax": "افزایش نفر",
+    "increaseQuantity": "افزایش تعداد",
+    "quantity": "تعداد",
     "invalidPhone": "شماره تلفن برای {country} معتبر نیست",
     "itemCount": "{count, plural, one {# کالا} other {# کالا}}",
     "items": "کالاها",
@@ -614,6 +618,7 @@
     "serviceRun": "در کدام نوبت بیرون می‌رود",
     "serviceRunAlreadySent": "روی سفارش چاپ‌شده است — جابه‌جایی آن دوباره چاپ نمی‌کند",
     "serviceRunShort": "نوبت {n}",
+    "serviceRunLabel": "نوبت {n}",
     "sendViaWhatsApp": "فرستادن رسید با واتساپ",
     "specialInstructions": "دستورهای ویژه",
     "specialInstructionsPlaceholder": "برای نمونه: بدون پیاز، تندتر",
@@ -950,6 +955,18 @@
     "success": "پایگاه داده با کامیابی بازگردانده شد. در حال راه‌اندازی دوباره"
   },
   "serverApp": {
+    "inCart": "{count, plural, one {# در سفارش} other {# در سفارش}}",
+    "coversCount": "{count, plural, one {# نفر} other {# نفر}}",
+    "pendingToSend": "{count, plural, one {# برای ارسال} other {# برای ارسال}}",
+    "newOrder": "سفارش جدید",
+    "noOpenOrderHint": "اولین سفارش میز را باز می‌کند.",
+    "productOptions": "گزینه‌های {name}",
+    "backToMenu": "بازگشت به منو",
+    "categories": "دسته‌بندی‌ها",
+    "rooms": "سالن‌ها",
+    "dishes": "غذاها",
+    "toSend": "برای ارسال",
+    "dishCount": "{count, plural, one {# غذا} other {# غذا}}",
     "addItems": "افزودن غذا",
     "addToOrder": "افزودن به سفارش",
     "attemptDropped": "ارسال معلق کنار گذاشته شد: صورت‌حساب دیگر آن را نمی‌پذیرد",
@@ -994,6 +1011,7 @@
     "title": "برنامه سرور"
   },
   "serviceDays": {
+    "openSinceTime": "باز از ساعت {time}",
     "alreadyOpen": "یک روز از قبل باز است.",
     "bills": "صورت‌حساب‌ها",
     "blockersCount": "{count} مورد باید پیش از بستن روز تسویه شود",
@@ -1722,6 +1740,7 @@
     "updatedToast": "کارمند به‌روزرسانی شد"
   },
   "tables": {
+    "legendPending": "برای ارسال به آشپزخانه",
     "add": "افزودن میز",
     "addRoom": "افزودن سالن",
     "addTable": "افزودن میز",

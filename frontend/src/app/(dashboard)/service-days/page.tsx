@@ -13,6 +13,9 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useDateTimeFormatters } from '@/components/service-days/day-formatters';
 import { Stat } from '@/components/service-days/Stat';
 
+import { PageToolbar } from '@/components/layout/PageToolbar';
+
+
 interface DayDetailModalProps {
   dayId: string;
   onClose: () => void;
@@ -243,9 +246,7 @@ export default function ServiceDaysPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">{t('title')}</h1>
-
-      <h2 className="text-lg font-semibold text-gray-900 mb-3">{t('pastDays')}</h2>
+      <PageToolbar title={t('title')} subtitle={t('pastDays')} className="mb-6" />
       {days.length === 0 ? (
         <p className="text-center text-gray-500 py-8">{t('noDays')}</p>
       ) : (

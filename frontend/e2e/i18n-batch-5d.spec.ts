@@ -135,18 +135,21 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   }, serverToken);
   await page.reload();
 
-  // 1f. Server App floor, table sheet and order screen (EN)
-  await expect(page.getByRole('heading', { name: 'Server App' })).toBeVisible();
-  await expect(page.getByText('Floor', { exact: true })).toBeVisible();
+  // 1f. Server App floor, table screen and order screen (EN)
+  await expect(page.getByRole('heading', { level: 1, name: 'Floor' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   // Open the table, then take an order on it
   await page.getByRole('button', { name: /Table 1/i }).first().click();
   await expect(page.getByText('No open order', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Add dishes' }).click();
+  await page.getByRole('button', { name: 'Take order' }).click();
   await expect(page.getByPlaceholder('Search menu')).toBeVisible();
   await expect(page.getByText('All', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /Ticket/ })).toBeVisible();
-  await page.getByText('E2E Coffee').first().click();
+  // A dish with nothing to choose goes straight onto the ticket.
+  await page.getByRole('button', { name: 'E2E Coffee', exact: false }).first().click();
+  await expect(page.getByRole('button', { name: /Ticket/ })).toContainText('1');
+  // A dish with add-ons opens its options first.
+  await page.getByRole('button', { name: 'E2E Tea', exact: false }).first().click();
   await expect(page.getByText('Special Instructions')).toBeVisible();
   await expect(page.getByRole('button', { name: /Add to Cart/ })).toBeVisible();
   await captureScreenshot(page, 'server-standalone-en.png');
@@ -228,18 +231,17 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     }, serverToken);
     await page.reload();
 
-    // 2f. Server App floor, table sheet and order screen (FA)
+    // 2f. Server App floor, table screen and order screen (FA)
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { name: 'برنامه سرور' })).toBeVisible();
-    await expect(page.getByText('سالن', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'سالن' })).toBeVisible();
     // Open the table, then take an order on it
     await page.getByRole('button', { name: /Table 1/i }).first().click();
     await expect(page.getByText('سفارش بازی وجود ندارد', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'افزودن غذا' }).click();
+    await page.getByRole('button', { name: 'ثبت سفارش' }).click();
     await expect(page.getByPlaceholder('جست‌وجو در منو')).toBeVisible();
     await expect(page.getByText('همه', { exact: true })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await page.getByText('E2E Coffee').first().click();
+    await page.getByRole('button', { name: 'E2E Tea', exact: false }).first().click();
     await expect(page.getByText('دستورهای ویژه')).toBeVisible();
     await expect(page.getByRole('button', { name: /افزودن به سبد/ })).toBeVisible();
     await captureScreenshot(page, 'server-standalone-fa.png');

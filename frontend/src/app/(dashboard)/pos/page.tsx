@@ -8,18 +8,20 @@ import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
-import { ShoppingCart, X } from 'lucide-react';
+
 import type { Addon, Category, Product, Table, Bill, Order, CartItem, FixedMenuSelection } from '@/lib/types';
 import {
   isFixedMenu, menuGroupsOfOrder, menuLinesOfCart, menuLinesOfOrder, openSlotsForProduct,
   type OpenSlot,
 } from '@/lib/fixed-menu';
 import AttachToMenuModal from '@/components/pos/AttachToMenuModal';
+import { needsOptionsDialog } from '@/lib/product-options';
+import { validCovers } from '@/lib/table-covers';
+import { Modal, ModalBody, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { cartItemToPayload } from '@/lib/cart-payload';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
-  Drawer, DrawerContent, DrawerTrigger,
 } from '@/components/ui/drawer';
 
 import ProductGrid from '@/components/pos/ProductGrid';
@@ -87,6 +89,7 @@ export default function POSPage() {
   const { customerMandatory, autoPrintBill, billingType, tablesRequired, customersEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
+  const tCommon = useTranslations('common');
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
 
@@ -96,7 +99,6 @@ export default function POSPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
@@ -448,8 +450,14 @@ export default function POSPage() {
       return;
     }
 
-    // Always open modal so user can add notes and adjust quantity
-    setAddonProduct(product);
+    // A dish with options — or one whose price is decided at the till —
+    // opens its window; anything else goes straight onto the ticket. The
+    // pencil on the tile still opens the window for a note or a quantity.
+    if (needsOptionsDialog(product)) {
+      setAddonProduct(product);
+      return;
+    }
+    cart.addItem(product, 1, [], '');
   };
 
   /** Inside the menu: the dish becomes one of its choices, priced by it. */
@@ -605,7 +613,6 @@ export default function POSPage() {
         }
       }
       cart.clearCart();
-      setMobileCartOpen(false);
       await refreshTables();
 
       await printKotIfEnabled(orderForKot);
@@ -816,7 +823,6 @@ export default function POSPage() {
       }
       cart.clearCart();
       clearPrepaidAttempt();
-      setMobileCartOpen(false);
       await refreshTables();
 
       await printKotIfEnabled(orderData.order);
@@ -830,8 +836,8 @@ export default function POSPage() {
   };
 
 
-  const handleSelectAvailableTable = (tableId: string, customer?: { id: string | number; name: string; phone: string } | null) => {
-    cart.setTableId(tableId);
+  const handleSelectAvailableTable = (tableId: string, customer: { id: string | number; name: string; phone: string } | null, covers: number) => {
+    cart.setTableId(tableId, covers);
     if (customer) {
       cart.setCustomer({ ...customer, email: null, visits_count: 0, total_spent: 0, last_visit_at: null, country_code: '' });
     }
@@ -948,14 +954,18 @@ export default function POSPage() {
   }, [appendOrderId]);
 
   /**
-   * `?table=<id>` is the floor plan asking for a first order on a free table.
+   * `?table=<id>&covers=<n>` is the floor plan asking for a first order on a
+   * free table, with the covers the panel worked out for it: the booking's
+   * party, or the seats.
    *
    * It checks first: a handheld may have opened one in the seconds since the
    * panel was drawn, and two open orders on the same table means two bills for
-   * one party. If there is already an order, this becomes an append to it.
+   * one party. If there is already an order, this becomes an append to it, and
+   * the covers are that order's.
    */
   useEffect(() => {
     if (!takeOrderTableId) return;
+    const tableCovers = validCovers(searchParams?.get('covers')) ?? undefined;
     let cancelled = false;
     api.get('/orders', {
       params: { table_id: takeOrderTableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
@@ -968,7 +978,7 @@ export default function POSPage() {
           return;
         }
         cart.setOrderType('dine_in');
-        cart.setTableId(takeOrderTableId);
+        cart.setTableId(takeOrderTableId, tableCovers);
       })
       .catch(() => toast.error(t('loadOrderFailed')))
       .finally(() => { if (!cancelled) router.replace('/pos'); });
@@ -1050,8 +1060,6 @@ export default function POSPage() {
     existingOrder: pendingOrder,
   };
 
-  const itemCount = cart.itemCount();
-
   return (
     <>
       {/* A print failure used to offer to file a support ticket with the
@@ -1071,12 +1079,13 @@ export default function POSPage() {
           </div>
         </div>
       )}
-      <PosTopbar tables={tables} onShowTablePicker={() => setShowTablePicker(true)} />
+      <PosTopbar />
 
-      {/* Main content area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
-        {/* Product Grid — full width on mobile, flex-1 on desktop */}
-        <div className="flex-1 min-w-0 h-full flex flex-col">
+      {/* Main content area: the menu, and the ticket always in view beside it.
+          The cash desk is never narrower than 1024 px, so there is no phone
+          layout here — the phone has its own app. */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-w-0 h-full flex flex-col p-4">
           <ProductGrid
             categories={categories}
             products={products}
@@ -1086,34 +1095,14 @@ export default function POSPage() {
             setSearch={setSearch}
             currency={currency}
             onProductClick={handleProductClick}
+            onProductOptions={setAddonProduct}
             sidebarOpen={leftSidebarOpen}
           />
         </div>
-
-        {/* Desktop Cart — always open, hidden on mobile */}
-        <div className="hidden md:flex md:w-80 md:shrink-0 h-full">
+        <div className="flex h-full w-80 shrink-0 xl:w-96">
           <CartPanel {...cartPanelProps} />
         </div>
       </div>
-
-      {/* Mobile: Floating Cart Button + Bottom Sheet — outside flex container */}
-      <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
-        <DrawerTrigger asChild>
-          <button className="fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg flex items-center justify-center hover:bg-brand-hover transition-colors md:hidden">
-            <ShoppingCart size={22} />
-            {itemCount > 0 && (
-              <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                {itemCount}
-              </span>
-            )}
-          </button>
-        </DrawerTrigger>
-        <DrawerContent className="max-h-[85vh]">
-          <div className="overflow-y-auto max-h-[80vh] px-2 pb-2">
-            <CartPanel {...cartPanelProps} variant="drawer" />
-          </div>
-        </DrawerContent>
-      </Drawer>
 
       {/* Modals */}
       {isRestaurant && showTablePicker && (
@@ -1160,7 +1149,8 @@ export default function POSPage() {
           onSeparate={() => {
             const chosen = attachProduct.product;
             setAttachProduct(null);
-            setAddonProduct(chosen);
+            if (needsOptionsDialog(chosen)) setAddonProduct(chosen);
+            else cart.addItem(chosen, 1, [], '');
           }}
           onClose={() => setAttachProduct(null)}
         />
@@ -1214,18 +1204,15 @@ export default function POSPage() {
       )}
 
       {showCustomerPrompt && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">{t('selectCustomer')}</h3>
-              <button onClick={() => setShowCustomerPrompt(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-gray-500 mb-4">{t('customerRequiredBeforeOrder')}</p>
+        <Modal open onOpenChange={(open) => { if (!open) setShowCustomerPrompt(false); }} size="sm">
+          <ModalHeader closeLabel={tCommon('close')}>
+            <ModalTitle>{t('selectCustomer')}</ModalTitle>
+            <ModalDescription>{t('customerRequiredBeforeOrder')}</ModalDescription>
+          </ModalHeader>
+          <ModalBody>
             <CustomerSearch onSelected={() => setShowCustomerPrompt(false)} />
-          </div>
-        </div>
+          </ModalBody>
+        </Modal>
       )}
 
       {ConfirmDialog}

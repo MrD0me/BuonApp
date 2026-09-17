@@ -7,7 +7,10 @@ import toast from 'react-hot-toast';
 import { Plus, X, UserX, RotateCcw, CalendarClock } from 'lucide-react';
 import type { Reservation, Table, ServiceDay } from '@/lib/types';
 import { useTranslations } from 'use-intl';
+import { PageToolbar } from '@/components/layout/PageToolbar';
+
 import { Ltr } from '@/components/layout/Ltr';
+import { reservationTone } from '@/lib/status-styles';
 
 /**
  * The day's booking sheet (see docs/table-management.md).
@@ -18,13 +21,6 @@ import { Ltr } from '@/components/layout/Ltr';
  * off a paper list should be fifteen lines of typing, not fifteen modals.
  */
 
-const STATUS_STYLES: Record<string, string> = {
-  booked: 'bg-amber-100 text-amber-800',
-  seated: 'bg-green-100 text-green-700',
-  cancelled: 'bg-gray-100 text-gray-500',
-  no_show: 'bg-red-100 text-red-700',
-  expired: 'bg-gray-100 text-gray-500',
-};
 
 const STATUS_LABEL_KEYS = {
   booked: 'statusBooked',
@@ -91,7 +87,7 @@ function BookingRow({ booking, tables, holderByTable, busy, onAssign, onAction, 
           })}
         </select>
       ) : (
-        <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLES[booking.status] || STATUS_STYLES.cancelled}`}>
+        <span className={`text-xs px-2 py-0.5 rounded-full ${reservationTone(booking.status).badge}`}>
           {t(STATUS_LABEL_KEYS[booking.status])}
         </span>
       )}
@@ -233,17 +229,16 @@ export default function ReservationsPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
-        {day && (
-          <p className="text-sm text-gray-500">
-            <Ltr>
-              {t('summary', { bookings: pending.length, covers })}
-              {unassigned > 0 ? ` · ${t('unassignedCount', { count: unassigned })}` : ''}
-            </Ltr>
-          </p>
-        )}
-      </div>
+      <PageToolbar
+        title={t('title')}
+        className="mb-4"
+        subtitle={day ? (
+          <Ltr>
+            {t('summary', { bookings: pending.length, covers })}
+            {unassigned > 0 ? ` · ${t('unassignedCount', { count: unassigned })}` : ''}
+          </Ltr>
+        ) : undefined}
+      />
 
       <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2 mb-5 bg-white rounded-xl border border-gray-100 p-3">
         <div>

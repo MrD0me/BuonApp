@@ -89,7 +89,7 @@ Select checks that cover the changed subsystem:
 | Backend / API | `npm run lint`, `npm run build`, and focused test suites |
 | Database migrations | Fresh database test and upgrade-path migration test |
 | Tables / service days / reservations | `npm run test:table-crud`, `test:rooms-map`, `test:reservations`, `test:reservation-sheet`, `test:table-merge-layouts`, `test:service-days` |
-| Cover charge / fixed menus | `npm run test:cover-charge`, `test:fixed-menu`, plus `test:printer` when the printed line changes |
+| Cover charge / fixed menus | `npm run test:cover-charge`, `test:table-covers`, `test:fixed-menu`, plus `test:printer` when the printed line changes |
 | Printing / kitchen tickets | `npm run test:printer`, `test:kot-batch`, `test:receipt-printing` |
 | Auth / Security | Relevant focused test suite plus broader integration tests |
 | Packaging / Releases | Target platform build commands and release checks |

@@ -14,6 +14,8 @@ import type { Customer } from '@/lib/types';
 import { countryName } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useTranslations } from 'use-intl';
+import { PageToolbar } from '@/components/layout/PageToolbar';
+
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
@@ -169,20 +171,23 @@ export default function CustomersPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-gray-900">{tNav('customers')}</h1>
-          {filter === 'invalid_phones' && (
-            <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5">
-              <AlertCircle size={14} /> {tCustomers('actionRequired')}
-              <button onClick={() => router.push('/customers')} className="ms-1 text-red-500 hover:text-red-700">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-        </div>
-        <Button onClick={openAdd}><Plus size={16} className="me-1" /> {tCustomer('add')}</Button>
-      </div>
+      <PageToolbar
+        title={tNav('customers')}
+        className="mb-6"
+        actions={(
+          <>
+            {filter === 'invalid_phones' && (
+              <span className="flex h-touch items-center gap-1.5 rounded-full bg-table-occupied-soft px-3 text-sm font-medium text-table-occupied">
+                <AlertCircle size={16} /> {tCustomers('actionRequired')}
+                <button type="button" onClick={() => router.push('/customers')} className="ms-1 flex size-8 items-center justify-center rounded-full" aria-label={tCommon('close')}>
+                  <X size={14} />
+                </button>
+              </span>
+            )}
+            <Button size="touch" onClick={openAdd}><Plus /> {tCustomer('add')}</Button>
+          </>
+        )}
+      />
 
       <div className="relative mb-4">
         <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />

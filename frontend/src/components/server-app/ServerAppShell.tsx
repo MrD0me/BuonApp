@@ -1,27 +1,30 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChefHat, LogOut, RefreshCw, Smartphone } from 'lucide-react';
+import { LogOut, RefreshCw, Smartphone } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import type { Order, Table } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
 import { cartItemToPayload } from '@/lib/cart-payload';
+import { coversForNewOrder } from '@/lib/table-covers';
 import {
   buildAppendItemsFingerprint, clearAppendAttempt, getAppendAttemptStorage, getOrCreateAppendAttempt,
   isPermanentAppendRefusal, readAppendAttempt,
 } from '@/lib/append-attempt';
+import { Button } from '@/components/ui/button';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { apiErrorCode, newIdempotencyKey } from './server-api';
 import { clearOrderAttempt, readOrderAttempt, saveOrderAttempt, type OrderAttempt } from './order-attempt';
 import { useServerSession } from './useServerSession';
 import { useHandheldData } from './useHandheldData';
 import { ServerLoginForm } from './ServerLoginForm';
-import { SalaView } from './SalaView';
-import { TableSheet } from './TableSheet';
+import { SalaView, roomTabs } from './SalaView';
+import { TableScreen } from './TableScreen';
 import { OrdinaView } from './OrdinaView';
 
-type View = 'sala' | 'ordina';
+type View = 'sala' | 'table' | 'ordina';
 
 /** The table a link opened the page on, if any: `/server-standalone?table=<id>`. */
 function tableFromLocation(): string | null {
@@ -32,12 +35,12 @@ function tableFromLocation(): string | null {
 /**
  * The handheld, end to end.
  *
- * Two screens: the floor, and the order being taken on one of its tables. The
- * order sheet opens over the floor; Ordina replaces it while the waiter is at
- * the menu and gives way to the sheet again once the round has gone. Which
- * open order a cart is being added to is never stored — it is the order on
- * the cart's table, read fresh each time, so changing table can never send a
- * round to the check it was not meant for (the till learned that the hard way).
+ * Three screens, one after the other: the floor, one of its tables, and the
+ * order being taken on it. Back goes the same way in reverse, and sending a
+ * round lands on the table again. Which open order a cart is being added to
+ * is never stored — it is the order on the cart's table, read fresh each
+ * time, so changing table can never send a round to the check it was not
+ * meant for (the till learned that the hard way).
  */
 export function ServerAppShell() {
   const t = useTranslations('serverApp');
@@ -51,7 +54,6 @@ export function ServerAppShell() {
   const [view, setView] = useState<View>('sala');
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const recoveryStartedFor = useRef<string | null>(null);
@@ -61,6 +63,9 @@ export function ServerAppShell() {
     () => [...data.rooms.flatMap((room) => room.tables || []), ...data.orphanTables],
     [data.rooms, data.orphanTables],
   );
+  const tabs = useMemo(() => roomTabs(data.rooms, data.orphanTables, t('orphanTables')), [data.rooms, data.orphanTables, t]);
+  const activeTab = tabs.find((tab) => tab.id === selectedRoomId) || tabs[0] || null;
+
   const orderByTableId = useMemo(() => {
     const map = new Map<string, Order>();
     for (const order of data.orders) {
@@ -86,7 +91,7 @@ export function ServerAppShell() {
     if (data.loadError) toast.error(t('couldNotLoadData'));
   }, [data.loadError, t]);
 
-  // A link that names a table opens its sheet as soon as the floor is known.
+  // A link that names a table opens it as soon as the floor is known.
   useEffect(() => {
     if (!data.loaded) return;
     if (linkedTable.current === undefined) linkedTable.current = tableFromLocation();
@@ -95,15 +100,22 @@ export function ServerAppShell() {
     linkedTable.current = null;
     if (allTables.some((table) => table.id === wanted)) {
       setSelectedTableId(wanted);
-      setSheetOpen(true);
+      setView('table');
     }
   }, [data.loaded, allTables]);
 
   const selectTable = (table: Table) => {
     setSelectedTableId(table.id);
-    setSheetOpen(true);
+    setView('table');
     if (typeof window !== 'undefined') {
       window.history.replaceState(null, '', `${window.location.pathname}?table=${encodeURIComponent(table.id)}`);
+    }
+  };
+
+  const backToFloor = () => {
+    setView('sala');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', window.location.pathname);
     }
   };
 
@@ -185,15 +197,23 @@ export function ServerAppShell() {
 
   const startOrdering = async () => {
     if (!selectedTable) return;
-    if (cart.items.length > 0 && cart.tableId !== selectedTable.id) {
-      const discard = await confirm(t('discardCartConfirm'), { destructive: true });
-      if (!discard) return;
+    // A ticket begun on another table starts over, dishes (after asking) and
+    // covers alike: a count made for that party is not this one's.
+    if (cart.tableId !== selectedTable.id) {
+      if (cart.items.length > 0) {
+        const discard = await confirm(t('discardCartConfirm'), { destructive: true });
+        if (!discard) return;
+      }
       cart.clearCart();
     }
     cart.setOrderType('dine_in');
-    cart.setTableId(selectedTable.id);
-    if (selectedOrder) cart.setGuestCount(selectedOrder.guest_count || 1);
-    setSheetOpen(false);
+    if (selectedOrder) {
+      cart.setTableId(selectedTable.id);
+      cart.setGuestCount(selectedOrder.guest_count || 1);
+    } else {
+      // A new order starts from the booking's party, or from the seats.
+      cart.setTableId(selectedTable.id, coversForNewOrder(selectedTable, allTables));
+    }
     setView('ordina');
   };
 
@@ -255,8 +275,7 @@ export function ServerAppShell() {
       // a jammed printer must not read as a failed order.
       await sendToKitchen(orderId);
       await data.refreshFloor().catch(() => {});
-      setView('sala');
-      setSheetOpen(true);
+      setView('table');
     } catch (error) {
       if (target && isPermanentAppendRefusal(error)) toast.error(t('attemptDropped'));
       else toast.error(t('couldNotSendOrder'));
@@ -329,9 +348,9 @@ export function ServerAppShell() {
   if (session.disabled) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
-        <Smartphone size={44} className="text-gray-400" />
-        <h1 className="text-lg font-semibold text-gray-900">{t('disabledTitle')}</h1>
-        <p className="max-w-sm text-sm text-gray-500">{t('disabledHint')}</p>
+        <Smartphone size={44} className="text-muted-foreground" />
+        <h1 className="text-lg font-semibold text-foreground">{t('disabledTitle')}</h1>
+        <p className="max-w-sm text-sm text-muted-foreground">{t('disabledHint')}</p>
       </div>
     );
   }
@@ -340,68 +359,86 @@ export function ServerAppShell() {
     return <ServerLoginForm onLogin={session.login} />;
   }
 
+  if (view === 'ordina' && cartTable) {
+    return (
+      <>
+        <OrdinaView
+          table={cartTable}
+          pendingOrder={pendingOrder}
+          products={data.products}
+          categories={data.categories}
+          kotPrintingEnabled={data.settings.kotPrintingEnabled}
+          coverChargeAmount={data.settings.coverChargeAmount}
+          currency={data.settings.currency}
+          submitting={submitting}
+          onBack={() => { setSelectedTableId(cartTable.id); setView('table'); }}
+          onSend={sendCart}
+          onAttachToOrderMenu={(groupId, courseId, productIds) => fillCourse(pendingOrder, groupId, courseId, productIds)}
+        />
+        {ConfirmDialog}
+      </>
+    );
+  }
+
+  if (view === 'table' && selectedTable) {
+    return (
+      <>
+        <TableScreen
+          table={selectedTable}
+          order={selectedOrder}
+          products={data.products}
+          categories={data.categories}
+          kotPrintingEnabled={data.settings.kotPrintingEnabled}
+          busy={busy}
+          onBack={backToFloor}
+          onAddItems={() => { void startOrdering(); }}
+          onChangeGuests={changeGuests}
+          onChangeServiceRun={changeServiceRun}
+          onFillCourse={(groupId, courseId, productIds) => fillCourse(selectedOrder, groupId, courseId, productIds)}
+          onSendToKitchen={sendSelectedToKitchen}
+        />
+        {ConfirmDialog}
+      </>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50 text-gray-900">
-      {view === 'ordina' && cartTable ? (
-        <main className="mx-auto max-w-5xl px-3">
-          <OrdinaView
-            table={cartTable}
-            pendingOrder={pendingOrder}
-            products={data.products}
-            categories={data.categories}
-            kotPrintingEnabled={data.settings.kotPrintingEnabled}
-            coverChargeAmount={data.settings.coverChargeAmount}
-            currency={data.settings.currency}
-            submitting={submitting}
-            onBack={() => { setView('sala'); setSelectedTableId(cartTable.id); setSheetOpen(true); }}
-            onSend={sendCart}
-            onAttachToOrderMenu={(groupId, courseId, productIds) => fillCourse(pendingOrder, groupId, courseId, productIds)}
-          />
-        </main>
-      ) : (
-        <>
-          <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-3 py-2 backdrop-blur">
-            <div className="mx-auto flex max-w-5xl items-center gap-3">
-              <div className="flex size-9 items-center justify-center rounded-lg bg-brand text-white"><ChefHat size={18} /></div>
-              <div className="min-w-0 flex-1">
-                <h1 className="truncate text-base font-semibold">{t('title')}</h1>
-                <p className="truncate text-xs text-gray-500">{t('sala')}</p>
-              </div>
-              <button type="button" onClick={refreshAll} aria-label={t('refresh')} className="rounded-lg border border-gray-200 p-2 text-gray-600"><RefreshCw size={17} /></button>
-              <button type="button" onClick={() => { void session.logout(); }} aria-label={t('logout')} className="rounded-lg border border-gray-200 p-2 text-gray-600"><LogOut size={17} /></button>
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <header className="sticky top-0 z-20 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+        <div className="mx-auto max-w-5xl px-3">
+          <div className="flex h-16 items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-xl leading-tight font-bold">{t('sala')}</h1>
+              <p className="truncate text-sm text-muted-foreground">{user.name || user.email}</p>
             </div>
-          </header>
-          <main className="mx-auto max-w-5xl p-3">
-            {data.loaded ? (
-              <SalaView
-                rooms={data.rooms}
-                orphanTables={data.orphanTables}
-                orderByTableId={orderByTableId}
-                selectedRoomId={selectedRoomId}
-                onSelectRoom={setSelectedRoomId}
-                onSelectTable={selectTable}
+            <Button type="button" variant="outline" size="icon-touch" onClick={refreshAll} aria-label={t('refresh')}>
+              <RefreshCw />
+            </Button>
+            <Button type="button" variant="outline" size="icon-touch" onClick={() => { void session.logout(); }} aria-label={t('logout')}>
+              <LogOut />
+            </Button>
+          </div>
+          {tabs.length > 1 && activeTab && (
+            <div className="pb-3">
+              <SegmentedControl
+                scrollable
+                size="lg"
+                aria-label={t('rooms')}
+                value={activeTab.id}
+                onValueChange={setSelectedRoomId}
+                items={tabs.map((tab) => ({ value: tab.id, label: tab.name, count: tab.tables.length }))}
               />
-            ) : (
-              <div className="flex justify-center py-16"><div className="size-8 animate-spin rounded-full border-4 border-brand border-t-transparent" /></div>
-            )}
-          </main>
-          <TableSheet
-            open={sheetOpen && Boolean(selectedTable)}
-            table={selectedTable}
-            order={selectedOrder}
-            products={data.products}
-            categories={data.categories}
-            kotPrintingEnabled={data.settings.kotPrintingEnabled}
-            busy={busy}
-            onOpenChange={setSheetOpen}
-            onAddItems={() => { void startOrdering(); }}
-            onChangeGuests={changeGuests}
-            onChangeServiceRun={changeServiceRun}
-            onFillCourse={(groupId, courseId, productIds) => fillCourse(selectedOrder, groupId, courseId, productIds)}
-            onSendToKitchen={sendSelectedToKitchen}
-          />
-        </>
-      )}
+            </div>
+          )}
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-5xl flex-1 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        {data.loaded ? (
+          <SalaView tab={activeTab} orderByTableId={orderByTableId} onSelectTable={selectTable} />
+        ) : (
+          <div className="flex justify-center py-16"><div className="size-8 animate-spin rounded-full border-4 border-brand border-t-transparent" /></div>
+        )}
+      </main>
       {ConfirmDialog}
     </div>
   );

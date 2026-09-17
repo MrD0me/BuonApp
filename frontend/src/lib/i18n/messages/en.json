@@ -240,7 +240,6 @@
     "wsConnected": "WebSocket connected"
   },
   "nav": {
-    "collapse": "Collapse",
     "confirmLogout": "Are you sure you want to log out?",
     "customers": "Customers",
     "heapLabel": "Heap: ",
@@ -268,6 +267,7 @@
     "whatsapp": "WhatsApp"
   },
   "orders": {
+    "filters": "Filters",
     "active": "Active",
     "addItem": "Add Item",
     "addItemsCartClearConfirm": "You have items in the order screen’s cart. Adding to this order will clear them. Continue?",
@@ -424,6 +424,7 @@
     "whatsappFailed": "Failed to open WhatsApp"
   },
   "pos": {
+    "changeTable": "Change",
     "addCustomer": "Add Customer",
     "addItems": "Add Items",
     "addItemsFailed": "Failed to add items",
@@ -469,6 +470,7 @@
     "customerUpdated": "Customer updated",
     "customisable": "Customisable",
     "decreasePax": "Decrease pax",
+    "decreaseQuantity": "Decrease quantity",
     "delivery": "Delivery",
     "deliveryAddress": "Delivery address",
     "discount": "Discount",
@@ -491,6 +493,8 @@
     "holdOrderFailed": "Failed to hold order",
     "holdTable": "Hold Table",
     "increasePax": "Increase pax",
+    "increaseQuantity": "Increase quantity",
+    "quantity": "Quantity",
     "invalidPhone": "Phone number is not valid for {country}",
     "itemCount": "{count, plural, one {# item} other {# items}}",
     "items": "Items",
@@ -614,6 +618,7 @@
     "serviceRun": "Which run it goes out in",
     "serviceRunAlreadySent": "Already on a printed ticket — moving it does not reprint",
     "serviceRunShort": "Run {n}",
+    "serviceRunLabel": "Course {n}",
     "sendViaWhatsApp": "Send receipt via WhatsApp",
     "specialInstructions": "Special Instructions",
     "specialInstructionsPlaceholder": "e.g., no onions, extra spicy...",
@@ -950,6 +955,18 @@
     "success": "Database restored successfully. Restarting..."
   },
   "serverApp": {
+    "inCart": "{count, plural, one {# on the ticket} other {# on the ticket}}",
+    "coversCount": "{count, plural, one {# cover} other {# covers}}",
+    "pendingToSend": "{count, plural, one {# to send} other {# to send}}",
+    "newOrder": "New order",
+    "noOpenOrderHint": "The first order opens the table.",
+    "productOptions": "Options for {name}",
+    "backToMenu": "Back to the menu",
+    "categories": "Categories",
+    "rooms": "Rooms",
+    "dishes": "Dishes",
+    "toSend": "To send",
+    "dishCount": "{count, plural, one {# dish} other {# dishes}}",
     "addItems": "Add dishes",
     "addToOrder": "Add to order",
     "attemptDropped": "The pending send was dropped: the check no longer takes it",
@@ -994,6 +1011,7 @@
     "title": "Server App"
   },
   "serviceDays": {
+    "openSinceTime": "open since {time}",
     "alreadyOpen": "A day is already open.",
     "bills": "Bills",
     "blockersCount": "{count} still to settle before the day can close",
@@ -1722,6 +1740,7 @@
     "updatedToast": "Staff updated"
   },
   "tables": {
+    "legendPending": "to send to the kitchen",
     "add": "Add Table",
     "addRoom": "Add room",
     "addTable": "Add Table",

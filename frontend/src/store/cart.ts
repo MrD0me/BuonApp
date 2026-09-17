@@ -14,6 +14,12 @@ interface CartState {
   customerId: number | string | null;
   customer: Customer | null;
   guestCount: number;
+  /**
+   * Whether the floor set the covers on the counter. Until it does they
+   * follow the table the order is for; once it has, no table's own number
+   * replaces them — the party is the same party whichever table it ends up at.
+   */
+  guestCountChosen: boolean;
   deliveryAddress: string;
   orderNotes: string;
 
@@ -28,10 +34,14 @@ interface CartState {
   clearCart: () => void;
   loadItems: (items: CartItem[], tableId: string | null, customerId: number | string | null, guestCount: number, orderNotes?: string, heldOrderId?: string) => void;
   setOrderType: (type: CartState['orderType']) => void;
-  setTableId: (id: string | null) => void;
+  /** `tableCovers` is where a new order on that table starts; a count the floor chose stays. */
+  setTableId: (id: string | null, tableCovers?: number) => void;
   setCustomerId: (id: number | string | null) => void;
   setCustomer: (customer: Customer | null) => void;
+  /** Covers read off something else, such as the order being added to: shown, not chosen. */
   setGuestCount: (count: number) => void;
+  /** The counter: what the floor sets there is kept whichever table the order goes to. */
+  chooseGuestCount: (count: number) => void;
   setDeliveryAddress: (address: string) => void;
   setOrderNotes: (notes: string) => void;
 
@@ -47,6 +57,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   customerId: null,
   customer: null,
   guestCount: 1,
+  guestCountChosen: false,
   deliveryAddress: '',
   orderNotes: '',
 
@@ -201,18 +212,24 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   clearCart: () => {
-    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', orderNotes: '' });
+    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, guestCountChosen: false, orderType: 'dine_in', deliveryAddress: '', orderNotes: '' });
   },
 
+  // A held ticket comes back as it was put down, covers included.
   loadItems: (items, tableId, customerId, guestCount, orderNotes, heldOrderId) => {
-    set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, guestCount, orderNotes: orderNotes || '' });
+    set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, guestCount, guestCountChosen: true, orderNotes: orderNotes || '' });
   },
 
   setOrderType: (type) => set((state) => ({ orderType: type, deliveryAddress: type !== 'delivery' ? '' : state.deliveryAddress })),
-  setTableId: (id) => set({ tableId: id, heldOrderId: null }),
+  setTableId: (id, tableCovers) => set((state) => ({
+    tableId: id,
+    heldOrderId: null,
+    ...(tableCovers !== undefined && !state.guestCountChosen ? { guestCount: tableCovers } : {}),
+  })),
   setCustomerId: (id) => set({ customerId: id }),
   setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null }),
-  setGuestCount: (count) => set({ guestCount: count }),
+  setGuestCount: (count) => set({ guestCount: count, guestCountChosen: false }),
+  chooseGuestCount: (count) => set({ guestCount: count, guestCountChosen: true }),
   setDeliveryAddress: (address) => set({ deliveryAddress: address }),
   setOrderNotes: (notes) => set({ orderNotes: notes }),
 

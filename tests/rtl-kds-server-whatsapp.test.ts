@@ -80,7 +80,7 @@ const SCREEN_FILES = [
   'frontend/src/components/server-app/ServerLoginForm.tsx',
   'frontend/src/components/server-app/SalaView.tsx',
   'frontend/src/components/server-app/TableTile.tsx',
-  'frontend/src/components/server-app/TableSheet.tsx',
+  'frontend/src/components/server-app/TableScreen.tsx',
   'frontend/src/components/server-app/OrdinaView.tsx',
   'frontend/src/components/server-app/HandheldProductGrid.tsx',
   'frontend/src/components/server-app/HandheldCart.tsx',

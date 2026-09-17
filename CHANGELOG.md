@@ -7,10 +7,49 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 ## [Unreleased]
 
 The tableside handheld (the Server App on `:3003`) was rebuilt to take orders
-the way the central PC does — see `docs/palmare.md`.
+the way the central PC does — see `docs/palmare.md`. The interface of both
+the handheld and the central PC was then redrawn for a touch screen.
+
+### Interface
+
+- **Colours of state in one place.** Free, occupied, reserved, held, "to
+  send", paid and unpaid are tokens in `globals.css` and one map in
+  `lib/status-styles.ts`; the floor map, the handheld tile and the order
+  panel read the same colour. "Held" is violet, not the brand blue.
+- **Touch sizes everywhere** — 44 px minimum, 48 for an action, 56 for the
+  main one — on the cash-desk monitor and on the phone. New primitives in
+  `components/ui/`: a `Modal` that is a bottom sheet on a phone and a card on
+  the PC, a `SidePanel`, `PageHeader`, `Stepper`, `StatusBadge`,
+  `SegmentedControl`, `ActionBar`, `EmptyState`. Modals sit one layer above
+  panels and drawers, so nothing has to be unmounted to show a window.
+- **Handheld.** Tables in natural order (Tav 2 before Tav 10) with a colour
+  band and a written status; the table is a page with a back arrow, not a
+  drawer; a dish with nothing to choose goes straight onto the ticket, the
+  pencil on the tile opens its note; the ticket is a bar at the bottom that
+  opens full screen; the service run is one chip that opens a grid. Its own
+  manifest starts on the floor; safe areas are respected.
+- **Central PC.** Sidebar rows of 48 px, without "Collapse"; every page opens
+  with the same header, titled like its sidebar entry, with the sidebar
+  toggle and a chip for the service day. Sala: rooms as a selector, a
+  legend, tiles with band and label, a wider panel whose order lines open an
+  action sheet (run, price, remove, void) instead of three 16 px icons, and
+  the four actions fixed at the bottom. Ordina: the table heads the ticket,
+  compact tiles in five or six columns, a wider ticket, and the same
+  direct-add rule as the handheld. Giornata: the day's figures in the header,
+  filters as a selector, orders as a list whose row opens the same panel as
+  the floor map.
+- The order panel (`components/orders/OrderPanel.tsx`) keeps its logic and
+  hands its drawing to `OrderHeader`, `OrderLines`, `LineActionSheet`,
+  `OrderTotals` and `OrderActionBar`.
 
 ### Changed
 
+- **A new order starts from the table's covers**, on the central PC and on
+  the handheld: the booking's party when the table is booked, otherwise its
+  seats, counting the tables joined to it. It used to start at one every
+  time, and an order sent before anyone corrected the counter counted — and
+  charged — a table of four as a single cover. A count set on the counter by
+  hand stays when the table changes; an order already open keeps its own.
 - **Any waiter can now see and work any open order**, on the handheld and on
   the central PC alike. The `server` role used to see only the orders it had
   opened and got `403` on a colleague's: adding rows, changing status, filling
@@ -41,6 +80,14 @@ the way the central PC does — see `docs/palmare.md`.
 ### Removed
 
 - The customer name and phone fields on the handheld ticket.
+
+### Fixed
+
+- **Adding dishes to an open order on the central PC no longer shows a covers
+  counter.** Only the new dishes were sent, so the counter changed the screen
+  and not the check: a latecomer counted there never reached the bill. As on
+  the handheld, the order's covers are shown beside *Open order* and corrected
+  with *Change covers* in the order panel.
 
 ## [5.0.0] - 2026-09-05
 

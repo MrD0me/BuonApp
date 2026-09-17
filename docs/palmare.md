@@ -1,6 +1,7 @@
 # Il palmare
 
-**Stato:** CURRENT. Deciso e fatto il 2026-09-15 sul branch `palmare`.
+**Stato:** CURRENT. Deciso e fatto il 2026-09-15 sul branch `palmare`; rifatto nella grafica il
+2026-09-16 sul branch `rifacimento-grafica` (fase B del piano approvato quel giorno).
 
 Il Server App è la pagina che i camerieri aprono sul telefono, servita sulla porta `:3003` da
 `main/server-app.ts` e raggiungibile in LAN come `buonapp.local:3003`. Fino alla 5.0.0 era rimasto
@@ -11,37 +12,49 @@ essere montate qui senza toccarle (vedi [coperto-e-menu-fisso.md](coperto-e-menu
 
 ## Cosa fa
 
-Due schermate, e nient'altro.
+Tre schermate, una dopo l'altra: la sala, un tavolo, l'ordine su quel tavolo.
 
-**Sala.** Le stanze come schede, i tavoli come riquadri: colore dello stato, coperti, minuti da
-quando il tavolo è stato aperto, il pallino arancione se c'è un giro ancora da mandare in cucina,
-l'icona della catena se il tavolo è unito a un altro, il nome della prenotazione se è libero e
-prenotato. È un elenco e non la mappa: su uno schermo da sei pollici una stanza in scala si riduce
-a metà e scorre di lato, e al cameriere che sta in piedi accanto al tavolo non serve sapere dove
-sta.
+**Sala.** In testa il nome del cameriere e le stanze come selettore (con il conto dei tavoli); sotto,
+i tavoli come riquadri in ordine naturale (Tav 2 prima di Tav 10). Ogni riquadro dice lo stato due
+volte, con una banda colorata sul bordo e con una pillola scritta («Occupato», «Prenotato»), perché
+il puntino di prima non si vedeva passando; poi coperti e minuti da quando il tavolo è stato aperto,
+il badge arancione «N da inviare» se c'è un giro ancora da mandare in cucina, l'icona della catena
+se il tavolo è unito a un altro, il nome della prenotazione se è libero e prenotato. I colori sono
+quelli di `lib/status-styles.ts`, gli stessi della mappa sul PC. È un elenco e non la mappa: su uno
+schermo da sei pollici una stanza in scala si riduce a metà e scorre di lato, e al cameriere che sta
+in piedi accanto al tavolo non serve sapere dove sta.
 
-**La scheda del tavolo**, che si apre dal basso toccando un riquadro:
+**La schermata del tavolo**, che si apre toccando un riquadro. È una pagina intera con la freccia
+indietro, non più un cassetto: il cassetto non aveva un pulsante di chiusura e andava smontato ogni
+volta che la finestra del menu si apriva sopra, perché stavano sullo stesso livello. Contiene:
 
-- l'ordine aperto con le righe raggruppate sotto il menu che le ha generate, lo stato di cucina di
-  ogni piatto e il pallino del giro da mandare;
-- i coperti, correggibili con `−`/`+` (`PATCH /orders/:id/guests`): il coperto sul conto si riprezza
-  da solo;
+- l'ordine aperto con le righe raggruppate sotto il menu che le ha generate, e per ogni piatto una
+  pillola che dice «Da inviare» finché il giro non è partito e poi lo stato di cucina;
+- i coperti, correggibili con `−`/`+` da 56 px (`PATCH /orders/:id/guests`): il coperto sul conto si
+  riprezza da solo;
 - l'uscita di ogni piatto, spostabile con un tocco prima e dopo l'invio
   (`PATCH /orders/:id/items/:itemId/service-run`);
-- **Completa il menu** sulla portata lasciata vuota di un menu già mandato: apre la stessa finestra
-  del PC ristretta a quella portata e scrive con
+- **«Secondo: da scegliere»**, un pulsante a tutta larghezza sulla portata lasciata vuota di un menu
+  già mandato: apre la stessa finestra del PC ristretta a quella portata e scrive con
   `PUT /orders/:id/menu-groups/:groupId/courses/:courseId`. Un piatto che la cucina ha già preso
   in mano non si scavalca: 409 `course_in_progress`, e il messaggio lo dice;
-- **Aggiungi piatti**, che porta in Ordina con il carrello agganciato a quel tavolo;
-- **Invia in cucina (n)** se c'è un giro pendente.
+- in fondo, fissi, **Invia in cucina (n)** se c'è un giro pendente e **Aggiungi piatti** (o **Prendi
+  ordine** su un tavolo libero), che porta in Ordina con il carrello agganciato a quel tavolo.
 
-**Ordina.** Ricerca, categorie a scorrimento, griglia a due colonne; il carrello sta in un cassetto
-dietro un pulsante che dice quante righe contiene. Il tocco su un piatto fa le stesse tre cose che fa
-sul PC: un menu fisso apre la finestra delle portate (con "Un altro uguale"), un piatto che entra in
-una portata libera di un menu aperto — nel carrello o già sul conto — chiede "compreso nel menu?",
-tutto il resto apre gli aggiuntivi. Nel carrello ogni piatto ha la sua uscita, un menu è una riga di
-quantità uno coi piatti scelti sotto, e per un ordine nuovo ci sono i coperti (con la riga
-informativa del coperto, se la casa lo fa pagare) e le note.
+**Ordina.** In testa il tavolo e i coperti; poi ricerca, categorie come selettore a scorrimento,
+griglia a due colonne. Il tocco su un piatto fa quello che fa sul PC: un menu fisso apre la finestra
+delle portate (con "Un altro uguale"), un piatto che entra in una portata libera di un menu aperto —
+nel carrello o già sul conto — chiede "compreso nel menu?", un piatto con aggiuntivi o a prezzo da
+definire apre le sue opzioni. **Tutto il resto va dritto in comanda**, senza finestra
+(`lib/product-options.ts`): un'acqua non ha niente da decidere, e una finestra per ogni piatto era
+un tocco in più tutta la sera. La matita sul riquadro apre comunque nota e quantità. La comanda è
+una barra fissa in basso che dice quanti piatti e quanto, e un tocco la apre a schermo intero: righe
+da 48 px con il cestino, lo stepper e un pulsante con l'uscita corrente («2ª uscita») che apre la
+griglia solo se va cambiata, perché il piatto la eredita già dalla categoria; un menu è una riga di
+quantità uno coi piatti scelti sotto; per un ordine nuovo ci sono i coperti, che partono dalla
+prenotazione o dai posti del tavolo (con la riga informativa del coperto, se la casa lo fa pagare;
+vedi [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md)), e le note. Le tre finestre stanno un livello sopra la pagina,
+quindi la comanda resta dov'è mentre si corregge una riga.
 
 L'invio scrive l'ordine (`POST /orders`) o aggiunge le righe a quello aperto
 (`POST /orders/:id/items`) e poi manda la comanda (`POST /printers/print-kot`), senza chiedere:
@@ -105,14 +118,22 @@ chiusa.
 | `useServerSession.ts` | accoppiamento, login, logout, feature spenta |
 | `useHandheldData.ts` | catalogo, impostazioni, stanze e ordini aperti; sondaggio ogni 15 s mentre la pagina è visibile |
 | `tenant-format.ts` | semina valuta e paese nello store auth, così `useFormatCurrency` formatta in euro dentro le finestre condivise |
-| `SalaView.tsx`, `TableTile.tsx` | l'elenco per stanza |
-| `TableSheet.tsx` | la scheda del tavolo |
-| `OrdinaView.tsx`, `HandheldProductGrid.tsx`, `HandheldCart.tsx` | la presa comanda |
+| `SalaView.tsx`, `TableTile.tsx` | l'elenco per stanza; `roomTabs()` ordina stanze e tavoli e lo usa anche la testata |
+| `TableScreen.tsx` | la schermata del tavolo |
+| `OrdinaView.tsx`, `HandheldProductGrid.tsx`, `HandheldCart.tsx` | la presa comanda: menu e comanda sono due schermate sotto la stessa testata |
 | `order-attempt.ts` | il tentativo di ordine nuovo persistito per il replay |
 
 Montati così come sono, senza modifiche: `components/pos/AddonModal`, `FixedMenuPicker`,
-`AttachToMenuModal`, `ServiceRunPicker`, e le lib pure `cart-payload`, `cart-identity`,
-`fixed-menu`, `service-runs`, `kot`, `append-attempt`, più `store/cart`.
+`AttachToMenuModal`, `ServiceRunPicker` (sono costruiti su `components/ui/modal`, che sotto i 768 px
+è un foglio dal basso e sopra una carta centrata), e le lib pure `cart-payload`, `cart-identity`,
+`fixed-menu`, `service-runs`, `kot`, `product-options`, `status-styles`, `append-attempt`, più
+`store/cart`. Le primitive di interfaccia (`Stepper`, `StatusBadge`, `SegmentedControl`,
+`ActionBar`, `EmptyState`) stanno in `components/ui/` e sono le stesse del PC.
+
+Il layout della rotta dichiara `viewport-fit=cover` e un manifest suo
+(`public/server-app.webmanifest`, che parte da `/server-standalone` invece che dalla cassa), così
+aggiunto alla schermata iniziale del telefono si apre sulla sala; testata e barra delle azioni si
+tengono lontane dal notch e dall'indicatore di casa con `env(safe-area-inset-*)`.
 
 Il palmare **non importa mai `@/lib/api`** né gli store che lo usano: il suo interceptor 401
 riporta al login del PC. Lo store auth del PC è già nel bundle per via del root layout e il palmare
@@ -147,4 +168,5 @@ del vincolo di proprietà; `npm run lint`, `npm run build`, `npm run build:front
 `npm run i18n:check`, `npm run test:rtl-kds-server-whatsapp` per il frontend (i file del palmare
 stanno nella lista dei file che devono usare solo utilità logiche). Lo spec Playwright
 `frontend/e2e/i18n-batch-5d.spec.ts` percorre login, sala, scheda tavolo e finestra aggiuntivi in
-inglese e in persiano.
+inglese e in persiano; il fixture `tests/e2e-server.cjs` semina un piatto con aggiuntivi («E2E
+Tea») perché il tocco su un piatto senza opzioni non apre più nessuna finestra.
