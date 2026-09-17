@@ -154,13 +154,16 @@ export default function ProductGrid({
                 : product.stock_quantity <= (product.low_stock_threshold || 0) ? t('lowStock') : null
               : null;
 
+            // The cell stretches to the tallest tile in its row and the tile must
+            // stretch with it (h-full): the pencil and the count are pinned to
+            // the cell, and on a shorter tile the count hung below its border.
             return (
               <div key={product.id} className="relative">
                 <button
                   type="button"
                   data-testid="pos-product-card"
                   onClick={() => onProductClick(product)}
-                  className={`flex min-h-[96px] w-full flex-col justify-between gap-2 rounded-2xl border bg-card p-3 pe-11 text-start shadow-xs transition active:scale-[0.98] ${inCartQty > 0 ? 'border-brand ring-1 ring-brand' : 'border-border'}`}
+                  className={`flex h-full min-h-[96px] w-full flex-col justify-between gap-2 rounded-2xl border bg-card p-3 pe-11 text-start shadow-xs transition active:scale-[0.98] ${inCartQty > 0 ? 'border-brand ring-1 ring-brand' : 'border-border'}`}
                 >
                   <span className="flex min-w-0 items-start gap-2.5">
                     {showProductImages && (

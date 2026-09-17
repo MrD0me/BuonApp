@@ -85,12 +85,15 @@ export function HandheldProductGrid({ products, categories, onProductClick, onPr
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
         {visible.map((product) => {
           const count = inCart.get(product.id) || 0;
+          // The cell stretches to the tallest tile in its row and the tile must
+          // stretch with it (h-full): the pencil and the count are pinned to
+          // the cell, and on a shorter tile the count hung below its border.
           return (
             <div key={product.id} className="relative">
               <button
                 type="button"
                 onClick={() => onProductClick(product)}
-                className={`flex min-h-[84px] w-full flex-col justify-between gap-1.5 rounded-2xl border bg-card p-3 pe-12 text-start shadow-xs transition active:scale-[0.98] ${count > 0 ? 'border-brand ring-1 ring-brand' : 'border-border'}`}
+                className={`flex h-full min-h-[84px] w-full flex-col justify-between gap-1.5 rounded-2xl border bg-card p-3 pe-12 text-start shadow-xs transition active:scale-[0.98] ${count > 0 ? 'border-brand ring-1 ring-brand' : 'border-border'}`}
               >
                 <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">{product.name}</span>
                 <span className="flex flex-wrap items-center gap-x-2 pe-8 text-sm">
