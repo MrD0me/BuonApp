@@ -16,6 +16,7 @@ import {
 } from '@/lib/fixed-menu';
 import AttachToMenuModal from '@/components/pos/AttachToMenuModal';
 import { needsOptionsDialog } from '@/lib/product-options';
+import { validCovers } from '@/lib/table-covers';
 import { Modal, ModalBody, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { cartItemToPayload } from '@/lib/cart-payload';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -835,8 +836,8 @@ export default function POSPage() {
   };
 
 
-  const handleSelectAvailableTable = (tableId: string, customer?: { id: string | number; name: string; phone: string } | null) => {
-    cart.setTableId(tableId);
+  const handleSelectAvailableTable = (tableId: string, customer: { id: string | number; name: string; phone: string } | null, covers: number) => {
+    cart.setTableId(tableId, covers);
     if (customer) {
       cart.setCustomer({ ...customer, email: null, visits_count: 0, total_spent: 0, last_visit_at: null, country_code: '' });
     }
@@ -953,14 +954,18 @@ export default function POSPage() {
   }, [appendOrderId]);
 
   /**
-   * `?table=<id>` is the floor plan asking for a first order on a free table.
+   * `?table=<id>&covers=<n>` is the floor plan asking for a first order on a
+   * free table, with the covers the panel worked out for it: the booking's
+   * party, or the seats.
    *
    * It checks first: a handheld may have opened one in the seconds since the
    * panel was drawn, and two open orders on the same table means two bills for
-   * one party. If there is already an order, this becomes an append to it.
+   * one party. If there is already an order, this becomes an append to it, and
+   * the covers are that order's.
    */
   useEffect(() => {
     if (!takeOrderTableId) return;
+    const tableCovers = validCovers(searchParams?.get('covers')) ?? undefined;
     let cancelled = false;
     api.get('/orders', {
       params: { table_id: takeOrderTableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
@@ -973,7 +978,7 @@ export default function POSPage() {
           return;
         }
         cart.setOrderType('dine_in');
-        cart.setTableId(takeOrderTableId);
+        cart.setTableId(takeOrderTableId, tableCovers);
       })
       .catch(() => toast.error(t('loadOrderFailed')))
       .finally(() => { if (!cancelled) router.replace('/pos'); });

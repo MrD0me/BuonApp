@@ -8,6 +8,7 @@ import type { Order, Table } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
 import { cartItemToPayload } from '@/lib/cart-payload';
+import { coversForNewOrder } from '@/lib/table-covers';
 import {
   buildAppendItemsFingerprint, clearAppendAttempt, getAppendAttemptStorage, getOrCreateAppendAttempt,
   isPermanentAppendRefusal, readAppendAttempt,
@@ -196,14 +197,23 @@ export function ServerAppShell() {
 
   const startOrdering = async () => {
     if (!selectedTable) return;
-    if (cart.items.length > 0 && cart.tableId !== selectedTable.id) {
-      const discard = await confirm(t('discardCartConfirm'), { destructive: true });
-      if (!discard) return;
+    // A ticket begun on another table starts over, dishes (after asking) and
+    // covers alike: a count made for that party is not this one's.
+    if (cart.tableId !== selectedTable.id) {
+      if (cart.items.length > 0) {
+        const discard = await confirm(t('discardCartConfirm'), { destructive: true });
+        if (!discard) return;
+      }
       cart.clearCart();
     }
     cart.setOrderType('dine_in');
-    cart.setTableId(selectedTable.id);
-    if (selectedOrder) cart.setGuestCount(selectedOrder.guest_count || 1);
+    if (selectedOrder) {
+      cart.setTableId(selectedTable.id);
+      cart.setGuestCount(selectedOrder.guest_count || 1);
+    } else {
+      // A new order starts from the booking's party, or from the seats.
+      cart.setTableId(selectedTable.id, coversForNewOrder(selectedTable, allTables));
+    }
     setView('ordina');
   };
 

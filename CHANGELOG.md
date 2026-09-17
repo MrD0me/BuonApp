@@ -44,6 +44,12 @@ the handheld and the central PC was then redrawn for a touch screen.
 
 ### Changed
 
+- **A new order starts from the table's covers**, on the central PC and on
+  the handheld: the booking's party when the table is booked, otherwise its
+  seats, counting the tables joined to it. It used to start at one every
+  time, and an order sent before anyone corrected the counter counted — and
+  charged — a table of four as a single cover. A count set on the counter by
+  hand stays when the table changes; an order already open keeps its own.
 - **Any waiter can now see and work any open order**, on the handheld and on
   the central PC alike. The `server` role used to see only the orders it had
   opened and got `403` on a colleague's: adding rows, changing status, filling
@@ -74,6 +80,14 @@ the handheld and the central PC was then redrawn for a touch screen.
 ### Removed
 
 - The customer name and phone fields on the handheld ticket.
+
+### Fixed
+
+- **Adding dishes to an open order on the central PC no longer shows a covers
+  counter.** Only the new dishes were sent, so the counter changed the screen
+  and not the check: a latecomer counted there never reached the bill. As on
+  the handheld, the order's covers are shown beside *Open order* and corrected
+  with *Change covers* in the order panel.
 
 ## [5.0.0] - 2026-09-05
 

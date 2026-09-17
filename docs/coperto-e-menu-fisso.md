@@ -82,6 +82,34 @@ quindi di quel lavoro resta solo la parte che vale ancora: il totale di un conto
 sue righe invece di essere calcolato per conto suo, così la carta in mano al cliente torna riga per
 riga.
 
+**I coperti partono dal tavolo (2026-09-17).** Un ordine nuovo partiva da un coperto su qualunque
+tavolo, e la sala correggeva il contatore a ogni ordine: un giro mandato prima di farlo contava — e
+faceva pagare — un coperto solo a un tavolo da quattro. Adesso il contatore parte dalle **persone della
+prenotazione** se il tavolo è prenotato, altrimenti dai **posti del tavolo**, sommati a quelli dei
+tavoli uniti a lui. Vale dalla mappa («Prendi ordine» passa `/pos?table=<id>&covers=<n>`), dal
+selettore dei tavoli in Ordina e dal palmare; la regola sta in un posto solo,
+`coversForNewOrder` (`frontend/src/lib/table-covers.ts`), sempre dentro 1–99 come vuole
+`POST /orders`.
+
+- **Il numero toccato a mano resta.** Finché nessuno tocca il contatore i coperti seguono il
+  tavolo, anche cambiandolo; dopo, il tavolo non li sovrascrive più: il gruppo è lo stesso a
+  qualunque tavolo si sieda. Lo ricorda `guestCountChosen` nel carrello, e lo accende solo il
+  contatore (`chooseGuestCount`). I coperti letti da un ordine già aperto (`setGuestCount`) non
+  contano come scelta: sono del tavolo di quell'ordine, e se si passa a un tavolo libero valgono
+  quelli del nuovo.
+- **Un ordine già aperto tiene i suoi**, e una comanda in sospeso torna coi coperti con cui era
+  stata messa da parte.
+- **Aggiungendo piatti a un ordine già aperto, Ordina non mostra più il contatore.** L'aggiunta
+  manda solo i piatti nuovi (`POST /orders/:id/items`), quindi il contatore cambiava lo schermo e
+  non il conto: l'amico arrivato dopo, contato lì, sul preconto non c'era. Come sul palmare, i
+  coperti dell'ordine si leggono sotto il nome del tavolo («4 coperti · Ordine aperto») e si
+  correggono dal pannello del tavolo, «Altro» → «Cambia i coperti».
+- **«Prendi ordine» parte da un carrello pulito**, anche vuoto: prima un carrello senza piatti
+  restava com'era, e i coperti contati per un altro tavolo avrebbero vinto su quelli di questo.
+  Lo stesso sul palmare, per un carrello agganciato a un altro tavolo.
+
+Coperto da `npm run test:table-covers`.
+
 **Trovato mentre lo facevo, non sistemato:** la stampa termica non ha mai stampato consegna e
 imballo — solo l'encoder del browser lo fa. Su un conto con consegna, le righe non tornano col
 totale. Qui non si vede perché delivery e asporto sono spenti, ma è un difetto vero e resta lì.
