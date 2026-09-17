@@ -21,7 +21,7 @@
       <li>A graphical floor map with rooms, joined tables, and saved layouts</li>
       <li>Service days with an explicit close and a printed end-of-day report</li>
       <li>Reservations for the service in progress, assigned straight onto the map</li>
-      <li>Kitchen tickets printed by round and routed to per-category stations</li>
+      <li>Kitchen tickets printed by round, sectioned by service run, and routed to per-category stations</li>
       <li>A cover charge carried by head count onto the bill</li>
       <li>Set menus at one price, written into the order as real dishes</li>
       <li>Thermal ESC/POS printing over USB, local network, and OS print queues</li>
@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.0.0" date="2026-09-17">
+      <description>
+        <p>A fixed menu is filled in as the meal goes, not all at once: the starter is sent, and the main is chosen half an hour later with a tap on the grid. Every dish now leaves the kitchen in a **service run** — starters, then pasta, then mains — so a ticket says *when* as well as *what*. The tableside handheld was rebuilt to take orders the way the central PC does, and any waiter can work any open order. Then the interface of both was redrawn for the finger: the till is a touch monitor, and the handheld is a phone.</p>
+      </description>
+    </release>
     <release version="5.0.0" date="2026-09-05">
       <description>
         <p>The interface was rebuilt around **where things live**, not around how they look. The screen that used to be the till is called *Order* and no longer takes money: the till here is the machine standing next to the computer, so calling a screen after it was a lie about the room. A bill is drawn up, cashed, discounted and reprinted where the order is — at the table in the floor plan, or in the service day for takeaway and delivery — and an order is closed from one place only. Two things a table service needs arrived: the **cover charge**, which had a counter but no price, and the **fixed menu**, which the catalogue could not describe at all. One thing left: **splitting a check between guests**, which was never a screen so much as a second shape for the whole billing side.</p>

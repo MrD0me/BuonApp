@@ -2,7 +2,7 @@
 
 BuonApp is an open-source, offline-first Electron desktop POS for restaurants with table service, forked from FloCafe. `main/` contains the Electron main process, Express API (`:3001`), standalone KDS server (`:3002`), Server App for tableside handhelds (`:3003`), SQLite database, printing, and background services. `frontend/` is a statically exported Next.js 16 and React 19 application. `tests/` contains backend, integration, and release test suites.
 
-The domains this fork added on top of upstream — service days, rooms and the floor map, reservations, joined tables, saved layouts, kitchen-ticket rounds, the cover charge, and fixed menus — keep their logic in `main/services/` and use `main/routes/` only for authorization and HTTP translation. Do not reintroduce an import cycle between the two.
+The domains this fork added on top of upstream — service days, rooms and the floor map, reservations, joined tables, saved layouts, kitchen-ticket rounds, service runs, the cover charge, and fixed menus — keep their logic in `main/services/` and use `main/routes/` only for authorization and HTTP translation. Do not reintroduce an import cycle between the two.
 
 ## Progressive disclosure
 
@@ -90,7 +90,7 @@ Select checks that cover the changed subsystem:
 | Database migrations | Fresh database test and upgrade-path migration test |
 | Tables / service days / reservations | `npm run test:table-crud`, `test:rooms-map`, `test:reservations`, `test:reservation-sheet`, `test:table-merge-layouts`, `test:service-days` |
 | Cover charge / fixed menus | `npm run test:cover-charge`, `test:table-covers`, `test:fixed-menu`, plus `test:printer` when the printed line changes |
-| Printing / kitchen tickets | `npm run test:printer`, `test:kot-batch`, `test:receipt-printing` |
+| Printing / kitchen tickets | `npm run test:printer`, `test:kot-batch`, `test:service-runs`, `test:receipt-printing` |
 | Auth / Security | Relevant focused test suite plus broader integration tests |
 | Packaging / Releases | Target platform build commands and release checks |
 

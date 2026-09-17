@@ -4,11 +4,83 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
-## [Unreleased]
+## [6.0.0] - 2026-09-17
 
-The tableside handheld (the Server App on `:3003`) was rebuilt to take orders
-the way the central PC does — see `docs/palmare.md`. The interface of both
-the handheld and the central PC was then redrawn for a touch screen.
+A fixed menu is filled in as the meal goes, not all at once: the starter is
+sent, and the main is chosen half an hour later with a tap on the grid. Every
+dish now leaves the kitchen in a **service run** — starters, then pasta, then
+mains — so a ticket says *when* as well as *what*.
+
+The tableside handheld was rebuilt to take orders the way the central PC does,
+and any waiter can work any open order. Then the interface of both was redrawn
+for the finger: the till is a touch monitor, and the handheld is a phone.
+
+### Added
+
+- **Service runs** (migration v94). Which wave of the meal a dish leaves the
+  kitchen in, from the first to the ninth — not the same thing as the round it
+  was sent in: a table orders everything at once and still wants its food in
+  three goes. Each category has its run (*Goes out in*, on the category), and
+  the floor moves a single row with a tap, before or after sending. The kitchen
+  ticket is sectioned by run and, inside a run, by category; the kitchen display
+  shows the run too. Runs are labels, not gates: *Send* still sends everything
+  pending. Every category starts on the first run, and a ticket with everything
+  on the first run prints exactly as before, so nothing changes until the runs
+  are set on the categories.
+- **A fixed menu filled in as the meal goes** (migration v95). A course can be
+  left empty and filled later. On the grid, a dish that fits a course still open
+  on a menu — in the cart or already on the check — asks *Is this one inside a
+  menu?*, and *On its own* is always one of the answers; on the check, a course
+  left empty is a button that opens the window on that course, on the till and
+  on the handheld. `PUT /orders/:id/menu-groups/:groupId/courses/:courseId` takes
+  what the course holds afterwards, and a dish the kitchen has already started
+  on is refused with `409`. Each dish chosen inside a menu carries its own note
+  and run, and stays under its menu on the bill however late it was chosen.
+- **Exceptions per dish in a menu course** (migration v93). A course drew whole
+  categories; now a dish from outside them can be taken in, and one inside them
+  left out — the sea bass that is on the menu, the lobster that is not.
+- **Handheld: the floor.** Tables room by room, in natural order, with their
+  status, covers, minutes since the order opened, how many dishes are still to
+  send, and the joined-table marker. Read-only: tables are managed from the
+  central PC.
+- **Handheld: the table.** The open order with dishes grouped under their menu,
+  covers correction, per-row service run, a button on each course of a menu left
+  empty, *Add dishes*, *Send to kitchen (n)*.
+- **Handheld: ordering with the PC's own windows** — extras, fixed menu with
+  *One more like it*, *Is this one inside a menu?* — plus per-row runs, covers,
+  order notes, and the cover-charge line when the house charges one.
+- **Handheld: a send interrupted by a reload is retried** with the same
+  idempotency key, for new orders and for rows added to an open one.
+
+### Changed
+
+- **A course marked *Required* is now *Expected*.** A menu can be sent half
+  decided, so a missing course no longer stops anything: it is flagged on the
+  check. A house that relied on it to catch a mistyped order loses that net.
+- **Cancelling inside a menu.** The menu's own row still takes the whole menu
+  off the check; a dish row now takes only that dish, so a guest who changes
+  their mind about the main keeps the starter already eaten.
+- **The menu window opens empty.** It used to reopen with the choices of the
+  menu before it, and dishes already ticked went out without anyone noticing.
+  Repeating a menu is what *One more like it* is for.
+- **A new order starts from the table's covers**, on the central PC and on
+  the handheld: the booking's party when the table is booked, otherwise its
+  seats, counting the tables joined to it. It used to start at one every
+  time, and an order sent before anyone corrected the counter counted — and
+  charged — a table of four as a single cover. A count set on the counter by
+  hand stays when the table changes; an order already open keeps its own.
+- **Any waiter can now see and work any open order**, on the handheld and on
+  the central PC alike. The `server` role used to see only the orders it had
+  opened and got `403` on a colleague's: adding rows, changing status, filling
+  in a menu course, moving a row to another run, voiding with a manager PIN.
+  Orders are still stamped with who opened them (`user_id`), which is what the
+  per-waiter accounts are for; discounts, prices and payments stay closed to
+  waiters as before.
+- The Server App proxy forwards what the handheld needs to order — order
+  detail, rooms, settings, covers, service runs, menu courses — and answers
+  `404` to anything else under `/api` instead of falling through to the page.
+  The three customer routes are no longer forwarded.
+- `GET /api/server-app/info` no longer reports `customers_enabled`.
 
 ### Interface
 
@@ -30,52 +102,19 @@ the handheld and the central PC was then redrawn for a touch screen.
   manifest starts on the floor; safe areas are respected.
 - **Central PC.** Sidebar rows of 48 px, without "Collapse"; every page opens
   with the same header, titled like its sidebar entry, with the sidebar
-  toggle and a chip for the service day. Sala: rooms as a selector, a
-  legend, tiles with band and label, a wider panel whose order lines open an
-  action sheet (run, price, remove, void) instead of three 16 px icons, and
-  the four actions fixed at the bottom. Ordina: the table heads the ticket,
-  compact tiles in five or six columns, a wider ticket, and the same
-  direct-add rule as the handheld. Giornata: the day's figures in the header,
-  filters as a selector, orders as a list whose row opens the same panel as
-  the floor map.
+  toggle and a chip for the service day. Floor: rooms as a selector, a legend
+  of the colours, tiles that say their state with a colour band and keep their
+  words for what the colour cannot say — who is seated and for how long, whose
+  booking it is, how many dishes wait for the kitchen — and a wider panel whose
+  order lines open an action sheet (run, price, remove, void) instead of three
+  16 px icons, with the four actions fixed at the bottom. Order: the table
+  heads the ticket, compact tiles in five or six columns, a wider ticket, and
+  the same direct-add rule as the handheld. Today: the day's figures in the
+  header, filters as a selector, orders as a list whose row opens the same
+  panel as the floor map.
 - The order panel (`components/orders/OrderPanel.tsx`) keeps its logic and
   hands its drawing to `OrderHeader`, `OrderLines`, `LineActionSheet`,
   `OrderTotals` and `OrderActionBar`.
-
-### Changed
-
-- **A new order starts from the table's covers**, on the central PC and on
-  the handheld: the booking's party when the table is booked, otherwise its
-  seats, counting the tables joined to it. It used to start at one every
-  time, and an order sent before anyone corrected the counter counted — and
-  charged — a table of four as a single cover. A count set on the counter by
-  hand stays when the table changes; an order already open keeps its own.
-- **Any waiter can now see and work any open order**, on the handheld and on
-  the central PC alike. The `server` role used to see only the orders it had
-  opened and got `403` on a colleague's: adding rows, changing status, filling
-  in a menu course, moving a row to another run, voiding with a manager PIN.
-  Orders are still stamped with who opened them (`user_id`), which is what the
-  per-waiter accounts are for; discounts, prices and payments stay closed to
-  waiters as before.
-- The Server App proxy forwards what the handheld needs to order — order
-  detail, rooms, settings, covers, service runs, menu courses — and answers
-  `404` to anything else under `/api` instead of falling through to the page.
-  The three customer routes are no longer forwarded.
-- `GET /api/server-app/info` no longer reports `customers_enabled`.
-
-### Added
-
-- **Handheld: floor view.** Rooms as tabs, tables as tiles with status,
-  covers, minutes since the order opened, the pending-ticket dot and the
-  joined-table marker. Read-only: tables are managed from the central PC.
-- **Handheld: table sheet.** The open order with dishes grouped under their
-  menu, covers correction, per-row service run, *Complete the menu* on a course
-  left empty, *Add dishes*, *Send to kitchen (n)*.
-- **Handheld: ordering with the PC's own windows** — extras, fixed menu with
-  *One more like it*, *inside the menu?* — plus per-row runs, covers, order
-  notes, and the cover-charge line when the house charges one.
-- **Handheld: a send interrupted by a reload is retried** with the same
-  idempotency key, for new orders and for rows added to an open one.
 
 ### Removed
 
@@ -83,11 +122,21 @@ the handheld and the central PC was then redrawn for a touch screen.
 
 ### Fixed
 
+- **Changing table in Order moved only the label.** Coming from a table with
+  *Add Item*, picking another table left the cart pointed at the first order:
+  the screen said table 10 while the round went on table 2's check. The order a
+  send is added to is now worked out from the cart's table, never remembered.
+- **A note on a fixed menu never reached the kitchen.** There was one note for
+  the whole menu, kept on the menu's own row, which every ticket skips. The note
+  is now on each chosen dish, and prints like any other.
+- **A voided dish left a round behind.** The queue of rows to send did not skip
+  the negative row a void writes, so the table showed a round still to go and
+  the next ticket printed `1 VOID: TAGLIATA`.
 - **Adding dishes to an open order on the central PC no longer shows a covers
   counter.** Only the new dishes were sent, so the counter changed the screen
   and not the check: a latecomer counted there never reached the bill. As on
   the handheld, the order's covers are shown beside *Open order* and corrected
-  with *Change covers* in the order panel.
+  with *Change the covers* in the order panel.
 
 ## [5.0.0] - 2026-09-05
 
