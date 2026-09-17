@@ -93,27 +93,31 @@ export function HandheldProductGrid({ products, categories, onProductClick, onPr
                 className={`flex min-h-[84px] w-full flex-col justify-between gap-1.5 rounded-2xl border bg-card p-3 pe-12 text-start shadow-xs transition active:scale-[0.98] ${count > 0 ? 'border-brand ring-1 ring-brand' : 'border-border'}`}
               >
                 <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">{product.name}</span>
-                <span className="flex flex-wrap items-center gap-x-2 text-sm">
+                <span className="flex flex-wrap items-center gap-x-2 pe-8 text-sm">
                   <Ltr className={product.is_fixed_menu ? 'font-semibold text-brand' : 'font-medium text-muted-foreground'}>{fmt(Number(product.price) || 0)}</Ltr>
                   {product.is_fixed_menu && <span className="text-brand">{tPos('menuFixed')}</span>}
                 </span>
+                {count > 0 && <span className="sr-only">{t('inCart', { count })}</span>}
               </button>
-              <span className="absolute end-1 top-1">
-                {count > 0 ? (
-                  <span className="flex size-touch items-center justify-center" aria-hidden="true">
-                    <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-brand px-2 text-sm font-bold text-white"><Ltr>{count}</Ltr></span>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    aria-label={t('productOptions', { name: product.name })}
-                    onClick={() => onProductOptions(product)}
-                    className="flex size-touch items-center justify-center rounded-xl text-muted-foreground/70 transition active:bg-muted"
-                  >
-                    <Pencil size={18} />
-                  </button>
-                )}
-              </span>
+              {/* The pencil never gives up its corner: a dish already on the
+                  ticket is exactly the one the floor comes back to for a third
+                  plate with a note, which is a line of its own. */}
+              <button
+                type="button"
+                aria-label={t('productOptions', { name: product.name })}
+                onClick={() => onProductOptions(product)}
+                className="absolute end-1 top-1 flex size-touch items-center justify-center rounded-xl text-muted-foreground/70 transition active:bg-muted"
+              >
+                <Pencil size={18} />
+              </button>
+              {count > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute end-2.5 bottom-2.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-brand px-1.5 text-sm font-bold text-white"
+                >
+                  <Ltr>{count}</Ltr>
+                </span>
+              )}
             </div>
           );
         })}

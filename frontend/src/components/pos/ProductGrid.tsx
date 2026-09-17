@@ -184,7 +184,7 @@ export default function ProductGrid({
                     )}
                     <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">{product.name}</span>
                   </span>
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 pe-8">
                     <Ltr className={`text-base font-semibold ${product.is_fixed_menu ? 'text-brand' : 'text-foreground'}`}>{fmt(Number(product.price))}</Ltr>
                     {product.is_fixed_menu && <span className="text-sm text-brand">{t('menuFixed')}</span>}
                     {product.tags && product.tags.length > 0 && <TagBadge tag={product.tags[0]} />}
@@ -194,24 +194,28 @@ export default function ProductGrid({
                       </span>
                     )}
                   </span>
+                  {inCartQty > 0 && <span className="sr-only">{tServerApp('inCart', { count: inCartQty })}</span>}
                 </button>
-                <span className="absolute end-1 top-1">
-                  {inCartQty > 0 ? (
-                    <span className="flex size-touch items-center justify-center" aria-hidden="true">
-                      <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-brand px-2 text-sm font-bold text-white"><Ltr>{inCartQty}</Ltr></span>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      aria-label={tServerApp('productOptions', { name: product.name })}
-                      title={t('customisable')}
-                      onClick={() => onProductOptions(product)}
-                      className="flex size-touch items-center justify-center rounded-xl text-muted-foreground/70 transition active:bg-muted"
-                    >
-                      <Pencil size={18} />
-                    </button>
-                  )}
-                </span>
+                {/* The pencil never gives up its corner: a dish already on the
+                    ticket is exactly the one the floor comes back to for a
+                    third plate with a note, which is a line of its own. */}
+                <button
+                  type="button"
+                  aria-label={tServerApp('productOptions', { name: product.name })}
+                  title={t('customisable')}
+                  onClick={() => onProductOptions(product)}
+                  className="absolute end-1 top-1 flex size-touch items-center justify-center rounded-xl text-muted-foreground/70 transition active:bg-muted"
+                >
+                  <Pencil size={18} />
+                </button>
+                {inCartQty > 0 && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute end-2.5 bottom-2.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-brand px-1.5 text-sm font-bold text-white"
+                  >
+                    <Ltr>{inCartQty}</Ltr>
+                  </span>
+                )}
               </div>
             );
           })}

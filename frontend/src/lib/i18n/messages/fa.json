@@ -955,6 +955,7 @@
     "success": "پایگاه داده با کامیابی بازگردانده شد. در حال راه‌اندازی دوباره"
   },
   "serverApp": {
+    "inCart": "{count, plural, one {# در سفارش} other {# در سفارش}}",
     "coversCount": "{count, plural, one {# نفر} other {# نفر}}",
     "pendingToSend": "{count, plural, one {# برای ارسال} other {# برای ارسال}}",
     "newOrder": "سفارش جدید",

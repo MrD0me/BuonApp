@@ -955,6 +955,7 @@
     "success": "Database ripristinato con successo. Riavvio in corso..."
   },
   "serverApp": {
+    "inCart": "{count, plural, one {# in comanda} other {# in comanda}}",
     "coversCount": "{count, plural, one {# coperto} other {# coperti}}",
     "pendingToSend": "{count, plural, one {# da inviare} other {# da inviare}}",
     "newOrder": "Nuovo ordine",

@@ -955,6 +955,7 @@
     "success": "Database restored successfully. Restarting..."
   },
   "serverApp": {
+    "inCart": "{count, plural, one {# on the ticket} other {# on the ticket}}",
     "coversCount": "{count, plural, one {# cover} other {# covers}}",
     "pendingToSend": "{count, plural, one {# to send} other {# to send}}",
     "newOrder": "New order",

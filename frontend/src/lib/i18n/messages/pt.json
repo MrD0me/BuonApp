@@ -955,6 +955,7 @@
     "success": "Banco de dados restaurado com sucesso. Reiniciando..."
   },
   "serverApp": {
+    "inCart": "{count, plural, one {# no pedido} other {# no pedido}}",
     "coversCount": "{count, plural, one {# pessoa} other {# pessoas}}",
     "pendingToSend": "{count, plural, one {# a enviar} other {# a enviar}}",
     "newOrder": "Novo pedido",
