@@ -51,8 +51,9 @@ un tocco in più tutta la sera. La matita sul riquadro apre comunque nota e quan
 una barra fissa in basso che dice quanti piatti e quanto, e un tocco la apre a schermo intero: righe
 da 48 px con il cestino, lo stepper e un pulsante con l'uscita corrente («2ª uscita») che apre la
 griglia solo se va cambiata, perché il piatto la eredita già dalla categoria; un menu è una riga di
-quantità uno coi piatti scelti sotto; per un ordine nuovo ci sono i coperti (con la riga informativa
-del coperto, se la casa lo fa pagare) e le note. Le tre finestre stanno un livello sopra la pagina,
+quantità uno coi piatti scelti sotto; per un ordine nuovo ci sono i coperti, che partono dalla
+prenotazione o dai posti del tavolo (con la riga informativa del coperto, se la casa lo fa pagare;
+vedi [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md)), e le note. Le tre finestre stanno un livello sopra la pagina,
 quindi la comanda resta dov'è mentre si corregge una riga.
 
 L'invio scrive l'ordine (`POST /orders`) o aggiunge le righe a quello aperto

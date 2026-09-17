@@ -62,7 +62,7 @@ export function HandheldCart({
                 min={1}
                 max={99}
                 value={cart.guestCount}
-                onChange={cart.setGuestCount}
+                onChange={cart.chooseGuestCount}
                 decreaseLabel={tPos('decreasePax')}
                 increaseLabel={tPos('increasePax')}
               />

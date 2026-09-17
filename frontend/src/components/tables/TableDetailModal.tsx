@@ -11,6 +11,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 import { TABLE_STATUS_TONE } from '@/lib/status-styles';
 import { pendingDishCount } from '@/lib/kot';
+import { coversForNewOrder } from '@/lib/table-covers';
 import { OrderPanel } from '@/components/orders/OrderPanel';
 import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
@@ -67,15 +68,18 @@ export function TableDetailModal({
   /**
    * Opens a first order on this table. The composing happens on the ordering
    * screen, which is the only one with the catalogue and the add-on choices —
-   * this side just says which table it is for.
+   * this side just says which table it is for, and how many are sitting at it.
+   *
+   * The ticket starts clean even when it had no dishes: covers counted for
+   * another table would otherwise stay on the counter and win over this one's.
    */
   const takeOrder = async () => {
     if (cartStore.items.length > 0) {
       const proceed = await confirm(tOrders('cartClearConfirm'));
       if (!proceed) return;
-      cartStore.clearCart();
     }
-    router.push(`/pos?table=${table.id}`);
+    cartStore.clearCart();
+    router.push(`/pos?table=${table.id}&covers=${coversForNewOrder(table, groupMembers)}`);
   };
 
   const splitGroup = async () => {

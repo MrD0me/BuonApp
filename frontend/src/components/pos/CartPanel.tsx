@@ -131,7 +131,9 @@ export default function CartPanel({ tables, products, categories, submitting, on
                 {tableName ? t('tableLabel', { name: tableName }) : t('selectTable')}
               </p>
               <p className="truncate text-sm text-muted-foreground">
-                {existingOrder ? tServerApp('openOrder') : tServerApp('newOrder')}
+                {existingOrder
+                  ? `${tServerApp('coversCount', { count: existingOrder.guest_count || 1 })} · ${tServerApp('openOrder')}`
+                  : tServerApp('newOrder')}
               </p>
             </div>
             <Button type="button" variant={tableName ? 'outline' : 'default'} size="touch" onClick={onShowTablePicker}>
@@ -140,7 +142,11 @@ export default function CartPanel({ tables, products, categories, submitting, on
           </div>
         )}
 
-        {cart.orderType === 'dine_in' && (
+        {/* The counter is for a new order only, as on the handheld. Adding to
+            an open order sends the dishes and nothing else, so a counter here
+            changed the screen and not the check. That order's covers show
+            under the table's name, and are corrected from the order panel. */}
+        {cart.orderType === 'dine_in' && !existingOrder && (
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-base font-semibold text-foreground"><Users size={18} />{t('pax')}</span>
             <Stepper
@@ -148,7 +154,7 @@ export default function CartPanel({ tables, products, categories, submitting, on
               min={1}
               max={99}
               value={cart.guestCount}
-              onChange={cart.setGuestCount}
+              onChange={cart.chooseGuestCount}
               decreaseLabel={t('decreasePax')}
               increaseLabel={t('increasePax')}
             />

@@ -2,13 +2,15 @@
 
 import { X } from 'lucide-react';
 import type { Table } from '@/lib/types';
+import { coversForNewOrder } from '@/lib/table-covers';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useTranslations, type AppConfig } from 'use-intl';
 
 interface Props {
   tables: Table[];
   selectedTableId: string | null;
-  onSelectAvailable: (tableId: string, customer?: { id: string | number; name: string; phone: string } | null) => void;
+  /** `covers` is where the new order's covers start: the booking's party, or the table's seats. */
+  onSelectAvailable: (tableId: string, customer: { id: string | number; name: string; phone: string } | null, covers: number) => void;
   onSelectOccupied: (table: Table) => void;
   onSelectHeld: (tableId: string) => void;
   onPlaceOrder: () => void;
@@ -48,7 +50,7 @@ export default function TablePickerModal({
       const customer = booking?.customer_id
         ? { id: booking.customer_id, name: booking.name, phone: booking.phone ?? '' }
         : null;
-      onSelectAvailable(table.id, customer);
+      onSelectAvailable(table.id, customer, coversForNewOrder(table, tables));
       return;
     }
   };
