@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -560,6 +561,10 @@ async function detectLinuxPrinters(signal?: AbortSignal): Promise<PrinterInfo[]>
 }
 
 export async function initPrinter(): Promise<void> {
+  // Builds the raw-print helper in the background, so the first USB ticket of the
+  // day does not wait on the compiler.
+  warmUpPrintHelper();
+
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as any;
@@ -2314,33 +2319,72 @@ public static class FloRawPrinter {
 }
 `;
 
+// Compiling the helper with Add-Type costs several seconds — on a POS-grade
+// Celeron it was most of a ten-second wait per ticket — so the assembly is built
+// once into a cached DLL that later prints merely load. The file name carries a
+// hash of the source, so changing the C# above invalidates the cache instead of
+// silently printing through a stale build.
+const WINSPOOL_HELPER_HASH = crypto.createHash('sha1').update(WINSPOOL_HELPER_SOURCE).digest('hex').slice(0, 12);
+
+function winspoolHelperAssemblyPath(): string {
+  return path.join(os.tmpdir(), 'buonapp-print', `rawprint-${WINSPOOL_HELPER_HASH}.dll`);
+}
+
+// Compiles to a temporary name and renames into place, so a print that starts
+// while this is running never loads a half-written DLL.
+const WINSPOOL_COMPILE_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+try {
+  $target = $env:FLO_HELPER_DLL
+  if ([string]::IsNullOrEmpty($target)) { throw 'no helper path supplied' }
+  if (Test-Path -LiteralPath $target) { exit 0 }
+
+  $dir = Split-Path -Parent $target
+  if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+  $staging = $target + '.' + $PID + '.tmp'
+  Add-Type -TypeDefinition @'
+${WINSPOOL_HELPER_SOURCE}
+'@ -OutputAssembly $staging -OutputType Library
+  Move-Item -LiteralPath $staging -Destination $target -Force
+  exit 0
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}
+`;
+
 // Delivered as -EncodedCommand rather than a .ps1: ExecutionPolicy governs script
 // files only, and a GPO-set policy silently overrides -ExecutionPolicy Bypass, so
 // a script file would fail on exactly the managed machines a POS runs on.
 // The printer name and payload path travel in the child environment, so neither
 // is ever parsed as script text.
+//
+// The inline Add-Type is kept as a fallback: when the cached DLL is missing or
+// unreadable the ticket still prints, just as slowly as it used to.
 const WINSPOOL_HELPER_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 try {
   $name = $env:FLO_PRINTER_NAME
   $file = $env:FLO_PRINT_FILE
+  $dll = $env:FLO_HELPER_DLL
   if ([string]::IsNullOrEmpty($name)) { throw 'no printer name supplied' }
   if ([string]::IsNullOrEmpty($file)) { throw 'no payload file supplied' }
 
-  # Best-effort metadata for Tier-2 diagnostics. This is never included in the
-  # anonymous telemetry payload and must not prevent the raw print attempt.
-  try {
-    $printerInfo = Get-CimInstance -ClassName Win32_Printer -Property Name,PrinterStatus,DriverName |
-      Where-Object { $_.Name -eq $name } |
-      Select-Object -First 1 Name,PrinterStatus,DriverName
-    if ($printerInfo) {
-      Write-Output ('FLO_PRINTER_INFO=' + ($printerInfo | ConvertTo-Json -Compress))
+  $loaded = $false
+  if (-not [string]::IsNullOrEmpty($dll)) {
+    try {
+      Add-Type -Path $dll
+      $loaded = $true
+    } catch {
+      $loaded = $false
     }
-  } catch { }
-
-  Add-Type -TypeDefinition @'
+  }
+  if (-not $loaded) {
+    Add-Type -TypeDefinition @'
 ${WINSPOOL_HELPER_SOURCE}
 '@
+  }
 
   $bytes = [System.IO.File]::ReadAllBytes($file)
   $jobId = [FloRawPrinter]::SendRaw($name, $bytes)
@@ -2350,6 +2394,23 @@ ${WINSPOOL_HELPER_SOURCE}
   [Console]::Error.WriteLine($_.Exception.Message)
   exit 1
 }
+`;
+
+// Driver name and queue status are only ever read when a print fails, so the WMI
+// query that collects them runs on that path alone rather than in front of every
+// ticket, where it was pure latency.
+const WINSPOOL_DIAGNOSTICS_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+try {
+  $name = $env:FLO_PRINTER_NAME
+  $printerInfo = Get-CimInstance -ClassName Win32_Printer -Property Name,PrinterStatus,DriverName |
+    Where-Object { $_.Name -eq $name } |
+    Select-Object -First 1 Name,PrinterStatus,DriverName
+  if ($printerInfo) {
+    Write-Output ('FLO_PRINTER_INFO=' + ($printerInfo | ConvertTo-Json -Compress))
+  }
+} catch { }
+exit 0
 `;
 
 const execFileAsync = promisify(execFile);
@@ -2374,6 +2435,72 @@ function parseWindowsPrintOutput(output: unknown): Pick<DispatchResult, 'jobId' 
   return parsed;
 }
 
+// One compile per app run at most: the promise is cached so concurrent tickets
+// wait on the same build instead of each starting their own.
+let winspoolHelperBuild: Promise<string | null> | null = null;
+
+async function ensureWinspoolHelperAssembly(signal?: AbortSignal): Promise<string | null> {
+  if (process.platform !== 'win32') return null;
+
+  const target = winspoolHelperAssemblyPath();
+  if (fs.existsSync(target)) return target;
+  if (winspoolHelperBuild) return await winspoolHelperBuild;
+
+  winspoolHelperBuild = (async () => {
+    try {
+      const encoded = Buffer.from(WINSPOOL_COMPILE_SCRIPT, 'utf16le').toString('base64');
+      await execFileAsync(
+        'powershell',
+        ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+        {
+          encoding: 'utf8',
+          timeout: 60000,
+          signal,
+          windowsHide: true,
+          env: { ...process.env, FLO_HELPER_DLL: target },
+        },
+      );
+      if (!fs.existsSync(target)) return null;
+      console.log(`[Printer] Raw-print helper compiled to ${target}`);
+      return target;
+    } catch (err: any) {
+      // Not fatal: printing falls back to compiling inline on every job.
+      console.log('[Printer] Could not pre-compile the raw-print helper:', String(err.stderr || err.message || '').trim());
+      return null;
+    } finally {
+      winspoolHelperBuild = null;
+    }
+  })();
+
+  return await winspoolHelperBuild;
+}
+
+/** Warms the helper cache so the first ticket of the day does not pay for the compile. */
+export function warmUpPrintHelper(): void {
+  if (process.platform !== 'win32') return;
+  void ensureWinspoolHelperAssembly().catch(() => { /* best-effort */ });
+}
+
+async function fetchWindowsPrinterDiagnostics(printerName: string): Promise<Pick<DispatchResult, 'driverName' | 'printerStatus'>> {
+  try {
+    const encoded = Buffer.from(WINSPOOL_DIAGNOSTICS_SCRIPT, 'utf16le').toString('base64');
+    const { stdout } = await execFileAsync(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      {
+        encoding: 'utf8',
+        timeout: PRINTER_DETECTION_TIMEOUT_MS,
+        windowsHide: true,
+        env: { ...process.env, FLO_PRINTER_NAME: printerName },
+      },
+    );
+    const { driverName, printerStatus } = parseWindowsPrintOutput(stdout);
+    return { ...(driverName ? { driverName } : {}), ...(printerStatus !== undefined ? { printerStatus } : {}) };
+  } catch {
+    return {};
+  }
+}
+
 async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
   if (!printerName) {
     const detail = 'No Windows printer configured; refusing to guess a target';
@@ -2387,6 +2514,7 @@ async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: A
   try {
     fs.writeFileSync(tmpFile, data);
 
+    const helperDll = await ensureWinspoolHelperAssembly(signal);
     const encoded = Buffer.from(WINSPOOL_HELPER_SCRIPT, 'utf16le').toString('base64');
 
     const { stdout } = await execFileAsync(
@@ -2397,7 +2525,12 @@ async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: A
         timeout: 20000,
         signal,
         windowsHide: true,
-        env: { ...process.env, FLO_PRINTER_NAME: printerName, FLO_PRINT_FILE: tmpFile },
+        env: {
+          ...process.env,
+          FLO_PRINTER_NAME: printerName,
+          FLO_PRINT_FILE: tmpFile,
+          ...(helperDll ? { FLO_HELPER_DLL: helperDll } : {}),
+        },
       },
     );
 
@@ -2412,6 +2545,7 @@ async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: A
       detail: detail || `Windows raw print failed for "${printerName}"`,
       failureClass: classifyPrintFailure(detail),
       platformErrorCode: extractPlatformErrorCode(detail),
+      ...(await fetchWindowsPrinterDiagnostics(printerName)),
       ...parseWindowsPrintOutput(err.stdout),
     };
   } finally {
