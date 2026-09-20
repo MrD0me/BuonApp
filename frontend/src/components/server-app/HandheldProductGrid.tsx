@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Pencil, Search } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Category, Product } from '@/lib/types';
@@ -12,6 +12,11 @@ import { Ltr } from '@/components/layout/Ltr';
 interface Props {
   products: Product[];
   categories: Category[];
+  /** What the menu is filtered down to. Held by the screen, not here — see below. */
+  query: string;
+  onQueryChange: (query: string) => void;
+  categoryId: string;
+  onCategoryChange: (categoryId: string) => void;
   /** A tap on the dish itself. */
   onProductClick: (product: Product) => void;
   /** The small pencil on the tile: note and quantity, whatever the dish. */
@@ -27,13 +32,18 @@ interface Props {
  * the shell decides — or straight into the cart, when there is nothing to
  * decide. The pencil on the tile is for the note that a plain dish would
  * otherwise have no way to carry.
+ *
+ * Which category is showing, and what is typed in the search, belong to the
+ * screen above: opening the ticket takes the grid off the page, and a waiter
+ * who had to find "Dolci" again after every glance at the check would swear
+ * the category had disappeared.
  */
-export function HandheldProductGrid({ products, categories, onProductClick, onProductOptions }: Props) {
+export function HandheldProductGrid({
+  products, categories, query, onQueryChange, categoryId, onCategoryChange, onProductClick, onProductOptions,
+}: Props) {
   const t = useTranslations('serverApp');
   const tPos = useTranslations('pos');
   const fmt = useFormatCurrency();
-  const [query, setQuery] = useState('');
-  const [categoryId, setCategoryId] = useState<string>('all');
   const cartItems = useCartStore((state) => state.items);
 
   // How many of each dish are already in the cart, menus counted by the dishes chosen inside them.
@@ -55,10 +65,16 @@ export function HandheldProductGrid({ products, categories, onProductClick, onPr
       .map((category) => ({ value: String(category.id), label: category.name })),
   ], [categories, tPos]);
 
+  // The menu is re-read while the phone is awake, so the chip the waiter is
+  // standing on can be taken away under them. Falling back to the whole menu
+  // beats a grid filtered on a category that no longer exists: no chip lit,
+  // and not a dish in sight.
+  const selected = categoryItems.some((item) => item.value === categoryId) ? categoryId : 'all';
+
   const needle = query.trim().toLowerCase();
   const visible = products.filter((product) => {
     if (product.is_active === false) return false;
-    if (categoryId !== 'all' && String(product.category_id) !== categoryId) return false;
+    if (selected !== 'all' && String(product.category_id) !== selected) return false;
     return !needle || product.name.toLowerCase().includes(needle);
   });
 
@@ -68,7 +84,7 @@ export function HandheldProductGrid({ products, categories, onProductClick, onPr
         <Search size={20} className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => onQueryChange(event.target.value)}
           placeholder={t('searchMenu')}
           aria-label={t('searchMenu')}
           className="h-touch w-full rounded-xl border border-input bg-card ps-11 pe-3 text-base outline-none focus:ring-2 focus:ring-brand"
@@ -78,8 +94,8 @@ export function HandheldProductGrid({ products, categories, onProductClick, onPr
         scrollable
         size="lg"
         aria-label={t('categories')}
-        value={categoryId}
-        onValueChange={setCategoryId}
+        value={selected}
+        onValueChange={onCategoryChange}
         items={categoryItems}
       />
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">

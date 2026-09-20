@@ -7,6 +7,46 @@ import { cn } from "@/lib/utils"
 import { usePosSettingsStore } from "@/store/pos-settings"
 import { getLanguageDirection } from "@/lib/i18n"
 
+/** How much of the row fades out on a side that has more behind it. */
+const EDGE_FADE_PX = 28
+
+/**
+ * Whether the scrolling row has anything left of its left edge, or right of
+ * its right edge — in physical sides, because that is where the fade goes.
+ *
+ * A right-to-left row scrolls into negative numbers, so the distance from the
+ * start is the absolute value, and "start" is then the right-hand side.
+ */
+function useScrollEdges(enabled: boolean, rtl: boolean, items: unknown) {
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [edges, setEdges] = React.useState({ left: false, right: false })
+
+  React.useEffect(() => {
+    const node = ref.current
+    if (!enabled || !node) return
+    const measure = () => {
+      const room = node.scrollWidth - node.clientWidth
+      const past = Math.abs(node.scrollLeft)
+      // A pixel of slack: fractional layouts never land on exactly 0 or max.
+      const fromStart = past > 1
+      const toEnd = past < room - 1
+      setEdges({ left: rtl ? toEnd : fromStart, right: rtl ? fromStart : toEnd })
+    }
+    measure()
+    node.addEventListener("scroll", measure, { passive: true })
+    // The row also stops overflowing when the pane is widened, or when a
+    // shorter set of items arrives — a resize watcher catches both.
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => {
+      node.removeEventListener("scroll", measure)
+      observer.disconnect()
+    }
+  }, [enabled, rtl, items])
+
+  return { ref, edges }
+}
+
 /**
  * One choice among a few, all visible: the rooms of the floor, the filters of
  * the day, the wave a dish goes out in. Radix ToggleGroup in single mode,
@@ -44,14 +84,34 @@ function SegmentedControl({
 }: SegmentedControlProps) {
   const language = usePosSettingsStore((s) => s.language)
   const direction = dir ?? getLanguageDirection(language)
+  const { ref, edges } = useScrollEdges(scrollable, direction === "rtl", items)
+  // The chosen item, brought back into the strip. A row that scrolls can be
+  // drawn with its selection off screen — after a remount, or when the value
+  // is set from outside — and then nothing looks selected at all. `nearest`
+  // on both axes moves the strip and leaves the page where it is.
+  React.useEffect(() => {
+    if (!scrollable) return
+    ref.current
+      ?.querySelector<HTMLElement>('[data-state="on"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" })
+  }, [scrollable, value, items, ref])
+  // A scrolling row with no scrollbar and no fade is a row that lies: on a
+  // phone the categories past the edge are simply not there, and the floor
+  // reports them missing. The fade appears only on a side that has something
+  // behind it, so a row that fits is left alone.
+  const fade = edges.left || edges.right
+    ? `linear-gradient(to right, ${edges.left ? `transparent 0, #000 ${EDGE_FADE_PX}px` : "#000 0"}, ${edges.right ? `#000 calc(100% - ${EDGE_FADE_PX}px), transparent 100%` : "#000 100%"})`
+    : undefined
   return (
     <ToggleGroupPrimitive.Root
+      ref={ref}
       type="single"
       value={value}
       onValueChange={(next) => { if (next) onValueChange(next) }}
       dir={direction}
       data-slot="segmented-control"
       aria-label={props["aria-label"]}
+      style={fade ? { maskImage: fade, WebkitMaskImage: fade } : undefined}
       className={cn(
         "bg-muted flex gap-1 rounded-xl p-1",
         // By default the row sizes to its content and refuses to be squeezed

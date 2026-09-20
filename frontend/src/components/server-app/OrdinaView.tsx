@@ -54,6 +54,11 @@ export function OrdinaView({
   const fmt = useFormatCurrency();
   const cart = useCartStore();
   const [cartOpen, setCartOpen] = useState(false);
+  // The menu's own filter, kept up here because the grid comes off the page
+  // whenever the ticket is opened: held inside it, the category the waiter
+  // had found would be gone on the way back from every glance at the check.
+  const [menuQuery, setMenuQuery] = useState('');
+  const [menuCategoryId, setMenuCategoryId] = useState('all');
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [menuProduct, setMenuProduct] = useState<Product | null>(null);
   const [attachProduct, setAttachProduct] = useState<{ product: Product; slots: OpenSlot[] } | null>(null);
@@ -228,6 +233,10 @@ export function OrdinaView({
         <HandheldProductGrid
           products={products}
           categories={categories}
+          query={menuQuery}
+          onQueryChange={setMenuQuery}
+          categoryId={menuCategoryId}
+          onCategoryChange={setMenuCategoryId}
           onProductClick={handleProductClick}
           onProductOptions={setAddonProduct}
         />
