@@ -15,6 +15,7 @@
 import { getDatabase, now, businessDateToday, parseRowJson } from '../db';
 import { randomUUID } from 'crypto';
 import { tableDeletionBlocker, deleteTableRow } from './tables';
+import { cancelOrder } from './orders';
 import { expireOpenReservations } from './reservations';
 
 type Db = ReturnType<typeof getDatabase>;
@@ -261,6 +262,7 @@ export interface CloseServiceDayResult {
   tablesKept: number;
   heldCartsCleared: number;
   reservationsExpired: number;
+  ordersCancelled: number;
 }
 
 /**
@@ -289,8 +291,27 @@ export function closeServiceDay(
     });
   }
 
-  // Freeze before touching anything: the summary must describe the day as it
-  // was served, not as the reset below leaves it.
+  // Forcing does not leave live orders behind. The reset below frees every
+  // table, and an order still pointing at one would go on living out of sight:
+  // the orders screen only lists the open day, so nobody would ever meet it
+  // again except by tapping its table, which now looks free. So they are
+  // cancelled here — stock back, lines voided, the close's reason on each of
+  // them — and before the summary, because a day that ended this way ended with
+  // those orders void and its numbers must say so.
+  let ordersCancelled = 0;
+  if (options.force && blockers.openOrders.length > 0) {
+    const cancellationReason = `${day.business_date} force-closed${options.reason ? `: ${options.reason}` : ''}`.slice(0, 300);
+    const openOrders = db.prepare(`
+      SELECT id, table_id FROM orders WHERE service_day_id = ? AND ${OPEN_ORDER_SQL}
+    `).all(day.id) as { id: number; table_id: string | null }[];
+    for (const order of openOrders) {
+      cancelOrder(db, order, { reason: cancellationReason });
+      ordersCancelled++;
+    }
+  }
+
+  // Freeze before touching anything else: the summary must describe the day as
+  // it was served, not as the reset below leaves it.
   const summary = computeServiceDaySummary(db, day.id);
   const layout = captureLayout(db);
   const stamp = now();
@@ -307,7 +328,8 @@ export function closeServiceDay(
   if (options.clearTables) {
     const tables = db.prepare('SELECT * FROM tables').all() as any[];
     for (const table of tables) {
-      // A force-closed day can still hold a live order; its table stays.
+      // Nothing from this day is still live, but an order stranded by an older
+      // close, or a held cart, still pins its table down.
       if (tableDeletionBlocker(db, table.id)) {
         tablesKept++;
         continue;
@@ -318,7 +340,7 @@ export function closeServiceDay(
   }
 
   const notes = options.force
-    ? `${options.reason ? `${options.reason} — ` : ''}force-closed with ${blockers.openOrders.length} open order(s) and ${blockers.unpaidBills.length} unpaid bill(s)`
+    ? `${options.reason ? `${options.reason} — ` : ''}force-closed, cancelling ${ordersCancelled} open order(s), with ${blockers.unpaidBills.length} unpaid bill(s)`
     : options.reason || null;
 
   db.prepare(`
@@ -340,6 +362,7 @@ export function closeServiceDay(
     tablesKept,
     heldCartsCleared,
     reservationsExpired,
+    ordersCancelled,
   };
 }
 

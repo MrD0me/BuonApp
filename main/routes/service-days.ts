@@ -148,8 +148,9 @@ router.post('/:id/close', requireRole('owner', 'manager'), (req: Request, res: R
       closedBy: user?.userId || null,
     }));
 
-    // Held carts were dropped and table statuses reset, so every kitchen and
-    // floor surface is now looking at stale rows.
+    // Held carts were dropped, a forced close cancelled whatever was still
+    // open, and table statuses were reset, so every kitchen and floor surface
+    // is now looking at stale rows.
     notifyKdsUpdate();
 
     res.json(result);

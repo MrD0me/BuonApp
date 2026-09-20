@@ -8,6 +8,7 @@ import { requireRole } from '../middleware/security';
 import { resolveOrderTable } from './tables';
 import { tableLabelSource, tableGroupLeader } from '../services/tables';
 import { getOpenServiceDay, getOrOpenServiceDay } from '../services/service-day';
+import { cancelOrder } from '../services/orders';
 import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
 import { seatReservationForTable } from '../services/reservations';
 import { syncUnpaidBillsForOrder } from './bills';
@@ -920,32 +921,10 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
           break;
 
         case 'cancelled': {
-          // Select only items eligible for restocking (exclude already cancelled, voided, or accounting adjustments)
-          const eligibleItems = db.prepare(`
-            SELECT * FROM order_items
-            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')
-          `).all(req.params.id) as any[];
-
-          for (const item of eligibleItems) {
-            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-            if (product && item.inventory_deducted_quantity > 0) {
-              db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-                .run(item.inventory_deducted_quantity, nowStr, product.id);
-            }
-          }
-
-          db.prepare(`
-            UPDATE order_items SET status = 'cancelled', updated_at = ?
-            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')
-          `).run(nowStr, req.params.id);
-
-          db.prepare('UPDATE orders SET status = ?, cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?')
-            .run(status, nowStr, reason, nowStr, req.params.id);
+          // Restocking, voiding the lines and releasing the table live in the
+          // service, because the forced day close cancels the same way.
           // Only free table if explicitly requested (default: true for backward compatibility)
-          if (currentOrder.table_id && free_table !== false) {
-            db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-              .run(nowStr, currentOrder.table_id);
-          }
+          cancelOrder(db, currentOrder, { reason, freeTable: free_table !== false });
           break;
         }
       }

@@ -118,7 +118,8 @@ tables in one transaction. Without this, rebuilding the map every morning is a d
 ## Day close ritual (phase 3)
 
 1. Block if any order is still open or any bill unpaid, listing them so they can be resolved. Owner
-   may force, with a recorded reason.
+   may force, with a recorded reason; forcing cancels the orders still open, because step 5 frees
+   their tables and an order outliving its day would be met on a table that reads free.
 2. Freeze `summary`: takings total, per payment method, order count, covers, discounts, voids, top
    products.
 3. Snapshot the layout.
@@ -186,8 +187,13 @@ Covered by `tests/table-crud.test.ts` (`npm run test:table-crud`).
   was served rather than as the reset leaves it. It then clears held carts, frees the tables, and
   optionally deletes them — reusing `tableDeletionBlocker()`/`deleteTableRow()` from phase 1, so the
   wipe cannot strand history any more than a single delete can.
-- Force-closing is owner-only, requires a reason, records it in the day's notes, and leaves open
-  orders and their tables in place.
+- Force-closing is owner-only, requires a reason, and records it in the day's notes. It also cancels
+  whatever is still open — stock back, lines voided, the close's reason on each order — before the
+  summary is frozen, so the day's numbers count them as void. It has to: the reset frees every
+  table, the orders screen only ever lists the open day, and an order that survived its day would
+  live on out of sight until a waiter tapped its table and found themselves adding to it. Cancelling
+  lives in `main/services/orders.ts`, shared with `PATCH /orders/:id/status`. Unpaid bills are not
+  touched — a bill is settled at the till, not by a close.
 - Reopening drops the frozen summary on purpose: the day is live again, so its totals go back to
   being computed.
 - `formatServiceDayReport()` / `printServiceDayReport()` in `main/printers/thermal.ts` print the
