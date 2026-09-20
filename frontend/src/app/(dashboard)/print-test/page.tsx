@@ -62,7 +62,9 @@ export default function PrintTestPage() {
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));
           } else {
-            const kotResult = await printKot(testOrder, { paperWidth });
+            // The width comes from the configured printer now that the ticket
+            // is drawn backend-side; nothing here decides it.
+            const kotResult = await printKot(testOrder);
             toast.success(t('kotPrinted'));
             showPrintWarningsToast(kotResult.warnings);
           }

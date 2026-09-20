@@ -6,7 +6,6 @@ import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 
 import type { Addon, Category, Product, Table, Bill, Order, CartItem, FixedMenuSelection } from '@/lib/types';
@@ -87,7 +86,6 @@ export default function POSPage() {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { customerMandatory, autoPrintBill, billingType, tablesRequired, customersEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
-  const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const currencyFmt = useFormatCurrency();
@@ -1096,7 +1094,6 @@ export default function POSPage() {
             currency={currency}
             onProductClick={handleProductClick}
             onProductOptions={setAddonProduct}
-            sidebarOpen={leftSidebarOpen}
           />
         </div>
         <div className="flex h-full w-80 shrink-0 xl:w-96">

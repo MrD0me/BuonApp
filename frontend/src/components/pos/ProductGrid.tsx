@@ -54,7 +54,6 @@ interface Props {
   onProductClick: (product: Product) => void;
   /** The pencil on the tile: note and quantity, whatever the dish. */
   onProductOptions: (product: Product) => void;
-  sidebarOpen?: boolean;
 }
 
 /**
@@ -65,7 +64,7 @@ interface Props {
  */
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, onProductClick, onProductOptions, sidebarOpen = true,
+  search, setSearch, onProductClick, onProductOptions,
 }: Props) {
   const cart = useCartStore();
   const { showProductImages } = usePosSettingsStore();
@@ -94,7 +93,7 @@ export default function ProductGrid({
 
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      <div className="mb-3 flex shrink-0 flex-col gap-2.5">
+      <div className="mb-3 flex min-w-0 shrink-0 flex-col gap-2.5">
         <div className="relative">
           <Search size={20} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
@@ -118,12 +117,15 @@ export default function ProductGrid({
             className="h-touch w-full rounded-xl border border-input bg-card ps-11 pe-4 text-base outline-none transition-colors focus:ring-2 focus:ring-brand"
           />
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* One scrolling row, not a wrapped block: nine Italian category
+            names wrapped to three rows and took 148 px off the grid, which is
+            a whole row of dishes on a 768 px screen. */}
+        <div className="flex gap-2 overflow-x-auto pb-1">
           <button
             type="button"
             aria-pressed={!selectedCategory}
             onClick={() => setSelectedCategory(null)}
-            className={`h-touch rounded-xl px-4 text-base font-semibold whitespace-nowrap transition active:scale-95 ${chip(!selectedCategory)}`}
+            className={`h-touch shrink-0 rounded-xl px-4 text-base font-semibold whitespace-nowrap transition active:scale-95 ${chip(!selectedCategory)}`}
           >
             {t('allCategories')}
           </button>
@@ -133,7 +135,7 @@ export default function ProductGrid({
               type="button"
               aria-pressed={selectedCategory === cat.id}
               onClick={() => setSelectedCategory(cat.id)}
-              className={`h-touch rounded-xl px-4 text-base font-semibold whitespace-nowrap transition active:scale-95 ${chip(selectedCategory === cat.id, cat.color)}`}
+              className={`h-touch shrink-0 rounded-xl px-4 text-base font-semibold whitespace-nowrap transition active:scale-95 ${chip(selectedCategory === cat.id, cat.color)}`}
             >
               {cat.name}
             </button>
@@ -142,10 +144,14 @@ export default function ProductGrid({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* Counted against the width the grid actually gets, not the window's:
-              the ticket takes 320-384 px of it and the bar another 176, and a
-              column too many turns every dish name into an abbreviation. */}
-          <div className={`grid gap-2.5 ${sidebarOpen ? 'grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' : 'grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6'}`}>
+        {/* Counted against the width the grid actually gets, not the window's.
+              That was always the intent, but counting it with window
+              breakpoints did the opposite: xl never fires on a 1024 px till,
+              so the grid held three columns inside 496 px and left each dish
+              name 42 px — "Spaghetti alle vongole" came out as "Spag alle".
+              auto-fill asks the container instead, so the same rule gives two
+              wide tiles on the cash desk and four on a large screen. */}
+          <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]">
           {filtered.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
             const stockBadge = product.track_inventory
@@ -185,9 +191,9 @@ export default function ProductGrid({
                         )}
                       </span>
                     )}
-                    <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">{product.name}</span>
+                    <span className="line-clamp-2 text-base leading-snug font-semibold break-words text-foreground">{product.name}</span>
                   </span>
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 pe-8">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <Ltr className={`text-base font-semibold ${product.is_fixed_menu ? 'text-brand' : 'text-foreground'}`}>{fmt(Number(product.price))}</Ltr>
                     {product.is_fixed_menu && <span className="text-sm text-brand">{t('menuFixed')}</span>}
                     {product.tags && product.tags.length > 0 && <TagBadge tag={product.tags[0]} />}

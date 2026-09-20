@@ -17,6 +17,7 @@
  * I) orders placed after a close land in a new day
  * J) the closing report renders from the frozen summary
  * K) migration v74 files pre-existing orders into backfilled days
+ * L) forcing cancels the orders left open, so no table is freed onto a live one
  *
  * Usage: node tests/run-electron-node-test.cjs tests/service-days.test.ts
  */
@@ -414,6 +415,65 @@ async function main() {
     assertEqual(closedForFilter.status, 200, 'day force-closed for the empty-current check');
     const afterClose = await api(baseUrl, '/api/orders?service_day=current', { headers: authHeader });
     assertEqual(afterClose.data.orders.length, 0, 'with no day open the page is empty, not everything ever taken');
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Scenario L: forcing cancels whatever the floor left open
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n─── Scenario L: force-close cancels open orders ───');
+
+    seedProduct(db, 'prod-days-stock', 'cat-days', 'Vino della casa', 8, { track_inventory: true, stock_quantity: 10 });
+    const tableThree = await createTable('Tavolo 3');
+    const strandedRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        type: 'dine_in', table_id: tableThree.id, guest_count: 2,
+        items: [{ product_id: 'prod-days-stock', quantity: 2 }],
+      },
+    });
+    assertEqual(strandedRes.status, 201, 'an order the kitchen never saw is taken');
+    const strandedId = strandedRes.data.order.id;
+    const stockNow = () => db.prepare('SELECT stock_quantity AS s FROM products WHERE id = ?').get('prod-days-stock').s;
+    assertEqual(stockNow(), 8, 'stock came off when the order was taken');
+
+    // A settled order in the same day must come through the force untouched,
+    // unpaid bill and all: forcing cancels what is open, not what is done.
+    const settledId = await placeOrder(null);
+    await completeOrder(settledId);
+    db.prepare(`
+      INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, created_at, updated_at)
+      VALUES ('BILL-D-4', ?, 20, 20, 0, 20, 'unpaid', ?, ?)
+    `).run(settledId, now(), now());
+
+    const forcedDay = await api(baseUrl, '/api/service-days/current', { headers: authHeader });
+    assertEqual(forcedDay.status, 200, 'the stranded order opened a day');
+    const forcedRes = await api(baseUrl, `/api/service-days/${forcedDay.data.day.id}/close`, {
+      method: 'POST', headers: authHeader, body: { force: true, reason: 'chiusura anticipata' },
+    });
+    assertEqual(forcedRes.status, 200, 'owner forces the close');
+    assertEqual(forcedRes.data.ordersCancelled, 1, 'the one open order was cancelled');
+
+    const stranded = db.prepare('SELECT status, cancellation_reason FROM orders WHERE id = ?').get(strandedId);
+    assertEqual(stranded.status, 'cancelled', 'the open order did not outlive its day');
+    assert(String(stranded.cancellation_reason || '').includes('chiusura anticipata'), 'the close reason is on the order');
+    assertEqual(
+      db.prepare("SELECT COUNT(*) AS c FROM order_items WHERE order_id = ? AND status != 'cancelled'").get(strandedId).c,
+      0,
+      'its lines went with it',
+    );
+    assertEqual(stockNow(), 10, 'and its stock came back');
+    assertEqual(db.prepare('SELECT status FROM orders WHERE id = ?').get(settledId).status, 'completed', 'a settled order is left alone');
+
+    // The bug this pins: the close freed every table while the orders stayed
+    // live, so the floor met a table reading free that still answered with an
+    // order from a day that was over.
+    const freedTable = await api(baseUrl, `/api/tables/${tableThree.id}`, { headers: authHeader });
+    assertEqual(freedTable.status, 200, 'the table reads back');
+    assertEqual(freedTable.data.table.status, 'available', 'table freed');
+    assertEqual(freedTable.data.table.activeOrder, null, 'with nothing still hanging off it');
+
+    assertEqual(forcedRes.data.summary.orders.cancelled, 1, 'the frozen summary counts it as cancelled');
+    assert(String(forcedRes.data.day.notes || '').includes('cancelling 1 open order(s)'), 'the notes record what forcing did');
 
     console.log('\n✅ All service day tests passed');
   } finally {

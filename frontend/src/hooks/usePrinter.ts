@@ -10,7 +10,6 @@ import {
   type ReceiptOptions,
 } from '@/lib/printer/receipt-encoder';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
 import type { PrintWarning } from '@/lib/printer/warnings';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -35,6 +34,12 @@ export interface KotSendResult {
   batch?: number;
   itemCount?: number;
   reason?: string;
+}
+
+/** The one thing a kitchen-ticket send takes: which round to re-print. */
+export interface KotOptions {
+  /** Re-print an already-issued ticket round instead of sending the pending rows. */
+  batch?: number;
 }
 
 /** Wire shape of POST /printers/print-kot. */
@@ -224,58 +229,37 @@ export const usePrinterStore = create<PrinterState>()(
           throw err;
         }
         try {
-          const hw = get().hardwarePrinter;
-          if (hw && get().printMethod === 'escpos') {
-            try {
-              // The backend owns the round ledger: it picks the rows that have
-              // never been sent, stamps them with the next ticket number and
-              // routes them to the stations. It answers printed:false when
-              // there is nothing new, which is a no-op, not a failure.
-              const response = await api.post<KotSendResponse>('/printers/print-kot', {
-                orderId: order.id,
-                useUnicode: printerUseUnicode,
-                ...(opts?.batch !== undefined ? { batch: opts.batch } : {}),
-              });
-              const data = response.data || {};
-              return {
-                warnings: data.warnings || [],
-                printed: data.printed !== false,
-                batch: data.batch,
-                itemCount: data.item_count,
-                reason: data.reason,
-              };
-            } catch (err: unknown) {
-              const e = err as { response?: { data?: { error?: string } }; message?: string };
-              throw new Error(e.response?.data?.error || e.message || 'KOT print failed');
-            }
-          }
-
-          // Client-side rendering (WebUSB / browser dialog). There is no
-          // backend round-trip here, so nothing can be stamped as sent —
-          // the ticket still narrows to the rows that are waiting, but the
-          // round number needs a configured hardware printer.
-          const pendingItems = (order.items || []).filter(
-            (item) => item.kot_batch === null || item.kot_batch === undefined,
-          );
-          const orderToPrint = order.items && pendingItems.length > 0
-            ? { ...order, items: pendingItems }
-            : order;
-          const { paperWidth } = get();
-          const warnings: PrintWarning[] = [];
-          const bytes = buildKotBytes(orderToPrint, { ...opts, paperWidth }, warnings);
-          set({ lastPrintedBytes: bytes });
-
-          if (get().printMethod === 'escpos') {
-            await printerService.print(bytes);
-          } else {
-            const paperWidth = get().paperWidth || 80;
-            const html = `<html><body style="font-family:monospace;white-space:pre;padding:10px;">${new TextDecoder().decode(bytes)}</body></html>`;
-            await printerService.printViaBrowser(html, paperWidth);
-          }
-          return { warnings, printed: true };
-        } catch (err) {
-          set({ lastError: (err as Error).message });
-          throw err;
+          // The kitchen ticket has one road, whatever the print method and
+          // whichever device sent it: the backend owns the round ledger, the
+          // stations and the ticket itself. It picks the rows that have never
+          // been sent, stamps them with the next ticket number and routes them
+          // to the stations, and answers printed:false when there is nothing
+          // new, which is a no-op rather than a failure.
+          //
+          // There is deliberately no ticket drawn here as a fallback. The one
+          // that used to be could not stamp a round - so the rows stayed
+          // waiting and the next send reprinted food the kitchen already had -
+          // and it drew a ticket of its own, in English, with no categories,
+          // no runs and no station routing. A kitchen needs one ticket, not a
+          // second one that appears when a printer lookup happens to fail.
+          const response = await api.post<KotSendResponse>('/printers/print-kot', {
+            orderId: order.id,
+            useUnicode: printerUseUnicode,
+            ...(opts?.batch !== undefined ? { batch: opts.batch } : {}),
+          });
+          const data = response.data || {};
+          return {
+            warnings: data.warnings || [],
+            printed: data.printed !== false,
+            batch: data.batch,
+            itemCount: data.item_count,
+            reason: data.reason,
+          };
+        } catch (err: unknown) {
+          const e = err as { response?: { data?: { error?: string } }; message?: string };
+          const message = e.response?.data?.error || e.message || 'KOT print failed';
+          set({ lastError: message });
+          throw new Error(message);
         }
       },
 

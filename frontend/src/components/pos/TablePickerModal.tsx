@@ -57,15 +57,15 @@ export default function TablePickerModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
+      <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col rounded-2xl bg-white p-6">
+        <div className="flex shrink-0 justify-between items-center mb-4">
           <h2 className="text-lg font-bold">{t('selectTable')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid min-h-0 flex-1 grid-cols-3 gap-3 overflow-y-auto content-start">
           {tables.map((table) => {
             const isHeld = heldOrders.hasHeldOrder(table.id);
             const isSelected = selectedTableId === table.id;
@@ -112,7 +112,7 @@ export default function TablePickerModal({
         )}
 
         {selectedTableId && (
-          <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
+          <div className="flex shrink-0 gap-3 mt-4 pt-4 border-t border-gray-100">
             <button
               onClick={() => onHoldTable(selectedTableId)}
               className="flex-1 px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors"

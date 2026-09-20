@@ -53,6 +53,7 @@ export function CloseDayModal({ day, blockers, onClose, onClosed }: CloseDayModa
         ? t('dayClosedWithTables', { date: dayLabel, count: data.tablesCleared })
         : t('dayClosed', { date: dayLabel }));
       if (data.tablesKept > 0) toast(t('tablesKept', { count: data.tablesKept }));
+      if (data.ordersCancelled > 0) toast(t('ordersCancelled', { count: data.ordersCancelled }));
 
       // The day is closed either way — a printer that is off or unreachable
       // must not read as a failed close.
@@ -104,6 +105,11 @@ export function CloseDayModal({ day, blockers, onClose, onClosed }: CloseDayModa
                     </li>
                   ))}
                 </ul>
+                {force && (
+                  <p className="mt-2 text-xs font-medium text-red-700">
+                    {t('forceCancelsOrders', { count: blockers.openOrders.length })}
+                  </p>
+                )}
               </div>
             )}
 

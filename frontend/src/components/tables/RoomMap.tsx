@@ -22,7 +22,7 @@ import { CircleDollarSign, Link2 } from 'lucide-react';
 
 /** Dragged positions land on this grid, so a hand-arranged room still lines up. */
 const SNAP = 10;
-const MIN_SCALE = 0.45;
+const MIN_SCALE = 0.7;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -75,11 +75,13 @@ function TableTile({
   );
   // Measured on screen, not in room units: a big room on a small monitor
   // shrinks its tiles, and what a tile can hold is a matter of pixels. A name
-  // and one line of detail need about 60 px of height; a second line, 76.
+  // and one line of detail need about 60 px of height; a second line, 76 in a
+  // rectangle. A round table needs more: the corners of its box are outside
+  // the circle, so a two-seater drawn at the same 77 px cut the total in half.
   const drawnHeight = height * scale;
   const drawnWidth = width * scale;
   const showDetail = drawnHeight >= 60 && drawnWidth >= 72;
-  const showSecondLine = drawnHeight >= 76;
+  const showSecondLine = drawnHeight >= (table.shape === 'round' ? 96 : 76);
   // A table being held shows who it is being held for; that is the whole point
   // of marking it reserved rather than just colouring it.
   const booking = !order ? table.reservation ?? null : null;
@@ -289,7 +291,7 @@ export function RoomMap({ room, tables, ordersByTable, editing, onSelect, onMove
   };
 
   return (
-    <div ref={measureRef} className="w-full overflow-x-auto">
+    <div ref={measureRef} className="min-h-0 w-full flex-1 overflow-auto">
       <div
         ref={canvasRef}
         style={{ width: roomWidth * scale, height: roomHeight * scale }}

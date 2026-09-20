@@ -530,7 +530,7 @@ export default function ProductsPage() {
           </div>
 
       {/* Product Table */}
-      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
@@ -1217,7 +1217,7 @@ export default function ProductsPage() {
                         <AlertCircle size={14} className="text-amber-500" />
                         <span className="text-xs font-medium text-amber-700">{t('csvMissingFields')}</span>
                       </div>
-                      <ul className="space-y-1">
+                      <ul className="max-h-40 space-y-1 overflow-y-auto">
                         {(csvResult.warnings as string[]).map((w, i) => (
                           <li key={i} className="text-xs text-amber-800">{w}</li>
                         ))}
@@ -1230,7 +1230,7 @@ export default function ProductsPage() {
                         <AlertCircle size={14} className="text-red-500" />
                         <span className="text-xs font-medium text-red-700">{t('csvSkippedErrors')}</span>
                       </div>
-                      <ul className="space-y-1">
+                      <ul className="max-h-40 space-y-1 overflow-y-auto">
                         {(csvResult.errors as string[]).map((e, i) => (
                           <li key={i} className="text-xs text-gray-600">{e}</li>
                         ))}
