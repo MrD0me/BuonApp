@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BuonApp browser check</title>
+<!--
+  Deliberately plain ES5 and ES5-era CSS: this page has to render on the very
+  browsers the Server App cannot run on, so it may not use anything newer than
+  the oldest engine we still want a readable answer from. No build step either
+  - it is copied verbatim out of public/ - so nothing here is ever transpiled.
+  Open it from the handheld at http://<pc-ip>:3003/browser-check.html
+-->
+<style>
+body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 12px; background: #fff; color: #111; font-size: 15px; }
+h1 { font-size: 18px; margin: 0 0 10px; }
+h2 { font-size: 13px; margin: 16px 0 6px; color: #555; text-transform: uppercase; }
+#verdict { padding: 10px; border: 2px solid #999; background: #f2f2f2; font-weight: bold; }
+#verdict.ok { background: #e7f6e7; border-color: #1a7f1a; color: #0b5c0b; }
+#verdict.bad { background: #fde8e8; border-color: #a01111; color: #8a1111; }
+table { border-collapse: collapse; width: 100%; }
+td { border-bottom: 1px solid #ddd; padding: 6px 2px; }
+td.v { text-align: right; font-weight: bold; white-space: nowrap; }
+.p { color: #0b5c0b; }
+.f { color: #8a1111; }
+.n { color: #777; font-weight: normal; }
+.hint { color: #777; font-size: 12px; }
+pre { white-space: pre-wrap; word-wrap: break-word; background: #f2f2f2; padding: 8px; margin: 0; font-size: 12px; }
+p.note { color: #555; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>BuonApp handheld check</h1>
+<div id="verdict">Running the checks...</div>
+<h2>Device</h2>
+<pre id="device"></pre>
+<h2>Connection to this server</h2>
+<table id="net"></table>
+<h2>JavaScript the app is built with</h2>
+<table id="js"></table>
+<h2>CSS the app is built with</h2>
+<table id="css"></table>
+<p class="note">Photograph this whole page, scrolling for the rest, when reporting a handheld that will not open the ordering screen.</p>
+
+<script type="module">
+  /* The one honest syntax probe that survives the Server App's CSP, which
+     carries no 'unsafe-eval'. An engine too old for the app bundle cannot
+     parse this module and leaves the flag unset; a browser with no module
+     support at all never runs it, which is the same answer. */
+  const probe = {};
+  probe.value ??= 1;
+  class Probe { field = 1; static read() { return new Probe().field; } }
+  window.__bcheckModernSyntax = probe?.value === 1 && Probe.read() === 1;
+</script>
+
+<script>
+(function () {
+  var PASS = '<span class="p">yes</span>';
+  var FAIL = '<span class="f">NO</span>';
+  var SKIP = '<span class="n">n/a</span>';
+
+  function row(table, label, state, note) {
+    var tr = document.createElement('tr');
+    var name = document.createElement('td');
+    name.innerHTML = label + (note ? '<br><span class="hint">' + note + '</span>' : '');
+    var value = document.createElement('td');
+    value.className = 'v';
+    value.innerHTML = state === null ? SKIP : (state ? PASS : FAIL);
+    tr.appendChild(name);
+    tr.appendChild(value);
+    table.appendChild(tr);
+    return state !== false;
+  }
+
+  /* Only reachable where CSP allows eval - the Server App's does not, so the
+     per-feature syntax rows below are a bonus, never the verdict. */
+  function syntax(source) {
+    try {
+      new Function(source);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function cssValue(property, value) {
+    try {
+      return !!(window.CSS && CSS.supports && CSS.supports(property, value));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function cssSelector(selector) {
+    try {
+      return !!(window.CSS && CSS.supports && CSS.supports('selector(' + selector + ')'));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /* Cascade layers decide everything: Tailwind v4 wraps its whole stylesheet
+     in @layer, so an engine that does not know the at-rule throws away every
+     rule in the file and the app paints as a blank white page. */
+  function cssLayer() {
+    try {
+      var style = document.createElement('style');
+      style.appendChild(document.createTextNode('@layer bcheck { #bcheck-probe { color: rgb(1, 2, 3) } }'));
+      document.head.appendChild(style);
+      var probe = document.createElement('div');
+      probe.id = 'bcheck-probe';
+      document.body.appendChild(probe);
+      var colour = window.getComputedStyle ? window.getComputedStyle(probe).color : '';
+      document.body.removeChild(probe);
+      document.head.removeChild(style);
+      return colour.replace(/\s/g, '') === 'rgb(1,2,3)';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function match(pattern) {
+    var found = pattern.exec(navigator.userAgent);
+    return found ? found[1] : '?';
+  }
+
+  function run() {
+    document.getElementById('device').appendChild(document.createTextNode(
+      'Chrome / WebView: ' + match(/Chrom(?:e|ium)\/([0-9.]+)/) + '\n' +
+      'Android: ' + match(/Android ([0-9.]+)/) + '\n' +
+      'Screen: ' + screen.width + 'x' + screen.height + ' at ' + (window.devicePixelRatio || 1) + 'x\n' +
+      'Address: ' + location.href + '\n\n' +
+      navigator.userAgent
+    ));
+
+    var net = document.getElementById('net');
+    row(net, 'Served from', true, location.protocol + '//' + location.host);
+    row(net, 'Secure context', window.isSecureContext === true, 'plain http over an IP never is; the app copes');
+    row(net, 'crypto.randomUUID', !!(window.crypto && typeof crypto.randomUUID === 'function'), 'absent outside a secure context; the app falls back');
+
+    var apiRow = document.createElement('tr');
+    apiRow.innerHTML = '<td>API reachable, /api/health</td><td class="v">checking...</td>';
+    net.appendChild(apiRow);
+    try {
+      var request = new XMLHttpRequest();
+      request.open('GET', '/api/health', true);
+      request.onreadystatechange = function () {
+        if (request.readyState !== 4) return;
+        apiRow.cells[1].innerHTML = request.status === 200 ? PASS : FAIL;
+        apiRow.cells[0].innerHTML = 'API reachable, /api/health<br><span class="hint">HTTP ' +
+          request.status + ' ' + String(request.responseText).substring(0, 120) + '</span>';
+      };
+      request.send();
+    } catch (error) {
+      apiRow.cells[1].innerHTML = FAIL;
+    }
+
+    var js = document.getElementById('js');
+    /* The verdict rides on this row: the module probe above either parsed or
+       it did not, and the app bundle uses the very same syntax. */
+    var jsOk = row(js, 'app bundle syntax', window.__bcheckModernSyntax === true,
+      'optional chaining, ??=, class fields - Chrome 85+');
+
+    var evalAllowed = syntax('return 1');
+    row(js, 'per-feature detail below', evalAllowed ? true : null,
+      evalAllowed ? '' : 'skipped: this page is served with a CSP that forbids eval');
+    if (evalAllowed) {
+      row(js, 'let / const', syntax('let a = 1; const b = 2;'));
+      row(js, 'arrow functions', syntax('var f = () => 1;'));
+      row(js, 'template literals', syntax('var s = `x`;'));
+      row(js, 'classes', syntax('class A {}'));
+      row(js, 'rest and spread', syntax('function f(...a) { return [].concat(a); }'));
+      row(js, 'async / await', syntax('async function f() { await 1; }'), 'Chrome 55+');
+      row(js, 'optional chaining, a?.b', syntax('var o = {}; o?.b;'), 'Chrome 80+');
+      row(js, 'nullish coalescing, a ?? b', syntax('var x = null ?? 1;'), 'Chrome 80+');
+      row(js, 'logical assignment, a ??= b', syntax('var o = {}; o.x ??= 1;'), 'Chrome 85+');
+      row(js, 'class fields', syntax('class A { x = 1; }'), 'Chrome 72+');
+    }
+    row(js, 'Promise', typeof Promise === 'function');
+    row(js, 'fetch', typeof fetch === 'function');
+    row(js, 'String.replaceAll', typeof String.prototype.replaceAll === 'function', 'Chrome 85+');
+    row(js, 'Array.at', typeof Array.prototype.at === 'function', 'Chrome 92+');
+    row(js, 'structuredClone', typeof window.structuredClone === 'function', 'Chrome 98+');
+
+    var css = document.getElementById('css');
+    var cssOk = true;
+    cssOk = row(css, 'custom properties, --x', cssValue('--x', '1'), 'Chrome 49+') && cssOk;
+    cssOk = row(css, 'cascade layers, @layer', cssLayer(), 'Chrome 99+, Tailwind v4 needs it') && cssOk;
+    cssOk = row(css, 'oklch() colours', cssValue('color', 'oklch(0.5 0.1 200)'), 'Chrome 111+') && cssOk;
+    cssOk = row(css, 'color-mix()', cssValue('color', 'color-mix(in oklab, red, blue)'), 'Chrome 111+') && cssOk;
+    cssOk = row(css, '@property', !!(window.CSS && typeof CSS.registerProperty === 'function'), 'Chrome 85+') && cssOk;
+    cssOk = row(css, 'dvh units', cssValue('height', '100dvh'), 'Chrome 108+') && cssOk;
+    row(css, ':where() selector', cssSelector(':where(a)'), 'Chrome 88+');
+
+    var verdict = document.getElementById('verdict');
+    if (jsOk && cssOk) {
+      verdict.className = 'ok';
+      verdict.innerHTML = 'This browser can run the Server App. If the ordering page is still blank, the browser engine is not the cause.';
+    } else {
+      verdict.className = 'bad';
+      verdict.innerHTML = 'This browser is too old for the Server App.' +
+        (jsOk ? '' : ' Its JavaScript engine cannot parse the app bundle.') +
+        (cssOk ? '' : ' Its CSS engine throws away the whole stylesheet.') +
+        '<br><br>The app needs Chrome or Android WebView 111 or newer (March 2023), Safari 16.4+, Firefox 128+.';
+    }
+  }
+
+  /* Inline modules run after the document is parsed, so the syntax flag is
+     only trustworthy once loading is over. */
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+}());
+</script>
+</body>
+</html>

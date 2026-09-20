@@ -152,6 +152,37 @@ Tre scelte da sapere:
 - **Le righe arrivano da `GET /orders`**, non dai tavoli: il tavolo porta la testa dell'ordine ma
   non le righe, e sono le righe a dire se c'è un giro da mandare.
 
+## Che telefono ci vuole
+
+Il palmare deve avere **Chrome o WebView Android 111 o più recente** (marzo 2023), cioè in pratica
+un Android 8 o superiore con Chrome aggiornato; su iPhone Safari 16.4, su Firefox la 128. Non è una
+scelta: è il pavimento di quello con cui la pagina è costruita, e sotto quella soglia non si degrada,
+smette.
+
+- **Il CSS.** Tailwind v4 avvolge tutto il foglio in `@layer` (Chrome 99) e scrive i colori in
+  `oklch()` e `color-mix()` (Chrome 111); ci sono anche le unità `dvh` (Chrome 108). Un motore che
+  non conosce `@layer` butta via l'intero foglio, non la singola regola.
+- **Il bundle.** L'export di Next 16 esce con `?.`, `??` e soprattutto `??=` (Chrome 85). Non è
+  transpilato più in basso e non lo si può chiedere: senza il CSS non si va comunque da nessuna parte.
+
+Un palmare troppo vecchio — tipicamente quelli lasciati dagli installatori di altri gestionali anni
+fa — apriva una pagina **bianca e muta**: il bundle muore sulla sintassi che non sa leggere, e
+l'unica cosa che l'export disegna da fermo, la rotella di caricamento, resta senza stile e quindi
+invisibile. Ora la pagina lo dice: `server-standalone/layout.tsx` porta in testa al `<body>` uno
+script in ES5 puro che sonda i due motori e, se uno dei due non regge, sostituisce il corpo con un
+avviso leggibile e il rimando alla pagina di verifica. Le sonde guardano
+`String.prototype.replaceAll` (uscito con `??=`, Chrome 85) e `CSS.supports('color', 'oklch(...)')`,
+non provano la sintassi con `new Function`: la CSP del `:3003` non ha `'unsafe-eval'`, la prova
+fallirebbe su *tutti* i browser e l'avviso coprirebbe un'app che funziona.
+
+**La verifica sul campo** sta in `frontend/public/browser-check.html`, servita così com'è (niente
+build, niente transpilazione) su `http://<ip-del-pc>:3003/browser-check.html`. Dice versione di
+Chrome e di Android, se il server risponde (`/api/health` via `XMLHttpRequest`), e riga per riga cosa
+manca fra JavaScript e CSS. La sintassi la prova con uno `<script type="module">` inline: un motore
+troppo vecchio non lo parsa e la bandiera resta giù, il che sotto CSP è l'unica prova onesta che
+resta. Sopra `http://` verso un IP il contesto non è sicuro: `crypto.randomUUID` non esiste e il
+service worker non si registra: è normale, l'app ha i suoi ripieghi e la pagina lo scrive.
+
 ## Cosa resta fuori
 
 - Il carrello non è persistito: chiudere il browser a metà comanda la perde. `persist` su
