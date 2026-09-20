@@ -56,8 +56,8 @@ function BookingRow({ booking, tables, holderByTable, busy, onAssign, onAction, 
 
       <div className="flex-1 min-w-[8rem]">
         <p className="font-medium text-gray-900 truncate">{booking.name}</p>
-        {booking.phone && <p className="text-xs text-gray-400"><Ltr>{booking.phone}</Ltr></p>}
-        {booking.notes && <p className="text-xs text-gray-500 truncate">{booking.notes}</p>}
+        {booking.phone && <p className="text-sm text-gray-600"><Ltr>{booking.phone}</Ltr></p>}
+        {booking.notes && <p className="text-sm text-gray-600 truncate">{booking.notes}</p>}
       </div>
 
       <span className="text-sm text-gray-600 whitespace-nowrap">
@@ -96,20 +96,22 @@ function BookingRow({ booking, tables, holderByTable, busy, onAssign, onAction, 
         {pending && (
           <>
             <button onClick={() => onEdit(booking)} disabled={busy}
-              className="px-2 py-1 text-xs text-gray-600 hover:text-gray-900">{tCommon('edit')}</button>
+              className="h-touch px-3 text-sm text-gray-700 hover:text-gray-900">{tCommon('edit')}</button>
             <button onClick={() => onAction(booking, 'no-show')} disabled={busy}
-              className="p-1.5 text-gray-400 hover:text-red-600" title={t('noShow')}>
-              <UserX size={15} />
+              className="flex size-touch items-center justify-center rounded-lg text-gray-500 hover:text-red-600"
+              aria-label={t('noShow')} title={t('noShow')}>
+              <UserX size={18} />
             </button>
             <button onClick={() => onAction(booking, 'cancel')} disabled={busy}
-              className="p-1.5 text-gray-400 hover:text-red-600" title={tCommon('cancel')}>
-              <X size={15} />
+              className="flex size-touch items-center justify-center rounded-lg text-gray-500 hover:text-red-600"
+              aria-label={tCommon('cancel')} title={tCommon('cancel')}>
+              <X size={18} />
             </button>
           </>
         )}
         {booking.status === 'seated' && (
           <button onClick={() => onAction(booking, 'reopen')} disabled={busy}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-900" title={t('reopenHint')}>
+            className="flex h-touch items-center gap-1 px-3 text-sm text-gray-700 hover:text-gray-900" title={t('reopenHint')}>
             <RotateCcw size={13} /> {t('reopen')}
           </button>
         )}

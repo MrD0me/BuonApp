@@ -23,7 +23,7 @@ export default function PosTopbar() {
           <>
             {/* No customer book on this business → nothing to search. */}
             {customersEnabled && (
-              <div className="w-72 max-w-full">
+              <div className="w-64 max-w-full min-w-0">
                 <CustomerSearch variant="topbar" />
               </div>
             )}

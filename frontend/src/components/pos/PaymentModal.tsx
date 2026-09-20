@@ -286,10 +286,10 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-xl rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+      <div className="flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-xl sm:rounded-2xl">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
+        <div className="flex shrink-0 items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">{t('payment')}</h2>
             <p className="text-xs text-gray-400 mt-0.5">{t('billNumber', { number: bill.bill_number })}</p>
@@ -302,7 +302,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-4 max-h-[75vh] overflow-y-auto">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
 
           {/* Amount + Customer Card */}
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl px-5 py-4 text-white">

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, session, Tray, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, session, Tray, nativeImage, shell, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -267,11 +267,32 @@ function createWindow(): void {
   // the same run instead of only on the next full relaunch.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
+  // The cash desk is often an old 1024x768 touch monitor, and a window is not
+  // clamped to the screen it opens on: asking for 1400x900 there hands back a
+  // window larger than the display, the renderer lays out for 1400 px, and the
+  // till shows the top-left corner of it. That is what "everything is oversized
+  // and the edges are cut off" means — it is the window, not the CSS.
+  //
+  // minHeight made it worse: 768 is taller than the work area of a 768 px
+  // screen once the taskbar takes its strip, so the bottom of the window — the
+  // status bar, and the sidebar's own Log out row — sat under the taskbar with
+  // no way to raise it.
+  //
+  // So never ask for more than the display offers, and on a screen that small
+  // start maximised: a till runs one window and never needs to be dragged.
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
+  const windowWidth = Math.min(1400, workArea.width);
+  const windowHeight = Math.min(900, workArea.height);
+  const startMaximised = workArea.width <= 1400 || workArea.height <= 900;
+  log.info(`[BuonApp] Work area ${workArea.width}x${workArea.height} at ${screen.getPrimaryDisplay().scaleFactor}x -> window ${windowWidth}x${windowHeight}${startMaximised ? ' (maximised)' : ''}`);
+
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1024,
-    minHeight: 768,
+    width: windowWidth,
+    height: windowHeight,
+    // Floors, not targets: a floor above the work area cannot be honoured on
+    // the screen it was measured against, so it is clamped too.
+    minWidth: Math.min(1024, workArea.width),
+    minHeight: Math.min(680, workArea.height),
     title: 'BuonApp',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -283,6 +304,7 @@ function createWindow(): void {
   });
 
   mainWindow.once('ready-to-show', () => {
+    if (startMaximised) mainWindow?.maximize();
     mainWindow?.show();
     if (isDev) {
       mainWindow?.webContents.openDevTools();

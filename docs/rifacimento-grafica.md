@@ -24,6 +24,15 @@ mouse. Il palmare è un telefono. Da qui:
 La finestra Electron non scende sotto 1024×768 (`main/index.ts`), quindi il PC non ha un layout da
 telefono: il telefono ha la sua app.
 
+**La finestra si misura sullo schermo che trova.** Chiedeva 1400×900 comunque, e una finestra non
+viene ristretta allo schermo su cui nasce: su un monitor 1024×768 il renderer disegnava per 1400 px
+e la cassa ne vedeva l'angolo in alto a sinistra — è quello che si vedeva come «tutto ingrandito e
+tagliato ai bordi». Adesso `createWindow()` legge `workAreaSize` e non chiede mai più di quello che
+c'è; sotto i 1400×900 parte massimizzata. Anche il minimo in altezza era un danno: 768 è più alto
+dell'area di lavoro di uno schermo da 768 una volta che la barra delle applicazioni si prende la sua
+striscia, quindi il fondo della finestra — la barra di stato, e la riga «Esci» della barra laterale —
+stava sotto la barra delle applicazioni senza modo di risalire.
+
 ## Le fondamenta
 
 **Colori di stato in un posto solo.** Libero, occupato, prenotato, in sospeso, «da inviare», pagato
@@ -88,8 +97,9 @@ la chiude, in Sala in sola lettura. Ha preso il posto della scheda che occupava 
 pagina Giornata.
 
 **Sala.** Stanze come selettore, una legenda dei colori, tessere con banda di stato, etichetta
-scritta e badge «N da inviare». Il pannello del tavolo è largo 640 px ed è un `SidePanel`: la sala
-resta visibile accanto.
+scritta e badge «N da inviare». Il pannello del tavolo è un `SidePanel` largo 672 px (`max-w-2xl`):
+su uno schermo largo la sala resta visibile accanto, a 1024 px ne resta una striscia sotto
+l'ombra — lì è una finestra, e vale la pena saperlo invece di prometterlo.
 
 **Il pannello ordine** (`components/orders/OrderPanel.tsx`) tiene la sua logica e affida il disegno
 a cinque pezzi: `OrderHeader`, `OrderLines`, `LineActionSheet`, `OrderTotals`, `OrderActionBar`.
@@ -121,10 +131,14 @@ delle schede impostazioni non sono stati toccati.
 - **Il tema scuro**: i token `.dark` esistono in `globals.css` e nessuno li accende. È un lavoro a
   sé, non un ritocco.
 - **Il KDS e la schermata cliente**: non toccati.
-- **Le tessere della mappa restano legate alla scala della stanza** (`MIN_SCALE` 0.45 in
-  `RoomMap.tsx`): su una stanza grande a 1024 px si rimpiccioliscono, e sotto una certa misura la
-  tessera nasconde la riga secondaria. Se un giorno servisse la garanzia di tessere grandi anche
-  lì, la risposta onesta è un elenco come quello del palmare, non un ritocco alla scala.
+- **Le tessere della mappa restano legate alla scala della stanza.** `MIN_SCALE` era 0.45 e non
+  manteneva la promessa scritta sopra di sé: una stanza media su un monitor da 1024 disegnava il
+  tavolo da quattro a 74,8 px contro i 76 richiesti dalla seconda riga, e per 1,2 px spariva il
+  conto in euro da ogni tavolo della sala. Ora è 0.7 e la mappa scorre dentro il suo riquadro
+  (`overflow-auto`) invece di rimpicciolirsi o spingere il fondo della sala sotto la piega; un
+  tavolo tondo chiede 96 px invece di 76, perché gli angoli del suo riquadro stanno fuori dal
+  cerchio. Se un giorno servisse la garanzia di tessere grandi anche su una stanza enorme, la
+  risposta onesta resta un elenco come quello del palmare, non un ritocco alla scala.
 
 ## Verifica
 

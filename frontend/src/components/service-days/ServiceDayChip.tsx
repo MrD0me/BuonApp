@@ -54,7 +54,7 @@ export function ServiceDayChip({ readOnly = false, showStats = false, onChanged 
     <>
       <div className="flex flex-wrap items-center gap-3">
         {showStats && summary && (
-          <div className="hidden items-center gap-5 text-sm md:flex">
+          <div className="hidden items-center gap-3 text-sm md:flex">
             <span className="flex flex-col leading-tight">
               <span className="text-xs text-muted-foreground">{t('orders')}</span>
               <Ltr className="font-bold">{String(summary.orders.total)}</Ltr>
@@ -75,7 +75,7 @@ export function ServiceDayChip({ readOnly = false, showStats = false, onChanged 
         >
           <StatusDot tone="free" />
           <span className="font-semibold">{t('currentDay')}</span>
-          <span className="text-muted-foreground">{t('openSinceTime', { time: fmt.time(day.opened_at) })}</span>
+          <span className="hidden text-muted-foreground xl:inline">{t('openSinceTime', { time: fmt.time(day.opened_at) })}</span>
           {blockedCount > 0 && (
             <span className="flex items-center gap-1 text-pending" title={t('blockersCount', { count: blockedCount })}>
               <AlertTriangle size={15} />

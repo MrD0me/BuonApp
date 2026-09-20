@@ -14,8 +14,9 @@ const EDGE_FADE_PX = 28
  * Whether the scrolling row has anything left of its left edge, or right of
  * its right edge — in physical sides, because that is where the fade goes.
  *
- * A right-to-left row scrolls into negative numbers, so the distance from the
- * start is the absolute value, and "start" is then the right-hand side.
+ * A row that reads from the end towards the start scrolls into negative
+ * numbers, so the distance travelled is the absolute value, and "start" is
+ * then the far edge.
  */
 function useScrollEdges(enabled: boolean, rtl: boolean, items: unknown) {
   const ref = React.useRef<HTMLDivElement>(null)
@@ -130,7 +131,11 @@ function SegmentedControl({
           disabled={item.disabled}
           data-slot="segmented-item"
           className={cn(
-            "text-muted-foreground focus-visible:ring-ring/50 inline-flex items-center justify-center gap-2 rounded-lg px-4 font-semibold whitespace-nowrap outline-none transition select-none focus-visible:ring-[3px] disabled:opacity-40",
+            "text-muted-foreground focus-visible:ring-ring/50 inline-flex items-center justify-center gap-2 rounded-lg font-semibold whitespace-nowrap outline-none transition select-none focus-visible:ring-[3px] disabled:opacity-40",
+            // A stretched row splits one line between its items, so the
+            // padding comes out of the label: on the 288 px ticket px-4 left
+            // 34 px and every type read as an abbreviation.
+            stretch && !scrollable ? "px-2" : "px-4",
             "data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm",
             size === "lg" ? "h-touch text-base" : "h-10 text-sm",
             scrollable || !stretch ? "shrink-0" : "min-w-0 flex-1"

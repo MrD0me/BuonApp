@@ -157,7 +157,7 @@ function SettingsNavItem({
     <button
       onClick={() => onClick(value)}
       className={[
-        'flex items-center w-full min-w-0 text-start text-sm rounded-md py-1.5 transition-colors',
+        'flex items-center w-full min-w-0 text-start text-sm rounded-md py-2.5 transition-colors',
         indent ? 'ps-5 pe-2 border-s-2 ms-1 text-xs md:ms-0' : 'px-3',
         isActive
           ? 'bg-brand/10 text-brand font-semibold' + (indent ? ' border-brand' : '')
@@ -1855,18 +1855,17 @@ export default function SettingsPage() {
   }, [isDirty]);
 
   return (
-    <div className="md:h-full md:min-h-0">
-      <Tabs orientation="vertical" value={activeTab} onValueChange={handleSettingsTabChange} className="flex flex-col md:flex-row gap-6 items-start md:h-full md:min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
+      <PageToolbar title={t('title')} className="mb-4 shrink-0" />
+      <Tabs orientation="vertical" value={activeTab} onValueChange={handleSettingsTabChange} className="flex flex-col md:flex-row gap-6 items-start md:min-h-0 md:flex-1">
 
         {/* Settings sidebar nav */}
-        <div className="w-full md:w-40 md:min-w-[10rem] shrink-0 md:h-full md:min-h-0 md:flex md:flex-col">
-          <PageToolbar title={t('title')} className="mb-6 shrink-0" />
-
+        <div className="w-full md:w-48 md:min-w-[12rem] shrink-0 md:h-full md:min-h-0 md:flex md:flex-col">
            <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:flex-1 md:min-h-0 md:overflow-x-hidden md:overflow-y-auto md:overscroll-contain border-b md:border-b-0 md:border-e border-gray-200 pb-2 md:pb-0 md:pe-2">
 
             {/* General group */}
             <div className="hidden md:block px-3 pt-3 pb-2 mt-2 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupGeneral')}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-500">{t('navGroupGeneral')}</p>
             </div>
             <SettingsNavItem label={t('storeDetails')} value="store" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabPrinters')} value="receipts-printers" active={activeTab} onClick={handleSettingsTabChange} />
@@ -1874,7 +1873,7 @@ export default function SettingsPage() {
 
             {/* Operations group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupOperations')}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-500">{t('navGroupOperations')}</p>
             </div>
             <SettingsNavItem label={t('posWorkflow')} value="pos" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={handleSettingsTabChange} />
@@ -1885,7 +1884,7 @@ export default function SettingsPage() {
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupCustomers')}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-500">{t('navGroupCustomers')}</p>
             </div>
             <SettingsNavItem label={t('tabCustomers')} value="customers" active={activeTab} onClick={handleSettingsTabChange} />
             {customersEnabledSetting && (
@@ -1895,13 +1894,13 @@ export default function SettingsPage() {
 
             {/* Integrations group (formerly "Data") */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupData')}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-500">{t('navGroupData')}</p>
             </div>
             <SettingsNavItem label={t('tabBackupData')} value="data" active={activeTab} onClick={handleSettingsTabChange} />
 
             {/* Account group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupAccount')}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-500">{t('navGroupAccount')}</p>
             </div>
             <SettingsNavItem label={tNav('staff')} value="staff" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={handleSettingsTabChange} />
@@ -3499,7 +3498,7 @@ export default function SettingsPage() {
                 <FileText size={20} className="text-gray-500" />
                 <h2 className="font-semibold text-gray-900">{t('billTemplate')}</h2>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {TEMPLATE_CARDS.map((card) => {
                   const isSelected = billForm.billTemplate === card.id;
                   return (
@@ -3508,7 +3507,7 @@ export default function SettingsPage() {
                         isSelected ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 bg-white'
                       }`}>
                       <p className="font-semibold text-gray-900 mb-2">{t(card.nameKey)}</p>
-                      <pre className="font-mono text-[9px] leading-tight text-gray-600 bg-gray-50 p-2 rounded overflow-hidden mb-3 whitespace-pre">
+                      <pre className="font-mono text-[10px] leading-tight text-gray-600 bg-gray-50 p-2 rounded overflow-x-auto mb-3 whitespace-pre">
                         {card.preview}
                       </pre>
                       <p className="text-xs text-gray-500">

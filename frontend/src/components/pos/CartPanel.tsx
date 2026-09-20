@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo } from 'react';
 import {
-  ShoppingCart, UtensilsCrossed, Package, Truck,
-  Trash2, Pause, MapPin, SquarePen, Users, Send,
+  ShoppingCart, Trash2, Pause, MapPin, SquarePen, Users, Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/ui/stepper';
@@ -35,12 +34,6 @@ interface Props {
   onEditItem?: (item: CartItem) => void;
   existingOrder?: Order | null;
 }
-
-const orderTypeIcons = {
-  dine_in: UtensilsCrossed,
-  takeaway: Package,
-  delivery: Truck,
-};
 
 /**
  * The ticket being written, on the till.
@@ -116,19 +109,16 @@ export default function CartPanel({ tables, products, categories, submitting, on
             aria-label={t('orderTypeDineIn')}
             value={cart.orderType}
             onValueChange={(type) => cart.setOrderType(type as typeof cart.orderType)}
-            items={availableTypes.map((type) => {
-              const Icon = orderTypeIcons[type];
-              return { value: type, label: typeLabel(type), icon: <Icon size={16} /> };
-            })}
+            items={availableTypes.map((type) => ({ value: type, label: typeLabel(type) }))}
             className="w-full"
           />
         )}
 
-        {showTable && (
+        {showTable && (tableName ? (
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate text-lg font-bold text-foreground">
-                {tableName ? t('tableLabel', { name: tableName }) : t('selectTable')}
+                {t('tableLabel', { name: tableName })}
               </p>
               <p className="truncate text-sm text-muted-foreground">
                 {existingOrder
@@ -136,11 +126,17 @@ export default function CartPanel({ tables, products, categories, submitting, on
                   : tServerApp('newOrder')}
               </p>
             </div>
-            <Button type="button" variant={tableName ? 'outline' : 'default'} size="touch" onClick={onShowTablePicker}>
-              {tableName ? t('changeTable') : t('selectTable')}
+            <Button type="button" variant="outline" size="touch" onClick={onShowTablePicker}>
+              {t('changeTable')}
             </Button>
           </div>
-        )}
+        ) : (
+          // One line, not two: the heading said "Seleziona Tavolo" in a space
+          // that truncated it, next to a button saying the same words.
+          <Button type="button" size="touch" onClick={onShowTablePicker} className="w-full">
+            {t('selectTable')}
+          </Button>
+        ))}
 
         {/* The counter is for a new order only, as on the handheld. Adding to
             an open order sends the dishes and nothing else, so a counter here
@@ -266,22 +262,12 @@ export default function CartPanel({ tables, products, categories, submitting, on
                         <span className="block truncate text-base font-semibold text-foreground">{item.product.name}</span>
                       </div>
                     )}
-                    {/* One menu is one line of one: another guest taking the same
-                        menu is another menu, because a check hands each of them
-                        over whole. Hence no quantity stepper here. */}
-                    {!isMenu && (
-                      <Stepper
-                        size="sm"
-                        min={0}
-                        value={item.quantity}
-                        onChange={(quantity) => cart.updateQuantity(item.id, quantity)}
-                        decreaseLabel={t('decreaseQuantity')}
-                        increaseLabel={t('increaseQuantity')}
-                        className="shrink-0"
-                      />
-                    )}
                   </div>
-                  <div className="flex items-center justify-between gap-2 ps-12">
+                  {/* Quantity sits on the second row with the run and the
+                      price. On the first row it left the dish name 96 px —
+                      eleven characters — so the cashier read "Spaghetti a…"
+                      for the line they were about to send to the kitchen. */}
+                  <div className="flex items-center justify-between gap-2 ps-2">
                     {/* Which wave it goes out in. Shown from the start rather
                         than once a run is in play: hiding it until something
                         is on run 2 leaves no way to put anything there.
@@ -295,7 +281,22 @@ export default function CartPanel({ tables, products, categories, submitting, on
                         onChange={(run) => cart.setServiceRun(item.id, run)}
                       />
                     ) : <span />}
-                    <span className="text-base font-semibold text-foreground"><Ltr>{fmt(lineTotal)}</Ltr></span>
+                    <span className="flex shrink-0 items-center gap-3">
+                      {/* One menu is one line of one: another guest taking the
+                          same menu is another menu, because a check hands each
+                          of them over whole. Hence no quantity stepper here. */}
+                      {!isMenu && (
+                        <Stepper
+                          size="sm"
+                          min={0}
+                          value={item.quantity}
+                          onChange={(quantity) => cart.updateQuantity(item.id, quantity)}
+                          decreaseLabel={t('decreaseQuantity')}
+                          increaseLabel={t('increaseQuantity')}
+                        />
+                      )}
+                      <span className="text-base font-semibold text-foreground"><Ltr>{fmt(lineTotal)}</Ltr></span>
+                    </span>
                   </div>
                 </div>
               );
@@ -321,12 +322,20 @@ export default function CartPanel({ tables, products, categories, submitting, on
       <ActionBar className="flex-col items-stretch gap-2.5">
         <div className="flex items-center justify-between px-1">
           <span className="text-sm text-muted-foreground">{tServerApp('dishCount', { count: cart.itemCount() })}</span>
-          <span className="text-xl font-bold text-foreground"><Ltr>{fmt(cart.subtotal())}</Ltr></span>
+          <span className="text-2xl font-bold text-foreground"><Ltr>{fmt(cart.subtotal())}</Ltr></span>
         </div>
         <div className="flex gap-2.5">
           {canHold && (
-            <Button type="button" variant="outline" size="touch-xl" onClick={handleHold}>
-              <Pause /> {t('holdButton')}
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-touch"
+              aria-label={t('holdButton')}
+              title={t('holdButton')}
+              onClick={handleHold}
+              className="size-touch-xl shrink-0"
+            >
+              <Pause />
             </Button>
           )}
           <Button

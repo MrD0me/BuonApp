@@ -187,7 +187,7 @@ export function StaffSettings() {
         <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('addButton')}</Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
         {staff.map((s) => (
           <div key={s.id} className={`bg-white rounded-xl p-5 border ${s.is_active ? 'border-gray-100' : 'border-gray-200 opacity-60'}`}>
             <div className="flex justify-between items-start mb-3">

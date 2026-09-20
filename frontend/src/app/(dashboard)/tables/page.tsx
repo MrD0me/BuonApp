@@ -189,7 +189,9 @@ export default function TablesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    // Full height, so the map scrolls inside its own frame instead of pushing
+    // the bottom of the room under the fold on a 768 px screen.
+    <div className="flex h-full flex-col gap-4">
       {/* Titled like the sidebar entry: the page and the bar say the same word. */}
       <PageToolbar
         title={tNav('tables')}
@@ -239,7 +241,7 @@ export default function TablesPage() {
           ) : undefined}
         />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
           {!editing && unassigned.length > 0 && (
             <div className="rounded-2xl border border-table-reserved bg-table-reserved-soft p-3">
               <p className="mb-2 text-sm font-semibold text-table-reserved">
@@ -267,6 +269,7 @@ export default function TablesPage() {
             <div className="flex items-center gap-2">
               <SegmentedControl
                 size="lg"
+                scrollable
                 aria-label={tServerApp('rooms')}
                 value={activeRoom?.id ?? ''}
                 onValueChange={setSelectedRoomId}
@@ -284,7 +287,7 @@ export default function TablesPage() {
               )}
             </div>
             {/* What the colours mean, once, instead of a dot the eye has to decode. */}
-            <div className="hidden flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground lg:flex">
+            <div className="hidden flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground md:flex">
               {(['available', 'occupied', 'reserved', 'held'] as const).map((status) => (
                 <span key={status} className="flex items-center gap-1.5">
                   <StatusDot tone={TABLE_STATUS_TONE[status]} />
