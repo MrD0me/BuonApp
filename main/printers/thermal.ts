@@ -1405,6 +1405,59 @@ function groupKotItemsByCategory(items: any[]): { name: string | null; items: an
 }
 
 /**
+ * What makes two rows the same dish to a cook: the name, the add-ons (in any
+ * order), the note, and the variant and modifier selections. The last two
+ * never reach the paper, and are still part of the identity: two rows ordered
+ * differently stay apart even where the ticket cannot show the difference.
+ *
+ * The note is compared trimmed and case-folded, so the same instruction typed
+ * on the handheld and on the till counts once. A row carrying a note therefore
+ * only ever joins a row carrying that very same note - never the plain plates.
+ */
+function kotItemIdentity(item: any): string {
+  const addons = parseAddons(item?.addons)
+    .filter((addon: any) => addon?.name)
+    .map((addon: any) => JSON.stringify([String(addon.name), Number(addon?.quantity) || 1]))
+    .sort();
+  return JSON.stringify([
+    item?.product_id ?? null,
+    String(item?.product_name ?? ''),
+    String(item?.special_instructions ?? '').trim().toLowerCase(),
+    addons,
+    item?.variant_selection ?? null,
+    item?.modifier_selection ?? null,
+  ]);
+}
+
+/**
+ * Folds identical dishes of one section into a single line of quantity N.
+ *
+ * The check keeps those rows apart on purpose - six identical fixed menus are
+ * six groups, because a menu is handed to a guest whole, and a dish added
+ * twice before the first send is two rows. None of that means anything at the
+ * pass, where it arrives as a ticket repeating "1 LASAGNA" six times down a
+ * foot of paper. The rows stay as they are; only the paper is compacted.
+ *
+ * Called per category of a run, so dishes that go out in different waves - or
+ * under different section rules - are never folded together.
+ */
+function compactKotItems(items: any[]): any[] {
+  const compacted: any[] = [];
+  const indexByIdentity = new Map<string, number>();
+  for (const item of items) {
+    const identity = kotItemIdentity(item);
+    const index = indexByIdentity.get(identity);
+    if (index === undefined) {
+      indexByIdentity.set(identity, compacted.length);
+      compacted.push({ ...item, quantity: Number(item?.quantity) || 0 });
+    } else {
+      compacted[index].quantity += Number(item?.quantity) || 0;
+    }
+  }
+  return compacted;
+}
+
+/**
  * A detail line under a dish - an add-on or a note. The marker only appears on
  * the first line; continuations align under the text, so a long note reads as
  * one block instead of a list of fragments. wrapText() collapses leading
@@ -1478,6 +1531,10 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   // any of this existed.
   const runs = groupItemsByServiceRun(items);
   const showRunHeaders = runs.length > 1;
+  // Counted while printing rather than from `items`: once identical dishes are
+  // folded together the rows of the check and the lines on the paper are no
+  // longer the same number, and the pass checks the ticket in its hand.
+  let printedRows = 0;
 
   runs.forEach((run, runIndex) => {
     if (showRunHeaders) {
@@ -1497,7 +1554,9 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
         if (groupIndex > 0) lines.push('');
         lines.push(`{BOLD}${labelledRule((group.name || L.other).toUpperCase(), cols, '=')}{/BOLD}`);
       }
-      group.items.forEach((item, itemIndex) => {
+      const rows = compactKotItems(group.items);
+      printedRows += rows.length;
+      rows.forEach((item, itemIndex) => {
         // A thin rule between dishes: without it a dish carrying two lines of
         // notes runs straight into the next one.
         if (itemIndex > 0) lines.push(thinRule);
@@ -1530,7 +1589,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   // plus the order number: too rarely needed to earn large type, too useful for
   // tracing a ticket back to its order to leave off entirely.
   const pieces = items.reduce((total, item) => total + (Number(item?.quantity) || 0), 0);
-  const footer = [L.summary(items.length, pieces), order.order_number].filter((part) => Boolean(part)).join(' - ');
+  const footer = [L.summary(printedRows, pieces), order.order_number].filter((part) => Boolean(part)).join(' - ');
   lines.push(`{FONT_B}${footer}{/FONT_B}`);
   lines.push('{CUT}');
 

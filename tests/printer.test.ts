@@ -661,6 +661,69 @@ console.log('\n✅ Test 6c: KOT sections the ticket by service run');
   assert('and its dish still reaches the kitchen', rubbish.includes('TAGLIATELLE') && rubbish.includes('TAGLIATA'));
 }
 
+console.log('\n✅ Test 6d: KOT folds identical dishes into one line');
+{
+  const order = { order_number: 'ORD-3', created_at: '2026-09-19 20:41:00', table: { name: '12' } };
+  const dish = (extra: Record<string, unknown> = {}) => ({
+    quantity: 1, product_id: 'p-lasagne', product_name: 'Lasagne', category_id: 'c2', category_name: 'Primi', addons: [], ...extra,
+  });
+  const print = (items: any[]) => formatKOT(
+    order, items, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 1, 'it', false, 16,
+  ).toString('latin1');
+
+  // Six identical fixed menus write six rows of one, on purpose: a menu is
+  // handed to a guest whole. The kitchen wants one line.
+  const sixMenus = print([dish(), dish(), dish(), dish(), dish(), dish()]);
+  assert('six identical rows print as one line of six', sixMenus.includes(' 6  LASAGNE'));
+  assert('and not as a line of one', !sixMenus.includes(' 1  LASAGNE'));
+  assert('the footer counts the lines on the paper, not the rows of the check', sixMenus.includes('1 righe - 6 pezzi'));
+
+  // Quantities add up rather than being counted again.
+  assert('rows already carrying a quantity add up', print([dish({ quantity: 2 }), dish({ quantity: 3 })]).includes(' 5  LASAGNE'));
+
+  // The plate with an instruction on it is the one that must not disappear
+  // into the pile.
+  const withNote = print([dish(), dish(), dish({ special_instructions: 'senza besciamella' })]);
+  assert('a noted plate stays off the compacted line', withNote.includes(' 2  LASAGNE') && withNote.includes(' 1  LASAGNE'));
+  assert('and keeps its note', withNote.includes('>> senza besciamella'));
+
+  // Two guests asking for the same thing are two plates of one instruction,
+  // however each waiter typed it.
+  const twoSameNotes = print([
+    dish({ special_instructions: 'Senza besciamella' }),
+    dish({ special_instructions: 'senza besciamella ' }),
+  ]);
+  assert('the same note twice is one line of two', twoSameNotes.includes(' 2  LASAGNE'));
+  assert('printed as it was first written', twoSameNotes.includes('>> Senza besciamella'));
+
+  // Add-ons are part of the dish; the order they were ticked in is not.
+  const addons = print([
+    dish({ addons: [{ name: 'Extra ragu' }, { name: 'Senza aglio' }] }),
+    dish({ addons: [{ name: 'Senza aglio' }, { name: 'Extra ragu' }] }),
+    dish({ addons: [{ name: 'Extra ragu' }] }),
+  ]);
+  assert('the same add-ons ticked in any order fold together', addons.includes(' 2  LASAGNE'));
+  assert('a different set of add-ons stays its own line', addons.includes(' 1  LASAGNE'));
+
+  // Two plates going out in different waves are two instructions, and folding
+  // them would drop one of the two.
+  const runs = print([dish({ service_run: 1 }), dish({ service_run: 2 })]);
+  assert('a dish in another wave is never folded in', runs.split(' 1  LASAGNE').length - 1 === 2);
+  assert('and both waves are still called out', runs.includes('1\u00AA USCITA') && runs.includes('2\u00AA USCITA'));
+
+  // Different dishes are still different dishes.
+  const mixed = print([dish(), dish({ product_id: 'p-tagliatelle', product_name: 'Tagliatelle' }), dish()]);
+  assert('unlike dishes keep their own lines', mixed.includes(' 2  LASAGNE') && mixed.includes(' 1  TAGLIATELLE'));
+
+  const tagliata = { quantity: 1, product_id: 'p-tagliata', product_name: 'Tagliata', category_id: 'c3', category_name: 'Secondi', addons: [] };
+  console.log('\n   — Compacted KOT —');
+  console.log(visiblePreview(formatKOT(
+    order,
+    [dish(), dish(), dish(), dish({ special_instructions: 'senza besciamella' }), tagliata, { ...tagliata }],
+    'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 3, 'it', false, 16,
+  ), 48));
+}
+
 console.log('\n✅ Test 7: Test page builder');
 {
   const buf80 = buildTestPage('80mm');
