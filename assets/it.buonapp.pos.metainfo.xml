@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.0.1" date="2026-09-20">
+      <description>
+        <p>6.0.0 met the till it was written for, and a real service found what only a real service finds. A kitchen ticket took the best part of ten seconds to come out of the USB printer. The window opened larger than the 1024x768 screen it opened on, so the till saw its top-left corner. The handheld served the menu as it had been at the moment the phone was switched on. A table of six identical fixed menus printed six lines of one, a foot of paper for a dish the cook makes six of. Corrections only: no new feature, and no database migration, so an upgrade touches nothing in the data.</p>
+      </description>
+    </release>
     <release version="6.0.0" date="2026-09-17">
       <description>
         <p>A fixed menu is filled in as the meal goes, not all at once: the starter is sent, and the main is chosen half an hour later with a tap on the grid. Every dish now leaves the kitchen in a **service run** — starters, then pasta, then mains — so a ticket says *when* as well as *what*. The tableside handheld was rebuilt to take orders the way the central PC does, and any waiter can work any open order. Then the interface of both was redrawn for the finger: the till is a touch monitor, and the handheld is a phone.</p>

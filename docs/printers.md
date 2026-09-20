@@ -26,7 +26,7 @@ KOT printing can be disabled for the business. When it is disabled, neither auto
 
 ### What a kitchen ticket looks like
 
-Tickets lead with the table in the largest type the paper allows, then the round number, then a single condensed line carrying the send time, the covers, and the station. Dishes follow with the quantity in its own column and the name in double height; add-ons are marked `+`, item notes `>>` and printed in bold. A thin rule separates one dish from the next, and where a station cooks more than one category the dishes are grouped under a labelled rule per category. The ticket closes with a line and piece count plus the order number, so the pass can check nothing is missing and the ticket can still be traced back to its order.
+Tickets lead with the table in the largest type the paper allows, then the round number, then a single condensed line carrying the send time, the covers, and the station. Dishes follow with the quantity in its own column and the name in double height; add-ons are marked `+`, item notes `>>` and printed in bold. Identical dishes are folded into one line with the quantity summed: two rows are the same dish when the product, the add-ons (in any order they were ticked), the note and the variant selections all match, so a plate carrying an instruction is never folded into the plates without one, and dishes on different service runs are never folded together. A thin rule separates one dish from the next, and where a station cooks more than one category the dishes are grouped under a labelled rule per category. The ticket closes with a line and piece count plus the order number, so the pass can check nothing is missing and the ticket can still be traced back to its order.
 
 ### Service runs
 
@@ -80,7 +80,7 @@ BuonApp does not manage standalone Bluetooth RFCOMM transport or discovery. To u
 
 ### WebUSB printers
 
-WebUSB printers are paired through the POS toolbar in a supported browser. The saved printer entry retains formatting preferences, but browser permissions control physical device access.
+WebUSB printers are paired through the POS toolbar in a supported browser. The saved printer entry retains formatting preferences, but browser permissions control physical device access. They print bills only: a kitchen ticket always goes through the backend, which is what stamps the round and routes the rows to the stations, so a store that prints tickets needs a network, USB or OS-queue printer configured.
 
 ### Diagnostic logs
 
