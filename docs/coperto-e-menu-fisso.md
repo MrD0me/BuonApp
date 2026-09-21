@@ -4,7 +4,9 @@
 menu aperto e le uscite il 2026-09-05, corretto dopo la prima sera in sala lo stesso giorno.
 **Fatto tutto**: il coperto con le migrazioni v88-v90, il menu fisso con la v92 (nata come v91,
 ha preso il numero dopo perché nel frattempo la v91 è servita a togliere la divisione del conto),
-le eccezioni per piatto con la v93, le uscite con la v94, il menu aperto con la v95.
+le eccezioni per piatto con la v93, le uscite con la v94, il menu aperto con la v95. Il menu **a
+conteggio** (2026-09-21, branch `menu-fisso-rivisto`, senza migrazioni) sostituisce il menu a
+persona: vedi la sezione in fondo.
 
 ## Contesto
 
@@ -174,12 +176,14 @@ niente. Il menu fisso è un prodotto in più nel catalogo, non un modo diverso d
 Il piano lasciava aperti quattro punti che il documento non aveva visto. Decisi con l'utente prima
 di scrivere una riga:
 
-- **Un menu è un gruppo, di quantità uno.** Sei menu uguali sono sei righe da 25,00, ognuna coi suoi
-  piatti sotto. Non è una scelta estetica: è l'unica forma in cui il blocco unico della divisione
-  regge, perché un blocco da sei non si può spartire fra sei quote. Il costo — battere sei volte —
-  lo paga il pulsante **"Un altro uguale"**, che riapre la finestra con le scelte dell'ultimo menu.
-  Nel carrello un menu non si fonde mai con un altro (`cart-identity.ts`) e non ha il selettore di
-  quantità.
+- ~~**Un menu è un gruppo, di quantità uno.** Sei menu uguali sono sei righe da 25,00, ognuna coi
+  suoi piatti sotto. Non è una scelta estetica: è l'unica forma in cui il blocco unico della
+  divisione regge, perché un blocco da sei non si può spartire fra sei quote. Il costo — battere sei
+  volte — lo paga il pulsante **"Un altro uguale"**, che riapre la finestra con le scelte
+  dell'ultimo menu.~~ Superato il 2026-09-21: la divisione del conto non c'è più dalla v91, e in sala
+  il menu si segna contando i piatti, non commensale per commensale. Vedi il menu a conteggio qui
+  sotto. Resta vero che nel carrello una riga di menu non si fonde mai con un'altra
+  (`cart-identity.ts`).
 - **Il coperto incluso vale un coperto per menu, mai più dei commensali.** Tre menu a un tavolo di
   due non fanno coperto negativo: `computeCoverCharge` taglia a zero. Il ricalcolo sta in
   `orderCoverCharge()` (`routes/orders.ts`), chiamata da tutti i punti che cambiano le righe:
@@ -363,6 +367,87 @@ ambra e mai un rifiuto.
   contratto della finestra del menu — props dentro, callback fuori, nessun client API — e il
   2026-09-15 il palmare rifatto li ha montati così come sono: vedi [palmare.md](palmare.md).
 
+## Il menu a conteggio (2026-09-21)
+
+**Il problema, visto in sala.** Il menu valeva una persona. Per un tavolo da otto il cameriere
+apriva la finestra otto volte e chiedeva a ogni commensale tutto il suo menu, dall'antipasto al
+dolce. Si può fare, ma non è come si lavora: al tavolo si chiede *quanti prendono il menu*, e poi
+si segnano i piatti contandoli, portata per portata — tre lasagne, due carbonara, un risotto —
+senza sapere chi mangia cosa. Allo stesso tavolo capita spesso che alcuni prendano il menu e altri
+mangino alla carta.
+
+**Il modello.** Una riga di menu dà da mangiare a N persone:
+
+- **un gruppo solo**, con la riga del menu a quantità N che costa N volte il prezzo
+  (`expandFixedMenuItems`);
+- **i piatti restano una riga per porzione**, come prima. Stato in cucina, uscita, nota e annullo col
+  PIN continuano a lavorare piatto per piatto, e il riempimento abbina ancora uno a uno. «Lasagne 3»
+  è solo come si mostrano: la comanda le fondeva già (`compactKotItems`, dalla bba2981), il
+  preconto le fonde ora (`compactMenuCourseRows`, e `printableBillRows` nel browser), e le schermate
+  del tavolo pure (`compactMenuRows`);
+- **una portata tiene al massimo `max_choices × N` piatti.** Mancare non ferma niente, il secondo si
+  decide dopo; troppi sì, perché il nono primo su otto menu si ordina alla carta. «Prevista» vuol
+  dire: segnala finché i piatti sono meno di N;
+- **il coperto incluso vale N coperti**: `coveredGuestCount` sommava già la quantità;
+- **nessuna migrazione.** Un gruppo scritto col modo di prima è un menu da uno, e continua a
+  funzionare così com'è.
+
+La scelta, discussa prima di scrivere: righe da una porzione e conteggio nella vista, invece di
+righe con la quantità. Le righe con la quantità avrebbero chiesto di spezzare una riga in due ogni
+volta che una lasagna su tre cambia uscita o prende una nota, e un riempimento che riduce una riga
+già mandata. Con una riga per porzione tutto questo esisteva già.
+
+**La finestra** (`FixedMenuPicker`):
+
+- in testa **«Quanti menu?»**, con un pulsante per ogni numero fino ai coperti del tavolo e un `+`
+  per andare oltre. **Non parte da nessun numero**, e senza non si aggiunge: con i tavoli misti,
+  partire dai coperti farebbe pagare menu non presi a chi si dimentica di abbassarlo;
+- per ogni portata i suoi piatti con `−` conteggio `+`, e un tocco sul nome vale uno in più, come la
+  tacca sul foglio. La portata dice «6/8», in ambra finché mancano piatti e in rosso se sono troppi;
+- **«Nota o uscita per una porzione»** stacca una lasagna dal conteggio semplice e le dà una riga sua,
+  con la nota («senza besciamella») e l'uscita;
+- via **«Un altro uguale»**: il conteggio lo rende inutile;
+- toccare di nuovo un menu che è già nel carrello riapre quella riga, invece di aprirne una seconda.
+
+**Sul conto già inviato**, al PC e sul palmare:
+
+- la riga del menu dice «8×», e le porzioni uguali di un piatto sono una riga «3× Lasagne». Le
+  azioni su quella riga valgono per **una** porzione, e la scheda lo dice («una di 3»). Spostata di
+  uscita, la porzione si stacca e si vede da sola;
+- i pulsanti delle portate con posto dicono quanto sono pieni («Secondo 0/8»), e aprono la finestra
+  ristretta a quella portata, con i conteggi. Salvando si mandano anche nota e uscita delle porzioni
+  che c'erano già: prima la finestra partiva dai soli piatti, e le perdeva;
+- **`PATCH /orders/:id/menu-groups/:groupId` `{ quantity }`** cambia quanti menu: l'amico che arriva
+  dopo, o chi alla fine ordina alla carta. Sotto il numero di piatti già in una portata risponde 409
+  `menu_course_overflow`, e dice quale portata: il piatto in più lo toglie la sala. Stessi ruoli e
+  controlli del riempimento, ed è nell'allowlist del palmare. Al PC sta nella scheda della riga del
+  menu, sul palmare sulla testata del menu. Togliere la riga del menu toglie tutti gli N menu, e la
+  conferma dice quanti.
+
+**Il riempimento abbina meglio.** Due difetti venuti fuori strada facendo, tutti e due sistemati in
+`planCourseFill`:
+
+- un id nudo, quello che la griglia manda per i piatti già presenti quando ne aggiunge uno, valeva
+  «senza nota»: la zuppa «senza sale» veniva annullata e riscritta senza nota, e ripartiva per la
+  cucina. Ora un id nudo tiene nota e uscita della riga;
+- le richieste più precise si abbinano per prime (nota e uscita, poi solo la nota, poi gli id nudi),
+  e le righe già in cucina prima di quelle in attesa. Togliere una lasagna su tre libera una di
+  quelle in attesa, invece di fermarsi con 409 su quella nel forno.
+
+**Trovato e sistemato perché stava in mezzo: il preconto stampava le righe annullate.** Una lasagna
+tolta prima di andare in cucina usciva a 10,00 sopra un totale che non la contava. Col conteggio,
+togliere un piatto da una portata diventa una correzione di tutte le sere. Ora le righe annullate
+restano fuori dalla carta, termica e browser; quelle stornate col PIN restano, accanto alla riga
+negativa che le compensa.
+
+**Resta com'era:**
+
+- la domanda **«compreso nel menu?»** battendo dalla griglia, con il posto contato su tutti i menu
+  della riga. Una riga da otto si chiama «Menu completo ×8»;
+- **chi arriva dopo**: da Ordina si apre un secondo gruppo dello stesso menu, oppure si alza «Quanti
+  menu» sul tavolo. Tutte e due le strade funzionano;
+- **il KDS** mostra ancora una riga per porzione: il locale usa le comande stampate.
+
 ## Ordine dei lavori
 
 Tutti e quattro i passi sono fatti.
@@ -385,10 +470,14 @@ Tutti e quattro i passi sono fatti.
 
 `npm test` al termine, e un giro a mano in sala prima di usarlo di sera.
 
-La suite del menu fisso è `npm run test:fixed-menu` (52 controlli), ed è dentro la catena di
+La suite del menu fisso è `npm run test:fixed-menu` (152 controlli), ed è dentro la catena di
 `npm test`. Copre composizione, supplementi, portata facoltativa, prezzo forgiato dal client,
-tre menu = tre gruppi, coperto incluso che non va sotto zero, riprezzamento su aggiunta e annullo,
-annullo di gruppo, comanda senza pacchetto, preconto rientrato.
+tre menu = una riga da tre coi piatti contati e il tetto per portata, coperto incluso che non va
+sotto zero, riprezzamento su aggiunta e annullo, annullo di gruppo, comanda senza pacchetto,
+preconto rientrato, riempimento di una riga da N, quanti menu (su, giù, rifiuti), e il riempimento
+che tiene note e uscite. La parte interfaccia (conteggi, tetti, totali del carrello, righe
+compattate) è `npm run test:fixed-menu-tally`; il preconto compattato e senza righe annullate sta
+in `npm run test:printer`.
 
 **Resta da fare a mano, con la stampante vera:** due menu completi allo stesso tavolo devono uscire
 in cucina come piatti in sezioni e sul conto come due pacchetti coi piatti sotto.
