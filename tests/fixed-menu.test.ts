@@ -900,6 +900,57 @@ async function main() {
     const afterPaying = await api(baseUrl, countUrl, { method: 'PATCH', headers: authHeader, body: { quantity: 4 } });
     assertEqual(afterPaying.status, 409, 'once the guests have paid, the count stops moving');
 
+    console.log('\n23. Filling a course keeps what each portion already says');
+    const notedLine = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'dine_in', guest_count: 3,
+        items: [{
+          product_id: 'p-menu', quantity: 3,
+          menu_selection: [
+            { course_id: mainsCourse.id, product_id: 'p-soup', note: 'senza sale' },
+            { course_id: mainsCourse.id, product_id: 'p-soup', service_run: 2 },
+          ],
+        }],
+      },
+    });
+    assertEqual(notedLine.status, 201, 'two soups, one without salt and one out in the second wave');
+    const notedId = notedLine.data.order.id;
+    const notedGroup = rowsOf(notedId).find((row) => row.menu_role === 'package').menu_group_id;
+    const notedUrl = `/api/orders/${notedId}/menu-groups/${notedGroup}/courses/${mainsCourse.id}`;
+    const soupRows = () => rowsOf(notedId).filter((row) => row.product_id === 'p-soup' && row.status !== 'cancelled');
+    const soupIds = soupRows().map((row) => row.id).join(',');
+
+    // What the grid sends when a third soup is dropped in: the dishes already
+    // there as bare ids, and the new one.
+    const fromGrid = await api(baseUrl, notedUrl, {
+      method: 'PUT', headers: authHeader, body: { product_ids: ['p-soup', 'p-soup', 'p-soup'] },
+    });
+    assertEqual(fromGrid.status, 200, 'a third soup from the grid joins the course');
+    assertEqual(soupRows().length, 3, 'three soups');
+    assert(soupRows().some((row) => row.special_instructions === 'senza sale'), 'and the one without salt still says so');
+    assertEqual(
+      rowsOf(notedId).filter((row) => row.product_id === 'p-soup' && row.status === 'cancelled').length, 0,
+      'nothing already there was cancelled and written again',
+    );
+
+    // What the window sends: the plain count first, the one with its own run
+    // after it. The plain soup must not take the row of the second wave.
+    const beforeWindow = soupRows().map((row) => row.id).join(',');
+    const fromWindow = await api(baseUrl, notedUrl, {
+      method: 'PUT', headers: authHeader,
+      body: {
+        product_ids: [
+          { product_id: 'p-soup', quantity: 1 },
+          { product_id: 'p-soup', note: 'senza sale' },
+          { product_id: 'p-soup', service_run: 2 },
+        ],
+      },
+    });
+    assertEqual(fromWindow.status, 200, 'the window saves the course as it shows it');
+    assertEqual(soupRows().map((row) => row.id).join(','), beforeWindow, 'and not a row moves: every portion found its own');
+    assert(soupIds.length > 0, 'the soups were there to begin with');
+
     // ── Summary ───────────────────────────────────────────────────────────
     console.log('\n' + '='.repeat(60));
     const results = getResults();

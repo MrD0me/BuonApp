@@ -656,15 +656,19 @@ export function planCourseFill(
 
   // Either bare ids or the full shape — the window sends a note, a run and a
   // count with each dish, the same as it does when the menu is first composed.
+  // A bare id says only which dish: it keeps whatever note and run the row
+  // already has. That is what a dish dropped in from the grid sends for the
+  // ones already there, and it must not strip "senza besciamella" off them.
   if (!Array.isArray(productIds)) throw invalid('product_ids must be a list of dishes');
   const wanted = productIds.flatMap((entry: any) => {
     if (!entry || typeof entry !== 'object') {
-      return [{ product_id: String(entry ?? ''), note: null as string | null, service_run: undefined as unknown }];
+      return [{ product_id: String(entry ?? ''), note: null as string | null, service_run: undefined as unknown, anyNote: true }];
     }
     const dish = {
       product_id: String(entry.product_id ?? ''),
       note: choiceNote(entry.note),
       service_run: entry.service_run as unknown,
+      anyNote: false,
     };
     return Array.from({ length: choicePortions(entry.quantity, menu.name) }, () => dish);
   });
@@ -682,9 +686,15 @@ export function planCourseFill(
   // nothing and only the difference moves. The kitchen's rows are matched
   // first: taking one lasagna off three releases one still waiting, rather
   // than stopping on the one already in the pan and refusing the lot.
+  // And the precise wishes before the loose ones: "a lasagna, out with the
+  // starters" gets the row that is out with the starters, before a plain
+  // "a lasagna", which would have taken any, can take it from under it.
+  const precision = (dish: { anyNote: boolean; service_run: unknown }) => (
+    (dish.anyNote ? 0 : 1) + (dish.service_run === undefined ? 0 : 1)
+  );
   const insert: ExpandedOrderItem[] = [];
   const spare = [...held].sort((left, right) => Number(left.status === 'pending') - Number(right.status === 'pending'));
-  for (const wantedDish of wanted) {
+  for (const wantedDish of [...wanted].sort((left, right) => precision(right) - precision(left))) {
     const { product_id: productId } = wantedDish;
     // Matched on the note and the run as well as the dish, so correcting
     // "no garlic" on a pending row rewrites it — and a row the kitchen has
@@ -692,7 +702,7 @@ export function planCourseFill(
     // the cook.
     const already = spare.findIndex((row) => (
       row.product_id === productId
-      && (row.special_instructions || null) === (wantedDish.note || null)
+      && (wantedDish.anyNote || (row.special_instructions || null) === (wantedDish.note || null))
       && (wantedDish.service_run === undefined || Number(row.service_run) === Number(wantedDish.service_run))
     ));
     if (already >= 0) {
