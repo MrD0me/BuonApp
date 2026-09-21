@@ -138,6 +138,7 @@ async function main() {
       ['PATCH', '/api/orders/1/guests'],
       ['PATCH', '/api/orders/1/items/2/service-run'],
       ['PUT', '/api/orders/1/menu-groups/g1/courses/c1'],
+      ['PATCH', '/api/orders/1/menu-groups/g1'],
     ];
     for (const [method, route] of forwarded) {
       const withToken = await send(baseUrl, method, route, serverLogin.body.access_token);

@@ -21,7 +21,12 @@
  *  - A course draws from categories, and the owner's two exception lists
  *    override them dish by dish, in both directions.
  *  - An optional course (the house wine) is free to skip and changes no price.
- *  - Three menus are three groups, never one row of three.
+ *  - Three menus are one line of three: one package row that says three, and
+ *    under it the dishes counted, a row per portion; a course holds that many
+ *    dishes and not one more.
+ *  - A line already sent is counted into course by course, gives back a dish
+ *    still waiting before one in the pan, and changes how many it feeds —
+ *    never below what its courses already hold.
  *  - A menu that includes the cover takes its guest off the cover charge, and
  *    never below zero however many menus a small table orders.
  *  - Adding or cancelling a menu re-prices the cover on an open order.
@@ -267,8 +272,10 @@ async function main() {
     assertEqual(Number(withWine.data.order.total), MENU_PRICE, 'and the price does not move');
     assertEqual(rowsOf(withWine.data.order.id).length, 4, 'the wine is a row of its own for the bar');
 
-    // ── One menu, one group ───────────────────────────────────────────────
-    console.log('\n7. Three menus are three groups, not one row of three');
+    // ── A line of menus ───────────────────────────────────────────────────
+    console.log('\n7. Three menus are one line of three, with the dishes counted');
+    // The floor counts dishes, not guests: three olives, two soups and a
+    // steak, and nobody says which of the three had the steak.
     const three = await api(baseUrl, '/api/orders', {
       method: 'POST', headers: authHeader,
       body: {
@@ -276,17 +283,52 @@ async function main() {
         items: [{
           product_id: 'p-menu', quantity: 3,
           menu_selection: [
-            { course_id: saved.data.courses[0].id, product_id: 'p-olives' },
-            { course_id: saved.data.courses[1].id, product_id: 'p-soup' },
+            { course_id: saved.data.courses[0].id, product_id: 'p-olives', quantity: 3 },
+            { course_id: saved.data.courses[1].id, product_id: 'p-soup', quantity: 2 },
+            { course_id: saved.data.courses[1].id, product_id: 'p-steak' },
           ],
         }],
       },
     });
+    assertEqual(three.status, 201, 'three menus are taken in one go');
     const threeRows = rowsOf(three.data.order.id);
-    assertEqual(new Set(threeRows.map((row) => row.menu_group_id)).size, 3, 'three distinct groups');
-    assertEqual(threeRows.length, 9, 'nine rows in all');
-    assertEqual(threeRows.every((row: any) => row.quantity === 1), true, 'every row is a single');
-    assertEqual(Number(three.data.order.total), MENU_PRICE * 3, 'and the total is three menus');
+    assertEqual(new Set(threeRows.map((row) => row.menu_group_id)).size, 1, 'one group, however many guests');
+    const threePackages = threeRows.filter((row) => row.menu_role === 'package');
+    assertEqual(threePackages.length, 1, 'one package row');
+    assertEqual(threePackages[0].quantity, 3, 'that says three menus');
+    assertEqual(Number(threePackages[0].total), MENU_PRICE * 3, 'and costs three');
+    const threeDishes = threeRows.filter((row) => row.menu_role === 'course');
+    assertEqual(threeDishes.length, 6, 'a row per portion: three starters and three mains');
+    assertEqual(threeDishes.every((row: any) => row.quantity === 1), true, 'every portion is a single');
+    assertEqual(threeDishes.filter((row: any) => row.product_id === 'p-soup').length, 2, 'two soups counted are two rows');
+    assertEqual(
+      Number(three.data.order.total), MENU_PRICE * 3 + STEAK_SURCHARGE,
+      'the total is three menus and the one surcharge',
+    );
+
+    const overfull = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'takeaway',
+        items: [{
+          product_id: 'p-menu', quantity: 2,
+          menu_selection: [{ course_id: saved.data.courses[0].id, product_id: 'p-olives', quantity: 3 }],
+        }],
+      },
+    });
+    assertEqual(overfull.status, 400, 'three starters on two menus is a mis-ring, and refused');
+
+    const notACount = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'takeaway',
+        items: [{
+          product_id: 'p-menu', quantity: 2,
+          menu_selection: [{ course_id: saved.data.courses[0].id, product_id: 'p-olives', quantity: 1.5 }],
+        }],
+      },
+    });
+    assertEqual(notACount.status, 400, 'and so is a count that is not a whole number');
 
     // ── The cover ─────────────────────────────────────────────────────────
     console.log('\n8. A menu that includes the cover takes its guest off it');
@@ -320,6 +362,15 @@ async function main() {
     });
     assertEqual(Number(smallTable.data.order.cover_charge), 0, 'three menus at a table of two never go negative');
     assertEqual(Number(smallTable.data.order.total), MENU_PRICE * 3, 'and the total is the three menus');
+
+    const lineOfThree = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'dine_in', guest_count: 4,
+        items: [{ product_id: 'p-menu', quantity: 3, menu_selection: [] }],
+      },
+    });
+    assertEqual(Number(lineOfThree.data.order.cover_charge), 2, 'a line of three menus carries three of four covers');
 
     console.log('\n9. A menu added later re-prices the cover');
     const laterTable = await api(baseUrl, '/api/orders', {
@@ -743,6 +794,111 @@ async function main() {
       rowsOf(unasked.data.order.id).find((row) => row.product_id === 'p-branzino').service_run, 3,
       'a dish inside a menu goes out with its own category',
     );
+
+    // ── Counting into a line already sent ─────────────────────────────────
+    console.log('\n20. A course of a line of menus holds that many dishes');
+    const counted = await api(baseUrl, '/api/fixed-menus/p-menu', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        courses: [
+          { label: 'Antipasto', is_required: true, max_choices: 1, category_ids: ['cat-starters'] },
+          {
+            label: 'Secondo', is_required: true, max_choices: 1, category_ids: ['cat-mains'],
+            surcharges: [{ product_id: 'p-steak', surcharge: STEAK_SURCHARGE }],
+          },
+        ],
+      },
+    });
+    assertEqual(counted.status, 200, 'the menu is back to a starter and a main');
+    const [starterCourse, mainsCourse] = counted.data.courses;
+
+    const countedTable = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'dine_in', guest_count: 4,
+        items: [{
+          product_id: 'p-menu', quantity: 3,
+          menu_selection: [{ course_id: starterCourse.id, product_id: 'p-bruschetta', quantity: 3 }],
+        }],
+      },
+    });
+    assertEqual(countedTable.status, 201, 'three menus with the starters counted and the mains still open');
+    const countedId = countedTable.data.order.id;
+    const lineId = rowsOf(countedId).find((row) => row.menu_role === 'package').menu_group_id;
+    const mainsUrl = `/api/orders/${countedId}/menu-groups/${lineId}/courses/${mainsCourse.id}`;
+    const liveMains = () => rowsOf(countedId).filter((row) => (
+      row.menu_course_id === mainsCourse.id && row.status !== 'cancelled'
+    ));
+
+    const mains = await api(baseUrl, mainsUrl, {
+      method: 'PUT', headers: authHeader,
+      body: { product_ids: [{ product_id: 'p-soup', quantity: 2 }, 'p-steak'] },
+    });
+    assertEqual(mains.status, 200, 'the mains are counted in later: two soups and a steak');
+    assertEqual(liveMains().length, 3, 'three rows, one per portion');
+    assertEqual(
+      Number(mains.data.order.total), MENU_PRICE * 3 + STEAK_SURCHARGE + 2,
+      'and the check moves by the one surcharge, the fourth guest\'s cover still on it',
+    );
+
+    const fourthMain = await api(baseUrl, mainsUrl, {
+      method: 'PUT', headers: authHeader,
+      body: { product_ids: [{ product_id: 'p-soup', quantity: 3 }, 'p-steak'] },
+    });
+    assertEqual(fourthMain.status, 400, 'a fourth main on three menus is refused');
+    assertEqual(liveMains().length, 3, 'and nothing is written');
+
+    console.log('\n21. One soup fewer releases a soup still waiting');
+    const soups = liveMains().filter((row) => row.product_id === 'p-soup');
+    db.prepare("UPDATE order_items SET status = 'preparing' WHERE id = ?").run(soups[0].id);
+    const oneSoupFewer = await api(baseUrl, mainsUrl, {
+      method: 'PUT', headers: authHeader, body: { product_ids: ['p-soup', 'p-steak'] },
+    });
+    assertEqual(oneSoupFewer.status, 200, 'taking one soup off two is allowed while one still waits');
+    assertEqual(rowsOf(countedId).find((row) => row.id === soups[0].id).status, 'preparing', 'the soup in the pan stays');
+    assertEqual(rowsOf(countedId).find((row) => row.id === soups[1].id).status, 'cancelled', 'the one still waiting goes');
+
+    console.log('\n22. How many the line feeds changes after it was sent');
+    const countUrl = `/api/orders/${countedId}/menu-groups/${lineId}`;
+    const packageOf = () => rowsOf(countedId).find((row) => row.menu_role === 'package');
+
+    const four = await api(baseUrl, countUrl, { method: 'PATCH', headers: authHeader, body: { quantity: 4 } });
+    assertEqual(four.status, 200, 'a friend arrives and takes the menu too');
+    assertEqual(packageOf().quantity, 4, 'the line now feeds four');
+    assertEqual(Number(packageOf().total), MENU_PRICE * 4, 'and costs four');
+    assertEqual(Number(four.data.order.cover_charge), 0, 'the fourth cover is inside a menu now');
+    assertEqual(Number(four.data.order.total), MENU_PRICE * 4 + STEAK_SURCHARGE, 'and the check follows');
+
+    const tooFew = await api(baseUrl, countUrl, { method: 'PATCH', headers: authHeader, body: { quantity: 2 } });
+    assertEqual(tooFew.status, 409, 'two menus cannot hold three starters');
+    assertEqual(tooFew.data.code, 'menu_course_overflow', 'and it says why');
+    assertEqual(tooFew.data.course_id, starterCourse.id, 'naming the course that is too full');
+    assertEqual(packageOf().quantity, 4, 'nothing moves when it is refused');
+
+    const back = await api(baseUrl, countUrl, { method: 'PATCH', headers: serverAuth, body: { quantity: 3 } });
+    assertEqual(back.status, 200, 'a waiter takes one back off, from the handheld');
+    assertEqual(Number(back.data.order.cover_charge), 2, 'the fourth guest pays their cover again');
+    assertEqual(Number(back.data.order.total), MENU_PRICE * 3 + STEAK_SURCHARGE + 2, 'and the menu comes off the total');
+
+    const sameAgain = await api(baseUrl, countUrl, { method: 'PATCH', headers: authHeader, body: { quantity: 3 } });
+    assertEqual(sameAgain.status, 200, 'asking for the count it already has is allowed');
+    assertEqual(Number(sameAgain.data.order.total), MENU_PRICE * 3 + STEAK_SURCHARGE + 2, 'and changes nothing');
+
+    const zero = await api(baseUrl, countUrl, { method: 'PATCH', headers: authHeader, body: { quantity: 0 } });
+    assertEqual(zero.status, 400, 'no menus at all is a cancel, not a count');
+    const noSuchLine = await api(baseUrl, `/api/orders/${countedId}/menu-groups/not-a-group`, {
+      method: 'PATCH', headers: authHeader, body: { quantity: 2 },
+    });
+    assertEqual(noSuchLine.status, 404, 'a line that is not on this order');
+
+    const countedBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', headers: authHeader, body: { order_id: countedId },
+    });
+    assertEqual(countedBill.status, 201, 'the preconto is drawn up');
+    db.prepare("UPDATE bills SET payment_status = 'paid', paid_amount = 80 WHERE order_id = ?").run(countedId);
+    const afterPaying = await api(baseUrl, countUrl, { method: 'PATCH', headers: authHeader, body: { quantity: 4 } });
+    assertEqual(afterPaying.status, 409, 'once the guests have paid, the count stops moving');
 
     // ── Summary ───────────────────────────────────────────────────────────
     console.log('\n' + '='.repeat(60));
