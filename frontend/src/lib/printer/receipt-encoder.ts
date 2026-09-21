@@ -13,7 +13,8 @@
  */
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
-import type { Bill, Tenant } from '@/lib/types';
+import type { Bill, OrderItem, Tenant } from '@/lib/types';
+import { roundMoney } from '@/lib/utils';
 import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
@@ -177,6 +178,51 @@ function menuCourseLine(
   return { indent: true, suppressAmount: !(Number(item.total) > 0), sign: '+' };
 }
 
+/**
+ * The rows a printed bill draws — the mirror of printableBillRows in
+ * main/printers/thermal.ts, so the same bill reads the same from either.
+ *
+ * A cancelled row is off the check, so its dish stays off the paper; a voided
+ * one stays, beside the negative line that cancels it. The portions of a menu
+ * line fold into one row per dish, name, surcharge and note: three lasagne
+ * under a menu of eight read "Lasagne 3", not the same name three times.
+ */
+function printableBillRows(items: OrderItem[]): OrderItem[] {
+  const rows: OrderItem[] = [];
+  const indexByIdentity = new Map<string, number>();
+  for (const item of items) {
+    if (item?.status === 'cancelled') continue;
+    if (item?.menu_role !== 'course' || !item?.menu_group_id) {
+      rows.push(item);
+      continue;
+    }
+    const identity = JSON.stringify([
+      item.menu_group_id,
+      item.product_id ?? null,
+      String(item.product_name ?? ''),
+      Number(item.unit_price) || 0,
+      String(item.special_instructions ?? '').trim().toLowerCase(),
+      item.status === 'voided',
+    ]);
+    const index = indexByIdentity.get(identity);
+    if (index === undefined) {
+      indexByIdentity.set(identity, rows.length);
+      rows.push({
+        ...item,
+        quantity: Number(item.quantity) || 0,
+        subtotal: Number(item.subtotal) || 0,
+        total: Number(item.total) || 0,
+      });
+      continue;
+    }
+    const row = rows[index];
+    row.quantity += Number(item.quantity) || 0;
+    row.subtotal = roundMoney(row.subtotal + (Number(item.subtotal) || 0));
+    row.total = roundMoney(row.total + (Number(item.total) || 0));
+  }
+  return rows;
+}
+
 function col4Rows(
   name: string,
   qty: number,
@@ -278,7 +324,8 @@ export function buildClassicReceiptBytes(
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
-  const col4Layout = resolveCol4Widths(cols, order?.items ?? [], currency, locale, trimDecimals);
+  const billRows = printableBillRows(order?.items ?? []);
+  const col4Layout = resolveCol4Widths(cols, billRows, currency, locale, trimDecimals);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -317,19 +364,19 @@ export function buildClassicReceiptBytes(
   enc.rule({ style: 'single' });
 
   // Line items
-  const items = order?.items ?? [];
-  for (const item of items) {
+  for (const item of billRows) {
     const course = menuCourseLine(item);
-    const rows = course.suppressAmount
-      ? [truncate(`  ${item.product_name}`, cols - 1)]
-      : col4Rows(
-        course.indent ? `  ${item.product_name}` : item.product_name,
-        item.quantity,
-        course.indent ? '' : item.unit_price,
-        item.total,
-        currency, col4Layout, locale, trimDecimals,
-        amountTextFor(item, currency, locale, trimDecimals),
-      );
+    // A dish the package covers still says how many, in the quantity column
+    // like any row — three lasagne under the menu, not one name. It only
+    // leaves the rate and the amount empty.
+    const rows = col4Rows(
+      course.indent ? `  ${item.product_name}` : item.product_name,
+      item.quantity,
+      course.indent ? '' : item.unit_price,
+      item.total,
+      currency, col4Layout, locale, trimDecimals,
+      course.suppressAmount ? '' : amountTextFor(item, currency, locale, trimDecimals),
+    ).map((row) => (course.suppressAmount ? row.trimEnd() : row));
     for (const row of rows) {
       safePrinterText(enc, row, warnings).newline();
     }
@@ -479,11 +526,15 @@ export function buildCompactReceiptBytes(
 
   enc.rule({ style: 'single' });
 
-  // Items — compact: one line per item with total, qty x rate below if qty > 1
-  const items = order?.items ?? [];
-  for (const item of items) {
+  // Items — compact: one line per item with total, qty x rate below if qty > 1.
+  // A dish inside a menu says its count after its name instead, the way an
+  // add-on does: "qty x rate" is for things priced one by one, and the package
+  // is what prices these.
+  for (const item of printableBillRows(order?.items ?? [])) {
     const course = menuCourseLine(item);
-    const name = course.indent ? `  ${item.product_name}` : item.product_name;
+    const name = course.indent
+      ? `  ${item.product_name}${item.quantity > 1 ? ` x${item.quantity}` : ''}`
+      : item.product_name;
     if (course.suppressAmount) {
       safePrinterText(enc, truncate(name, cols), warnings).newline();
     } else {
@@ -492,7 +543,7 @@ export function buildCompactReceiptBytes(
       safePrinterText(enc, padRow(truncate(name, nameMax), amount, cols), warnings).newline();
     }
 
-    if (item.quantity > 1) {
+    if (item.quantity > 1 && !course.indent) {
       enc
         .size('small')
         .align('right')

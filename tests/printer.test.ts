@@ -671,8 +671,9 @@ console.log('\n✅ Test 6d: KOT folds identical dishes into one line');
     order, items, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 1, 'it', false, 16,
   ).toString('latin1');
 
-  // Six identical fixed menus write six rows of one, on purpose: a menu is
-  // handed to a guest whole. The kitchen wants one line.
+  // Six lasagne counted into a line of menus are six rows of one, on purpose:
+  // the kitchen's progress and the void work dish by dish. The kitchen wants
+  // one line.
   const sixMenus = print([dish(), dish(), dish(), dish(), dish(), dish()]);
   assert('six identical rows print as one line of six', sixMenus.includes(' 6  LASAGNE'));
   assert('and not as a line of one', !sixMenus.includes(' 1  LASAGNE'));
@@ -722,6 +723,52 @@ console.log('\n✅ Test 6d: KOT folds identical dishes into one line');
     [dish(), dish(), dish(), dish({ special_instructions: 'senza besciamella' }), tagliata, { ...tagliata }],
     'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 3, 'it', false, 16,
   ), 48));
+}
+
+console.log('\n✅ Test 6e: The bill folds the portions of a menu, and leaves cancelled rows off');
+{
+  const course = (extra: Record<string, unknown>) => ({
+    quantity: 1, unit_price: 0, subtotal: 0, total: 0, status: 'pending',
+    menu_group_id: 'g1', menu_role: 'course', addons: [], ...extra,
+  });
+  const menuBillOrder = {
+    order_number: 'ORD-M', created_at: '2026-09-21 20:10:00', table: { name: '7' }, guest_count: 3,
+    items: [
+      {
+        id: 1, product_id: 'p-menu', product_name: 'Menu completo', quantity: 3, unit_price: 25, subtotal: 75, total: 75,
+        status: 'pending', menu_group_id: 'g1', menu_role: 'package', addons: [],
+      },
+      course({ id: 2, product_id: 'p-lasagne', product_name: 'Lasagne' }),
+      course({ id: 3, product_id: 'p-lasagne', product_name: 'Lasagne' }),
+      course({ id: 4, product_id: 'p-lasagne', product_name: 'Lasagne', special_instructions: 'senza besciamella' }),
+      course({ id: 5, product_id: 'p-tagliata', product_name: 'Tagliata', unit_price: 3, subtotal: 3, total: 3 }),
+      course({ id: 6, product_id: 'p-tagliata', product_name: 'Tagliata', unit_price: 3, subtotal: 3, total: 3 }),
+      course({ id: 7, product_id: 'p-carbonara', product_name: 'Carbonara', status: 'cancelled' }),
+      { id: 8, product_id: 'p-acqua', product_name: 'Acqua', quantity: 1, unit_price: 2, subtotal: 2, total: 2, status: 'cancelled', addons: [] },
+      { id: 9, product_id: 'p-vino', product_name: 'Vino rosso', quantity: 1, unit_price: 12, subtotal: 12, total: 12, status: 'pending', addons: [] },
+    ],
+  };
+  const menuBill = { bill_number: 'B-M', subtotal: 93, total: 93, discount_amount: 0 };
+  for (const template of ['compact', 'classic']) {
+    const text = escPosToText(formatReceipt(
+      menuBillOrder, menuBill, { name: 'Trattoria', currency_symbol: 'E', country: 'IT' },
+      template, 48, false, false, 'full', [], false, 'it',
+    ));
+    const lines = text.split('\n');
+    const lasagne = lines.filter((line) => line.includes('Lasagne'));
+    assert(`[${template}] the plain lasagne of a menu are one line of two`, lasagne.some((line) => /Lasagne\s+2\b/.test(line)), lasagne.join(' | '));
+    assert(`[${template}] the one with a note keeps its own line`, lasagne.length === 2 && lasagne.some((line) => /Lasagne\s+1\b/.test(line)), lasagne.join(' | '));
+    const steak = lines.filter((line) => line.includes('Tagliata'));
+    assert(
+      `[${template}] two steaks are one line with the surcharge summed`,
+      steak.length === 1 && /Tagliata\s+2\b/.test(steak[0]) && /\+\s*E?\s*6/.test(steak[0]),
+      steak.join(' | '),
+    );
+    assert(`[${template}] a cancelled dish of the menu is not on the paper`, !text.includes('Carbonara'));
+    assert(`[${template}] nor a cancelled row of its own, which the total never counted`, !text.includes('Acqua'));
+    assert(`[${template}] the rest of the bill is as it was`, text.includes('Vino rosso') && text.includes('Menu completo'));
+  }
+  assert('the rows handed in are left as they were', menuBillOrder.items.length === 9 && menuBillOrder.items[1].quantity === 1);
 }
 
 console.log('\n✅ Test 7: Test page builder');
@@ -1034,6 +1081,43 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
       !beside.includes('1,234.56'),
       beside,
     );
+  }
+
+  // The same bill printed from the browser folds a menu's portions and leaves
+  // the cancelled rows off, as the thermal path does (printableBillRows).
+  {
+    const menuItem = (extra: Record<string, unknown>) => ({
+      quantity: 1, unit_price: 0, subtotal: 0, total: 0, status: 'pending',
+      menu_group_id: 'g1', menu_role: 'course', product_id: 'p-lasagne', product_name: 'Lasagne', ...extra,
+    });
+    const menuOrder = {
+      ...irOrder,
+      items: [
+        {
+          id: 1, product_id: 'p-menu', product_name: 'Menu completo', quantity: 3, unit_price: 25, subtotal: 75, total: 75,
+          status: 'pending', menu_group_id: 'g1', menu_role: 'package',
+        },
+        menuItem({ id: 2 }),
+        menuItem({ id: 3 }),
+        menuItem({ id: 4, status: 'cancelled' }),
+        { id: 5, product_id: 'p-acqua', product_name: 'Acqua', quantity: 1, unit_price: 2, subtotal: 2, total: 2, status: 'cancelled' },
+      ],
+    };
+    for (const [name, build] of [['classic', buildClassicReceiptBytes], ['compact', buildCompactReceiptBytes]] as const) {
+      const text = Buffer.from(build(
+        { id: 'b4', bill_number: 'INV-MENU-2', order: menuOrder, subtotal: 75, discount_amount: 0, total: 75 } as any,
+        frontendTenant as any,
+        { paperWidth: 80, useUnicode: false },
+        [],
+      )).toString('utf8');
+      const lasagne = text.split('\n').filter((line: string) => line.includes('Lasagne'));
+      assert(
+        `[frontend ${name}] the two lasagne left are one line that says two`,
+        lasagne.length === 1 && /Lasagne\s+x?2\b/.test(lasagne[0]),
+        lasagne.join(' | '),
+      );
+      assert(`[frontend ${name}] a cancelled row never reaches the paper`, !text.includes('Acqua'));
+    }
   }
 
   // The frontend classic template also needs to keep the three-character IRR

@@ -6,7 +6,7 @@ import * as path from 'path';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
-import { COVER_CHARGE_SETTING_KEY, parseCoverChargeAmount } from '../money';
+import { COVER_CHARGE_SETTING_KEY, parseCoverChargeAmount, roundMoney } from '../money';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
 import { correlationId, type FloErrorCode } from '../errors';
@@ -806,18 +806,85 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
 
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
   const tpl = normalizeReceiptTemplate(template);
+  // Both templates draw, and measure their columns on, the same rows.
+  const printable = { ...order, items: printableBillRows(order?.items) };
 
   try {
     switch (tpl) {
       case 'classic':
-        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, language, codePage);
+        return formatClassicReceipt(printable, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, language, codePage);
       default:
-        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, language, codePage);
+        return formatCompactReceipt(printable, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, language, codePage);
     }
   } catch (err) {
     console.error('[Printer] formatReceipt error:', err);
     throw err;
   }
+}
+
+/**
+ * The rows a printed bill draws.
+ *
+ * A cancelled row is off the check: the total already leaves it out, and
+ * printing it anyway put on the paper a dish nobody ate and nobody pays for —
+ * "Lasagne 10,00" above a total that did not count it. With a set menu counted
+ * dish by dish, taking one lasagna off three is an ordinary correction, and
+ * the guest would have read the three. A voided row stays, beside the negative
+ * line that cancels it: that pair is how a void is meant to show.
+ *
+ * Then the portions of a menu line fold together (compactMenuCourseRows).
+ */
+function printableBillRows(items: any[] | undefined): any[] {
+  return compactMenuCourseRows((items ?? []).filter((item) => item?.status !== 'cancelled'));
+}
+
+/**
+ * Folds the portions of a menu line that read the same into one row.
+ *
+ * A line of eight menus writes a row per portion — the kitchen's progress, the
+ * run and the void work dish by dish — so three lasagne are three rows. The
+ * guest reading the bill wants "Lasagne 3" under the menu, not the same name
+ * three times. Same menu line, dish, name, unit price (the surcharge) and
+ * note fold together with quantity and money summed; a voided portion stays
+ * apart, and nothing outside a menu is touched. The rows themselves stay as
+ * they are: only the paper is compacted, as compactKotItems does for the
+ * kitchen.
+ */
+export function compactMenuCourseRows(items: any[]): any[] {
+  const compacted: any[] = [];
+  const indexByIdentity = new Map<string, number>();
+  for (const item of items) {
+    if (item?.menu_role !== 'course' || !item?.menu_group_id) {
+      compacted.push(item);
+      continue;
+    }
+    const identity = JSON.stringify([
+      item.menu_group_id,
+      item.product_id ?? null,
+      String(item.product_name ?? ''),
+      Number(item.unit_price) || 0,
+      String(item.special_instructions ?? '').trim().toLowerCase(),
+      item.status === 'voided',
+    ]);
+    const index = indexByIdentity.get(identity);
+    if (index === undefined) {
+      indexByIdentity.set(identity, compacted.length);
+      compacted.push({
+        ...item,
+        quantity: Number(item.quantity) || 0,
+        subtotal: Number(item.subtotal) || 0,
+        discount_amount: Number(item.discount_amount) || 0,
+        total: Number(item.total) || 0,
+      });
+      continue;
+    }
+    const row = compacted[index];
+    row.quantity += Number(item.quantity) || 0;
+    row.subtotal = roundMoney(row.subtotal + (Number(item.subtotal) || 0));
+    row.discount_amount = roundMoney(row.discount_amount + (Number(item.discount_amount) || 0));
+    row.total = roundMoney(row.total + (Number(item.total) || 0));
+  }
+  return compacted;
 }
 
 function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' {
