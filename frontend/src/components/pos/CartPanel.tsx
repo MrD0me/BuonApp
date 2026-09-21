@@ -16,7 +16,7 @@ import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem, Category, Product } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import { cartLineUnitPrice, courseSurcharge } from '@/lib/fixed-menu';
+import { cartLineTotal, menuLineDishes } from '@/lib/fixed-menu';
 import { serviceRunOfCartLine } from '@/lib/service-runs';
 import { Ltr } from '@/components/layout/Ltr';
 import ServiceRunPicker from './ServiceRunPicker';
@@ -198,25 +198,12 @@ export default function CartPanel({ tables, products, categories, submitting, on
         ) : (
           <div>
             {cart.items.map((item) => {
-              // A fixed menu shows the dishes it was built from, so the floor
-              // can read back what was chosen without reopening the window.
-              const menuCourses = (item.menu_selection || []).map((choice) => {
-                const course = (item.product.courses || []).find((entry) => entry.id === choice.course_id);
-                // Looked up in the catalogue, not among the cart's own lines:
-                // a dish is only a line of its own when somebody also ordered
-                // it separately, and the rest were printing their raw id.
-                const dish = products.find((candidate) => candidate.id === choice.product_id);
-                return {
-                  key: `${choice.course_id}:${choice.product_id}`,
-                  // A dish taken off the menu after being chosen leaves the
-                  // course showing, unnamed — better than an id nobody reads.
-                  name: dish?.name ?? '—',
-                  surcharge: course ? courseSurcharge(course, choice.product_id) : 0,
-                  note: choice.note || '',
-                };
-              });
+              // A fixed menu shows the dishes it was built from, counted, so
+              // the floor can read back what was chosen without reopening the
+              // window.
+              const menuDishes = menuLineDishes(item, products);
               const isMenu = Boolean(item.menu_selection);
-              const lineTotal = cartLineUnitPrice(item) * (isMenu ? 1 : item.quantity);
+              const lineTotal = cartLineTotal(item);
 
               return (
                 <div key={item.id} className="flex flex-col gap-2 border-b border-border py-3 last:border-0">
@@ -239,6 +226,9 @@ export default function CartPanel({ tables, products, categories, submitting, on
                         className="min-w-0 flex-1 rounded-lg py-1 text-start active:bg-muted"
                       >
                         <span className="flex items-center gap-1.5">
+                          {/* A menu line says how many menus up front: the count
+                              is the thing the table was asked first. */}
+                          {isMenu && <Ltr className="shrink-0 text-base font-bold text-brand">{item.quantity}×</Ltr>}
                           <span className="truncate text-base font-semibold text-foreground">{item.product.name}</span>
                           <SquarePen size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
                         </span>
@@ -247,10 +237,10 @@ export default function CartPanel({ tables, products, categories, submitting, on
                             + {a.name}{(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''}{Number(a.price) > 0 ? ` (${fmt(Number(a.price) * (a.quantity || 1))})` : ''}
                           </span>
                         ))}
-                        {menuCourses.map((course) => (
-                          <span key={course.key} className="block text-sm text-muted-foreground">
-                            · {course.name}{course.surcharge > 0 ? ` (+${fmt(course.surcharge)})` : ''}
-                            {course.note && <span className="italic"> — {course.note}</span>}
+                        {menuDishes.map((dish) => (
+                          <span key={dish.key} className="block text-sm text-muted-foreground">
+                            · {dish.name}{dish.quantity > 1 && <Ltr> ×{dish.quantity}</Ltr>}{dish.surcharge > 0 ? ` (+${fmt(dish.surcharge)})` : ''}
+                            {dish.note && <span className="italic"> — {dish.note}</span>}
                           </span>
                         ))}
                         {item.special_instructions && (
@@ -282,9 +272,9 @@ export default function CartPanel({ tables, products, categories, submitting, on
                       />
                     ) : <span />}
                     <span className="flex shrink-0 items-center gap-3">
-                      {/* One menu is one line of one: another guest taking the
-                          same menu is another menu, because a check hands each
-                          of them over whole. Hence no quantity stepper here. */}
+                      {/* A menu line's count is changed in its window, with
+                          its dishes in view: a stepper here could take a menu
+                          off while the courses still held its dishes. */}
                       {!isMenu && (
                         <Stepper
                           size="sm"

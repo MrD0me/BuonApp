@@ -3,7 +3,7 @@
 import { ChevronRight, Plus } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { OrderItem } from '@/lib/types';
-import type { MenuGroupState } from '@/lib/fixed-menu';
+import { compactMenuRows, type MenuGroupState } from '@/lib/fixed-menu';
 import { serviceRunOf } from '@/lib/service-runs';
 import { isPendingKot } from '@/lib/kot';
 import { ITEM_STATUS_TONE, type Tone } from '@/lib/status-styles';
@@ -16,15 +16,14 @@ interface Props {
   /** Active rows, already in menu-aware order. */
   items: OrderItem[];
   menuGroups: MenuGroupState[];
-  /** The last row of each menu group, under which its open courses are drawn. */
-  lastRowOfGroup: Map<string, number>;
   /** Whether tapping a row opens its actions. */
   canAct: boolean;
   /** Whether the open courses of a menu may still be filled. */
   canFillCourses: boolean;
   kotEnabled: boolean;
   awaitsPrice: (item: OrderItem) => boolean;
-  onLineTap: (item: OrderItem) => void;
+  /** `of` is how many portions the tapped line folds: the sheet acts on one of them. */
+  onLineTap: (item: OrderItem, of: number) => void;
   onFillCourse: (group: MenuGroupState, courseId: string) => void;
 }
 
@@ -35,9 +34,13 @@ interface Props {
  * it. The three 16 px icons that used to sit on every row — bin, pencil,
  * void — are gone; a touch monitor could not hit them and a reader could
  * not tell them apart.
+ *
+ * The portions of a menu that read the same are one line, "3× Lasagne": the
+ * check keeps a row per portion, the floor reads a count. A tap on that line
+ * acts on one portion of it.
  */
 export function OrderLines({
-  items, menuGroups, lastRowOfGroup, canAct, canFillCourses, kotEnabled, awaitsPrice, onLineTap, onFillCourse,
+  items, menuGroups, canAct, canFillCourses, kotEnabled, awaitsPrice, onLineTap, onFillCourse,
 }: Props) {
   const tOrders = useTranslations('orders');
   const tPos = useTranslations('pos');
@@ -56,29 +59,37 @@ export function OrderLines({
     return { tone, label };
   };
 
+  const lines = compactMenuRows(items);
+  // The open courses go under the menu they belong to, after its last line —
+  // the rows are already grouped by menuAwareRowOrder, and a folded line sits
+  // where its first portion was.
+  const lastLineOfGroup = new Map<string, number>();
+  lines.forEach((line, index) => {
+    if (line.item.menu_group_id) lastLineOfGroup.set(String(line.item.menu_group_id), index);
+  });
+
   return (
     <div className="flex flex-col">
-      {items.map((item) => {
+      {lines.map((line, index) => {
+        const { item } = line;
         const isMenuCourse = item.menu_role === 'course';
         const isPackage = item.menu_role === 'package';
         const status = statusOf(item);
         const struck = item.status === 'voided';
-        // The slots go under the menu they belong to, which is under its
-        // last row — the rows are already grouped by menuAwareRowOrder.
-        const group = item.menu_group_id && lastRowOfGroup.get(item.menu_group_id) === item.id
+        const group = item.menu_group_id && lastLineOfGroup.get(String(item.menu_group_id)) === index
           ? menuGroups.find((entry) => entry.group_id === item.menu_group_id)
           : undefined;
         const Row = canAct ? 'button' : 'div';
         return (
-          <div key={item.id} className="border-b border-border last:border-0">
+          <div key={line.rows[0].id} className="border-b border-border last:border-0">
             <Row
               type={canAct ? 'button' : undefined}
-              onClick={canAct ? () => onLineTap(item) : undefined}
+              onClick={canAct ? () => onLineTap(item, line.quantity) : undefined}
               className={`flex min-h-touch-lg w-full items-center gap-3 rounded-xl px-2 py-2 text-start ${canAct ? 'transition active:bg-muted' : ''} ${isMenuCourse ? 'ps-6' : ''}`}
             >
-              {isMenuCourse
+              {isMenuCourse && line.quantity <= 1
                 ? <span className="w-8 shrink-0 text-muted-foreground" aria-hidden="true">·</span>
-                : <Ltr className={`w-8 shrink-0 text-base font-bold ${isPackage ? 'text-foreground' : 'text-muted-foreground'}`}>{item.quantity}×</Ltr>}
+                : <Ltr className={`w-8 shrink-0 text-base font-bold ${isPackage ? 'text-foreground' : 'text-muted-foreground'}`}>{line.quantity}×</Ltr>}
               <div className="min-w-0 flex-1">
                 <p className={`text-base ${isPackage ? 'font-bold' : 'font-medium'} text-foreground ${struck ? 'line-through opacity-60' : ''}`}>
                   {item.product_name}
@@ -106,13 +117,13 @@ export function OrderLines({
               {/* A dish inside a menu is paid for by the package: it shows a
                   surcharge or nothing, never a bare 0,00. */}
               <span className="w-20 shrink-0 text-end text-base font-semibold text-foreground">
-                <Ltr>{isMenuCourse ? (Number(item.total) > 0 ? `+${fmt(Number(item.total))}` : '') : fmt(Number(item.total))}</Ltr>
+                <Ltr>{isMenuCourse ? (line.total > 0 ? `+${fmt(line.total)}` : '') : fmt(Number(item.total))}</Ltr>
               </span>
               {canAct && <ChevronRight size={18} className="rtl-flip shrink-0 text-muted-foreground/60" />}
             </Row>
 
-            {/* The courses of this menu nobody has chosen for yet. One tap
-                opens the same window the till uses. */}
+            {/* The courses of this menu with room left, each with how full it
+                is: "Secondo 0/8". One tap opens the same window the till uses. */}
             {group && canFillCourses && group.menu && group.slots.some((slot) => slot.free > 0) && (
               <div className="flex flex-wrap gap-2 px-2 pb-3 ps-12">
                 {group.slots.filter((slot) => slot.free > 0).map((slot) => (
@@ -122,10 +133,11 @@ export function OrderLines({
                     variant="outline"
                     size="touch"
                     onClick={() => onFillCourse(group, slot.course.id)}
-                    className={slot.course.is_required && slot.filled.length === 0 ? 'border-pending text-pending' : 'border-brand text-brand'}
+                    className={slot.course.is_required && slot.filled.length < group.menus ? 'border-pending text-pending' : 'border-brand text-brand'}
                   >
                     <Plus />
                     {slot.course.label}
+                    <Ltr className="font-normal opacity-80">{slot.filled.length}/{slot.filled.length + slot.free}</Ltr>
                   </Button>
                 ))}
               </div>

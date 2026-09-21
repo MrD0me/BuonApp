@@ -1,4 +1,4 @@
-import type { CartItem } from './types';
+import type { CartItem, FixedMenuSelection } from './types';
 
 /**
  * One cart line, as the API takes it.
@@ -14,7 +14,8 @@ export interface OrderItemPayload {
   quantity: number;
   addons: { id: string | number; name: string; price?: number; quantity: number }[] | null;
   special_instructions: string | null;
-  menu_selection?: { course_id: string; product_id: string }[];
+  /** On a menu line, the dishes counted; `quantity` is then how many menus. */
+  menu_selection?: FixedMenuSelection;
   /** Which wave it goes out in. Left off, the backend reads the category. */
   service_run?: number;
 }

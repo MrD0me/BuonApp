@@ -1,4 +1,6 @@
 import type { CartItem, FixedMenuCourse, FixedMenuSelection, OrderItem, Product } from './types';
+import { isPendingKot } from './kot';
+import { serviceRunOf } from './service-runs';
 
 /**
  * Client-side helpers for the fixed menu (docs/coperto-e-menu-fisso.md).
@@ -7,6 +9,10 @@ import type { CartItem, FixedMenuCourse, FixedMenuSelection, OrderItem, Product 
  * is sent. The prices that end up on the check are worked out again by the
  * backend from its own catalogue — this side never gets to say what anything
  * costs.
+ *
+ * A menu line feeds however many guests took it — "Menu completo ×8" — and its
+ * dishes are counted, not handed out: three lasagne, two carbonara. A course
+ * holds as many dishes as the line has menus, times its choices.
  */
 
 export function isFixedMenu(product: Product | null | undefined): boolean {
@@ -47,42 +53,159 @@ export function courseSurcharge(course: FixedMenuCourse, productId: string): num
   return Number(course.surcharges.find((entry) => entry.product_id === productId)?.surcharge || 0);
 }
 
-/** Everything the chosen dishes add to the menu's own price. */
+/** How many portions one choice stands for: its count, or one when it has none. */
+export function portionsOf(choice: { quantity?: number | null }): number {
+  if (choice.quantity === undefined || choice.quantity === null) return 1;
+  const portions = Math.floor(Number(choice.quantity));
+  return Number.isFinite(portions) && portions > 0 ? portions : 0;
+}
+
+/** How many dishes a selection puts in one course. */
+export function courseCount(selection: FixedMenuSelection | undefined, courseId: string): number {
+  return (selection || []).reduce(
+    (total, choice) => total + (choice.course_id === courseId ? portionsOf(choice) : 0),
+    0,
+  );
+}
+
+/**
+ * The most dishes one course holds on a line of this many menus — the mirror
+ * of `courseLimit` in `main/services/fixed-menu.ts`.
+ */
+export function courseCapacity(course: Pick<FixedMenuCourse, 'max_choices'>, menus: number): number {
+  return Math.max(1, Number(course.max_choices) || 1) * Math.max(0, Math.floor(Number(menus)) || 0);
+}
+
+/** How many menus a menu line in the cart feeds. */
+export function menusOfLine(item: Pick<CartItem, 'quantity'>): number {
+  return Math.max(1, Math.floor(Number(item.quantity)) || 1);
+}
+
+/** Everything the chosen dishes add to the menus' own price: a surcharge per portion. */
 export function selectionSurcharge(menu: Product, selection: FixedMenuSelection | undefined): number {
   if (!selection || !menu.courses) return 0;
   return selection.reduce((total, choice) => {
     const course = menu.courses!.find((entry) => entry.id === choice.course_id);
-    return total + (course ? courseSurcharge(course, choice.product_id) : 0);
+    return total + (course ? courseSurcharge(course, choice.product_id) * portionsOf(choice) : 0);
   }, 0);
 }
 
-/** What one cart line costs a head of the table, add-ons and surcharges in. */
-export function cartLineUnitPrice(item: CartItem): number {
+/**
+ * What one cart line comes to.
+ *
+ * A menu line is its price once per menu, plus what its dishes add: the
+ * surcharges count per dish and not per menu, so two steaks on a line of eight
+ * add two surcharges. Any other line is its price, add-ons in, times its
+ * quantity.
+ */
+export function cartLineTotal(item: CartItem): number {
   const base = Number(item.product?.price) || 0;
+  if (item.menu_selection) {
+    return base * menusOfLine(item) + selectionSurcharge(item.product, item.menu_selection);
+  }
   const addons = (item.addons || []).reduce(
     (sum, addon) => sum + (Number(addon.price) || 0) * (Number(addon.quantity) || 1),
     0,
   );
-  return base + addons + selectionSurcharge(item.product, item.menu_selection);
+  return (base + addons) * (Number(item.quantity) || 1);
+}
+
+/** One dish of a menu line as a cart reads it back: "· Lasagne ×3 (+3,00) — senza besciamella". */
+export interface MenuLineDish {
+  key: string;
+  name: string;
+  quantity: number;
+  /** What those portions add to the menus' price together; zero when the package covers them. */
+  surcharge: number;
+  note: string;
+}
+
+/**
+ * The dishes of a menu line in the cart, counted and in course order, for the
+ * floor to read back without reopening the window. Names come from the
+ * catalogue, not from the cart's own lines: a dish is only a line of its own
+ * when somebody also ordered it from the card, and the rest used to print
+ * their raw id. A dish taken off the menu since shows as a dash.
+ */
+export function menuLineDishes(item: CartItem, products: Product[]): MenuLineDish[] {
+  const courses = [...(item.product.courses || [])].sort((left, right) => left.sort_order - right.sort_order);
+  const order = (courseId: string) => {
+    const index = courses.findIndex((course) => course.id === courseId);
+    return index < 0 ? courses.length : index;
+  };
+  return tallySelection(item.menu_selection || [])
+    .map((choice, index) => ({ choice, index }))
+    .sort((left, right) => order(left.choice.course_id) - order(right.choice.course_id) || left.index - right.index)
+    .map(({ choice, index }) => {
+      const course = courses.find((entry) => entry.id === choice.course_id);
+      const quantity = portionsOf(choice);
+      return {
+        key: `${choice.course_id}:${choice.product_id}:${index}`,
+        name: products.find((product) => product.id === choice.product_id)?.name ?? '—',
+        quantity,
+        surcharge: course ? courseSurcharge(course, choice.product_id) * quantity : 0,
+        note: choice.note || '',
+      };
+    });
+}
+
+/**
+ * Folds a selection into one entry per course, dish, note and run, the repeats
+ * counted.
+ *
+ * A course read back off the check arrives as one entry per portion — every
+ * portion is a row there — and the window shows "Lasagne 3". Entries counted
+ * to nothing are dropped.
+ */
+export function tallySelection(selection: FixedMenuSelection): FixedMenuSelection {
+  const tallied: FixedMenuSelection = [];
+  for (const choice of selection) {
+    const portions = portionsOf(choice);
+    if (portions <= 0) continue;
+    const note = (choice.note || '').trim();
+    const run = choice.service_run ?? null;
+    const same = tallied.find((entry) => (
+      entry.course_id === choice.course_id
+      && entry.product_id === choice.product_id
+      && (entry.note || '') === note
+      && (entry.service_run ?? null) === run
+    ));
+    if (same) {
+      same.quantity = portionsOf(same) + portions;
+      continue;
+    }
+    tallied.push({
+      course_id: choice.course_id,
+      product_id: choice.product_id,
+      quantity: portions,
+      ...(note ? { note } : {}),
+      ...(run !== null ? { service_run: run } : {}),
+    });
+  }
+  return tallied;
 }
 
 /** Where a dish battered from the grid could land. */
 export interface OpenSlot {
   /** A menu line still in the cart, or one already on the check. */
   target: { kind: 'cart'; cartItemId: string } | { kind: 'order'; groupId: string };
-  /** What to call the menu on the button — "Menu 1", "Menu 2". */
+  /** What to call the menu line on the button — "Menu completo ×8". */
   menuLabel: string;
   course: FixedMenuCourse;
   surcharge: number;
-  /** Dishes already chosen for this course, so a swap keeps them. */
+  /** Dishes the course already holds, one entry per portion, so a fill keeps them. */
   taken: string[];
+  /** How many more dishes the course takes. */
+  free: number;
 }
 
-/** One open menu, whichever side of being sent it is on. */
+/** One open menu line, whichever side of being sent it is on. */
 export interface MenuLineLike {
   target: OpenSlot['target'];
   menu: Product | undefined;
-  /** What each course of it already holds. */
+  /** How many menus the line feeds. */
+  menus: number;
+  /** What each course of it already holds, one entry per portion. */
   chosen: { course_id: string; product_id: string }[];
 }
 
@@ -101,22 +224,39 @@ export interface MenuLineLike {
 export function openSlotsForProduct(product: Product, menus: MenuLineLike[]): OpenSlot[] {
   if (isFixedMenu(product) || !product.is_active) return [];
 
+  // The same menu twice — an old check written one menu a guest, or a second
+  // line for guests who came later — needs telling apart on the button.
+  const linesPerMenu = new Map<string, number>();
+  for (const line of menus) {
+    const key = String(line.menu?.id ?? '');
+    linesPerMenu.set(key, (linesPerMenu.get(key) || 0) + 1);
+  }
+  const seenPerMenu = new Map<string, number>();
+
   const slots: OpenSlot[] = [];
-  menus.forEach((line, index) => {
+  for (const line of menus) {
+    const key = String(line.menu?.id ?? '');
+    const ordinal = (seenPerMenu.get(key) || 0) + 1;
+    seenPerMenu.set(key, ordinal);
+    const label = `${line.menu?.name ?? ''} ×${line.menus}`.trim()
+      + ((linesPerMenu.get(key) || 0) > 1 ? ` (${ordinal})` : '');
+
     const courses = [...(line.menu?.courses || [])].sort((left, right) => left.sort_order - right.sort_order);
     for (const course of courses) {
       if (!courseAllowsProduct(course, product)) continue;
       const taken = line.chosen.filter((choice) => choice.course_id === course.id).map((choice) => choice.product_id);
-      if (taken.length >= course.max_choices) continue;
+      const free = courseCapacity(course, line.menus) - taken.length;
+      if (free <= 0) continue;
       slots.push({
         target: line.target,
-        menuLabel: `${line.menu?.name ?? ''} ${index + 1}`.trim(),
+        menuLabel: label,
         course,
         surcharge: courseSurcharge(course, product.id),
         taken,
+        free,
       });
     }
-  });
+  }
   return slots;
 }
 
@@ -127,7 +267,10 @@ export function menuLinesOfCart(items: CartItem[]): MenuLineLike[] {
     .map((item) => ({
       target: { kind: 'cart' as const, cartItemId: item.id },
       menu: item.product,
-      chosen: item.menu_selection || [],
+      menus: menusOfLine(item),
+      chosen: (item.menu_selection || []).flatMap((choice) => (
+        Array.from({ length: portionsOf(choice) }, () => ({ course_id: choice.course_id, product_id: choice.product_id }))
+      )),
     }));
 }
 
@@ -136,6 +279,7 @@ export function menuLinesOfOrder(groups: MenuGroupState[]): MenuLineLike[] {
   return groups.map((group) => ({
     target: { kind: 'order' as const, groupId: group.group_id },
     menu: group.menu,
+    menus: group.menus,
     chosen: group.slots.flatMap((slot) => slot.filled.map((row) => ({
       course_id: slot.course.id,
       product_id: String(row.product_id),
@@ -172,29 +316,23 @@ export function menuAwareRowOrder<T extends {
 }
 
 /**
- * Whether a selection is one the check will accept.
+ * Whether a selection is one the check will accept for a line of this many
+ * menus.
  *
  * Only the ceiling: a course can be left empty, because the table often has
  * not decided yet and taking the order it is actually giving beats refusing
- * it. Overfilling is a different matter — three mains in a course that allows
- * one is a mis-ring, not a decision postponed.
+ * it. Overfilling is a different matter — nine mains on eight menus is a
+ * mis-ring, not a decision postponed, and the ninth is ordered from the card.
  */
-export function selectionIsValid(menu: Product, selection: FixedMenuSelection): boolean {
-  return (menu.courses || []).every((course) => (
-    selection.filter((choice) => choice.course_id === course.id).length <= course.max_choices
-  ));
+export function selectionIsValid(menu: Product, selection: FixedMenuSelection, menus: number): boolean {
+  return (menu.courses || []).every((course) => courseCount(selection, course.id) <= courseCapacity(course, menus));
 }
 
-/** The required courses nobody has chosen for yet. */
-export function missingRequiredCourses(menu: Product, selection: FixedMenuSelection): FixedMenuCourse[] {
+/** The expected courses that do not yet have a dish for every menu. */
+export function missingRequiredCourses(menu: Product, selection: FixedMenuSelection, menus: number): FixedMenuCourse[] {
   return (menu.courses || []).filter((course) => (
-    course.is_required && !selection.some((choice) => choice.course_id === course.id)
+    course.is_required && courseCount(selection, course.id) < menus
   ));
-}
-
-/** Whether every required course has been filled in and none overfilled. */
-export function selectionIsComplete(menu: Product, selection: FixedMenuSelection): boolean {
-  return selectionIsValid(menu, selection) && missingRequiredCourses(menu, selection).length === 0;
 }
 
 /** One course of a menu already on the check, and what is in it. */
@@ -204,11 +342,13 @@ export interface MenuSlot {
   free: number;
 }
 
-/** One menu already on the check, read back from its order rows. */
+/** One menu line already on the check, read back from its order rows. */
 export interface MenuGroupState {
   group_id: string;
   packageItem: OrderItem;
   menu: Product | undefined;
+  /** How many menus the line feeds: the package row's quantity. */
+  menus: number;
   slots: MenuSlot[];
   /** Dish rows whose course cannot be told — from before the course was recorded. */
   strays: OrderItem[];
@@ -216,11 +356,11 @@ export interface MenuGroupState {
 }
 
 /**
- * The menus on a check, each with its courses filled and its slots still
- * empty — what the order panel draws, and what tells the till which slot a
- * dish could be dropped into.
+ * The menu lines on a check, each with its courses filled and the room still
+ * left in them — what the order panel draws, and what tells the till which
+ * course a dish could be dropped into.
  *
- * Cancelled rows are left out: a dish taken off the check frees its slot
+ * Cancelled rows are left out: a dish taken off the check frees its place
  * again, which is the whole point of being able to change one choice.
  */
 export function menuGroupsOfOrder(items: OrderItem[], products: Product[]): MenuGroupState[] {
@@ -233,21 +373,120 @@ export function menuGroupsOfOrder(items: OrderItem[], products: Product[]): Menu
       const dishes = live.filter((item) => item.menu_group_id === groupId && item.menu_role === 'course');
       const menu = products.find((product) => product.id === packageItem.product_id);
       const courses = [...(menu?.courses || [])].sort((left, right) => left.sort_order - right.sort_order);
+      const menus = Math.max(1, Math.floor(Number(packageItem.quantity)) || 1);
 
       const slots = courses.map((course) => {
         const filled = dishes.filter((dish) => dish.menu_course_id === course.id);
-        return { course, filled, free: Math.max(0, course.max_choices - filled.length) };
+        return { course, filled, free: Math.max(0, courseCapacity(course, menus) - filled.length) };
       });
 
       return {
         group_id: groupId,
         packageItem,
         menu,
+        menus,
         slots,
         strays: dishes.filter((dish) => !courses.some((course) => course.id === dish.menu_course_id)),
         missingRequired: slots
-          .filter((slot) => slot.course.is_required && slot.filled.length === 0)
+          .filter((slot) => slot.course.is_required && slot.filled.length < menus)
           .map((slot) => slot.course),
       };
     });
+}
+
+/**
+ * What a menu line on the check already holds, as the window takes it: an
+ * entry per portion, with the note and the run each one carries. The window
+ * counts them; saving a course then keeps what every portion already said.
+ */
+export function selectionOfGroup(group: MenuGroupState): FixedMenuSelection {
+  return group.slots.flatMap((slot) => slot.filled.map((row) => ({
+    course_id: slot.course.id,
+    product_id: String(row.product_id),
+    ...(row.special_instructions ? { note: row.special_instructions } : {}),
+    service_run: serviceRunOf(row),
+  })));
+}
+
+/** One dish of a course as `PUT /orders/:id/menu-groups/:group/courses/:course` takes it. */
+export interface CourseFillEntry {
+  product_id: string;
+  quantity: number;
+  note?: string;
+  service_run?: number;
+}
+
+/**
+ * What a course holds afterwards, as the fill route takes it. A bare id names
+ * the dish and keeps whatever note and run that portion already has — what
+ * the grid sends for the dishes already there when it drops one more in; an
+ * entry says them.
+ */
+export type CourseFill = Array<string | CourseFillEntry>;
+
+/** The dishes of one course of a selection, counted, ready for the fill route. */
+export function courseFillOf(selection: FixedMenuSelection, courseId: string): CourseFillEntry[] {
+  return selection
+    .filter((choice) => choice.course_id === courseId && portionsOf(choice) > 0)
+    .map((choice) => ({
+      product_id: choice.product_id,
+      quantity: portionsOf(choice),
+      ...(choice.note ? { note: choice.note } : {}),
+      ...(choice.service_run !== undefined ? { service_run: choice.service_run } : {}),
+    }));
+}
+
+/** One line of a check as the screen draws it: portions that read the same, folded. */
+export interface OrderRowLine {
+  /**
+   * The row a tap on the line acts on: the newest of the portions it folds.
+   * They share dish, note, run and state, so any one of them would do, and
+   * the newest is the likeliest to still be waiting.
+   */
+  item: OrderItem;
+  /** Every row the line folds, oldest first. */
+  rows: OrderItem[];
+  quantity: number;
+  total: number;
+}
+
+function sameMenuPortion(left: OrderItem, right: OrderItem): boolean {
+  return left.menu_role === 'course'
+    && right.menu_role === 'course'
+    && Boolean(left.menu_group_id)
+    && left.menu_group_id === right.menu_group_id
+    && (left.menu_course_id ?? null) === (right.menu_course_id ?? null)
+    && left.product_id === right.product_id
+    && Number(left.unit_price) === Number(right.unit_price)
+    && (left.special_instructions || '').trim() === (right.special_instructions || '').trim()
+    && serviceRunOf(left) === serviceRunOf(right)
+    && left.status === right.status
+    && isPendingKot(left) === isPendingKot(right);
+}
+
+/**
+ * Folds the portions of a menu that read the same — dish, note, run and state
+ * — into one line, for the screen. Nothing else is folded.
+ *
+ * Every portion is a row of its own on the check, so the kitchen's progress,
+ * the run and the void work dish by dish. The floor reads "3× Lasagne". An
+ * action on a folded line acts on one portion of it (`item`), which is how one
+ * lasagna of three moves to the first wave, or comes off the check.
+ */
+export function compactMenuRows(rows: OrderItem[]): OrderRowLine[] {
+  const lines: OrderRowLine[] = [];
+  for (const row of rows) {
+    const same = row.menu_role === 'course'
+      ? lines.find((line) => sameMenuPortion(line.rows[0], row))
+      : undefined;
+    if (!same) {
+      lines.push({ item: row, rows: [row], quantity: Number(row.quantity) || 0, total: Number(row.total) || 0 });
+      continue;
+    }
+    same.rows.push(row);
+    same.quantity += Number(row.quantity) || 0;
+    same.total += Number(row.total) || 0;
+    if (row.id > same.item.id) same.item = row;
+  }
+  return lines;
 }

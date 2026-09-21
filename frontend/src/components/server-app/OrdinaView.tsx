@@ -73,8 +73,12 @@ export function OrdinaView({
   ], [cart.items, pendingOrder, products]);
 
   const handleProductClick = (product: Product) => {
+    // A menu already in the cart reopens that line: the table's count and
+    // dishes go on one line, not two.
     if (isFixedMenu(product)) {
-      setMenuProduct(product);
+      const existing = cart.items.find((item) => item.menu_selection && item.product.id === product.id);
+      if (existing) setEditingMenuItem(existing);
+      else setMenuProduct(product);
       return;
     }
     const slots = openSlotsForProduct(product, openMenuLines);
@@ -109,14 +113,14 @@ export function OrdinaView({
     cart.updateItemDetails(editingCartItem.id, quantity, addons, instructions);
   };
 
-  const handleMenuAdd = (menu: Product, selection: FixedMenuSelection) => {
-    cart.addFixedMenu(menu, selection);
+  const handleMenuAdd = (menu: Product, menus: number, selection: FixedMenuSelection) => {
+    cart.addFixedMenu(menu, menus, selection);
     setMenuProduct(null);
   };
 
-  const handleMenuEditSave = (_menu: Product, selection: FixedMenuSelection) => {
+  const handleMenuEditSave = (_menu: Product, menus: number, selection: FixedMenuSelection) => {
     if (!editingMenuItem) return;
-    cart.updateMenuSelection(editingMenuItem.id, selection);
+    cart.updateMenuSelection(editingMenuItem.id, menus, selection);
     setEditingMenuItem(null);
   };
 
@@ -154,8 +158,8 @@ export function OrdinaView({
           menu={menuProduct}
           products={products}
           categories={categories}
+          covers={guests}
           onAdd={handleMenuAdd}
-          onAddAnother={(selection) => cart.addFixedMenu(menuProduct, selection)}
           onClose={() => setMenuProduct(null)}
         />
       )}
@@ -182,6 +186,8 @@ export function OrdinaView({
           categories={categories}
           mode="edit"
           initialSelection={editingMenuItem.menu_selection || []}
+          initialMenus={editingMenuItem.quantity}
+          covers={guests}
           onAdd={handleMenuEditSave}
           onClose={() => setEditingMenuItem(null)}
         />

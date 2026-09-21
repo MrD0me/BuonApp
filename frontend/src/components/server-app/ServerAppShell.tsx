@@ -8,6 +8,7 @@ import type { Order, Table } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
 import { cartItemToPayload } from '@/lib/cart-payload';
+import type { CourseFill } from '@/lib/fixed-menu';
 import { coversForNewOrder } from '@/lib/table-covers';
 import {
   buildAppendItemsFingerprint, clearAppendAttempt, getAppendAttemptStorage, getOrCreateAppendAttempt,
@@ -297,6 +298,20 @@ export function ServerAppShell() {
     }
   };
 
+  /** How many menus a line on the check feeds. Below what a course holds, the check says no. */
+  const changeMenuCount = async (groupId: string, quantity: number) => {
+    if (!api || !selectedOrder) return;
+    setBusy(true);
+    try {
+      await api.patch(`/api/orders/${selectedOrder.id}/menu-groups/${groupId}`, { quantity });
+      await data.refreshFloor();
+    } catch (error) {
+      toast.error(apiErrorCode(error) === 'menu_course_overflow' ? tOrders('menuCountOverflow') : tOrders('menuCountFailed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const changeServiceRun = async (itemId: number, run: number) => {
     if (!api || !selectedOrder) return;
     setBusy(true);
@@ -311,11 +326,11 @@ export function ServerAppShell() {
   };
 
   /** What a course of a menu on the check holds afterwards. Toasts on refusal. */
-  const fillCourse = async (order: Order | null, groupId: string, courseId: string, productIds: string[]): Promise<boolean> => {
+  const fillCourse = async (order: Order | null, groupId: string, courseId: string, dishes: CourseFill): Promise<boolean> => {
     if (!api || !order) return false;
     setBusy(true);
     try {
-      await api.put(`/api/orders/${order.id}/menu-groups/${groupId}/courses/${courseId}`, { product_ids: productIds });
+      await api.put(`/api/orders/${order.id}/menu-groups/${groupId}/courses/${courseId}`, { product_ids: dishes });
       await data.refreshFloor();
       return true;
     } catch (error) {
@@ -394,7 +409,8 @@ export function ServerAppShell() {
           onAddItems={() => { void startOrdering(); }}
           onChangeGuests={changeGuests}
           onChangeServiceRun={changeServiceRun}
-          onFillCourse={(groupId, courseId, productIds) => fillCourse(selectedOrder, groupId, courseId, productIds)}
+          onChangeMenuCount={changeMenuCount}
+          onFillCourse={(groupId, courseId, dishes) => fillCourse(selectedOrder, groupId, courseId, dishes)}
           onSendToKitchen={sendSelectedToKitchen}
         />
         {ConfirmDialog}

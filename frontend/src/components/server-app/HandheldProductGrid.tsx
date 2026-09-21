@@ -5,6 +5,7 @@ import { Pencil, Search } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
+import { portionsOf } from '@/lib/fixed-menu';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Ltr } from '@/components/layout/Ltr';
@@ -52,7 +53,7 @@ export function HandheldProductGrid({
     for (const item of cartItems) {
       counts.set(item.product.id, (counts.get(item.product.id) || 0) + item.quantity);
       for (const choice of item.menu_selection || []) {
-        counts.set(choice.product_id, (counts.get(choice.product_id) || 0) + 1);
+        counts.set(choice.product_id, (counts.get(choice.product_id) || 0) + portionsOf(choice));
       }
     }
     return counts;
