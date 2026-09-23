@@ -520,7 +520,7 @@
     "maxSelectionReached": "Máximo de {count} atingido",
     "menuAttachFailed": "Não foi possível pôr esse prato dentro do menu",
     "menuHowMany": "Quantos menus?",
-    "menuCoversHint": "Mesa de {count, plural, one {# pessoa} other {# pessoas}}",
+    "menuCoversHint": "mesa de {count}",
     "menuOneMore": "Mais um",
     "menuOneLess": "Menos um",
     "menuCount": "{count, plural, one {# menu} other {# menus}}",

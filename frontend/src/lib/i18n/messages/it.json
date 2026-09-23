@@ -520,7 +520,7 @@
     "maxSelectionReached": "Raggiunto il massimo di {count}",
     "menuAttachFailed": "Non è stato possibile mettere il piatto nel menu",
     "menuHowMany": "Quanti menu?",
-    "menuCoversHint": "Il tavolo è di {count, plural, one {# coperto} other {# coperti}}",
+    "menuCoversHint": "tavolo da {count}",
     "menuOneMore": "Uno in più",
     "menuOneLess": "Uno in meno",
     "menuCount": "{count, plural, one {# menu} other {# menu}}",

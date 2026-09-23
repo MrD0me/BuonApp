@@ -520,7 +520,7 @@
     "maxSelectionReached": "بیشینه {count} مورد رسیده است",
     "menuAttachFailed": "افزودن این غذا به منو ممکن نشد",
     "menuHowMany": "چند منو؟",
-    "menuCoversHint": "میزی {count, plural, one {# نفره} other {# نفره}}",
+    "menuCoversHint": "میز {count} نفره",
     "menuOneMore": "یکی بیشتر",
     "menuOneLess": "یکی کمتر",
     "menuCount": "{count, plural, one {# منو} other {# منو}}",

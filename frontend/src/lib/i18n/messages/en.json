@@ -520,7 +520,7 @@
     "maxSelectionReached": "Maximum of {count} reached",
     "menuAttachFailed": "Could not put that dish inside the menu",
     "menuHowMany": "How many menus?",
-    "menuCoversHint": "A table of {count, plural, one {# cover} other {# covers}}",
+    "menuCoversHint": "table of {count}",
     "menuOneMore": "One more",
     "menuOneLess": "One fewer",
     "menuCount": "{count, plural, one {# menu} other {# menus}}",

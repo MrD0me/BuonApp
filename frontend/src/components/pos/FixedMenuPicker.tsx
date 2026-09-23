@@ -217,10 +217,12 @@ export default function FixedMenuPicker({
     setMenus(digits === '' || value === 0 ? null : Math.min(MAX_MENUS, value));
   };
 
-  // 44 px is the house minimum for anything a finger aims at; the counters
-  // sit on it rather than above it, so a long menu fits on one screenful.
-  const countButton = 'bg-muted text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-touch shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
-  const dishButton = 'bg-card text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-10 shrink-0 items-center justify-center rounded-full border border-border outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
+  // The counters are 36 px, under the house minimum of 44, because they are
+  // not what the finger aims at: a dish is added by hitting its whole row,
+  // 44 px tall and the width of the window, and how many menus is answered
+  // once. Making them bigger cost a screenful of dishes.
+  const countButton = 'bg-muted text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
+  const dishButton = 'bg-card text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full border border-border outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
 
   /**
    * A dish that has not been counted yet shows one `+` and nothing else. A
@@ -260,9 +262,14 @@ export default function FixedMenuPicker({
         {/* The first question at the table. On the check the count changes
             from the menu's own row instead, so it is not asked twice. */}
         {mode !== 'fill' && (
-          <div className="border-b border-border px-4 py-3 text-center">
-            <h3 className="text-sm font-semibold text-foreground">{t('menuHowMany')}</h3>
-            <div className="mt-1.5 flex items-center justify-center gap-2">
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+            <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">
+              {t('menuHowMany')}
+              {(covers ?? 0) > 1 && (
+                <span className="ms-2 text-xs font-normal text-muted-foreground">{t('menuCoversHint', { count: Number(covers) })}</span>
+              )}
+            </h3>
+            <div className="flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 aria-label={t('menuOneLess')}
@@ -270,7 +277,7 @@ export default function FixedMenuPicker({
                 onClick={() => setMenus((current) => (current === null || current <= 1 ? null : current - 1))}
                 className={countButton}
               >
-                <Minus className="size-5" />
+                <Minus className="size-4" />
               </button>
               <input
                 type="text"
@@ -283,7 +290,7 @@ export default function FixedMenuPicker({
                 onFocus={(event) => event.target.select()}
                 aria-label={t('menuHowMany')}
                 placeholder="0"
-                className={`h-touch w-16 rounded-xl border border-input bg-card text-center text-2xl font-bold tabular-nums outline-none focus:ring-2 focus:ring-brand ${
+                className={`h-9 w-12 rounded-lg border border-input bg-card text-center text-lg font-bold tabular-nums outline-none focus:ring-2 focus:ring-brand ${
                   menus === null ? 'text-muted-foreground' : 'text-brand'
                 }`}
               />
@@ -294,12 +301,9 @@ export default function FixedMenuPicker({
                 onClick={() => setMenus((current) => Math.min(MAX_MENUS, (current ?? 0) + 1))}
                 className={countButton}
               >
-                <Plus className="size-5" />
+                <Plus className="size-4" />
               </button>
             </div>
-            {(covers ?? 0) > 1 && (
-              <p className="mt-1.5 text-xs text-muted-foreground">{t('menuCoversHint', { count: Number(covers) })}</p>
-            )}
           </div>
         )}
 
