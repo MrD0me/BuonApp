@@ -247,7 +247,7 @@ export default function FixedMenuPicker({
 
   return (
     <Modal open onOpenChange={(open) => { if (!open) onClose(); }} size="md">
-      <ModalHeader closeLabel={tCommon('close')}>
+      <ModalHeader closeLabel={tCommon('close')} className={mode === 'fill' ? undefined : 'border-b-0'}>
         <ModalTitle>{menu.name}</ModalTitle>
         <ModalDescription className="text-brand text-base font-semibold">
           {fmt(Number(menu.price))}
@@ -262,7 +262,7 @@ export default function FixedMenuPicker({
         {/* The first question at the table. On the check the count changes
             from the menu's own row instead, so it is not asked twice. */}
         {mode !== 'fill' && (
-          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+          <div className="flex items-center justify-between gap-3 border-y border-muted-foreground/40 px-4 py-2">
             <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">
               {t('menuHowMany')}
               {(covers ?? 0) > 1 && (
@@ -350,7 +350,7 @@ export default function FixedMenuPicker({
               )}
 
               {choices.length === 0 ? (
-                <p className="px-4 py-2 text-sm text-muted-foreground">{t('menuCourseEmpty')}</p>
+                <p className="ps-8 pe-4 py-2 text-sm text-muted-foreground">{t('menuCourseEmpty')}</p>
               ) : choices.map((dish) => {
                 const entries = tallies.filter((entry) => entry.course_id === course.id && entry.product_id === dish.id);
                 const dishCount = entries.reduce((total, entry) => total + entry.quantity, 0);
@@ -361,7 +361,7 @@ export default function FixedMenuPicker({
                     key={dish.id}
                     className={`border-b border-border last:border-0 ${dishCount > 0 ? 'bg-brand-light' : ''}`}
                   >
-                    <div className="flex items-center gap-2 ps-4 pe-2">
+                    <div className="flex items-center gap-2 ps-8 pe-2">
                       {/* The whole name is the plus: the floor counts by tapping the dish. */}
                       <button
                         type="button"
@@ -387,7 +387,7 @@ export default function FixedMenuPicker({
                     </div>
 
                     {dishCount > 0 && (
-                      <div className="flex flex-col gap-1.5 pb-2 ps-7 pe-2">
+                      <div className="flex flex-col gap-1.5 pb-2 ps-11 pe-2">
                         {/* One of the plates counted above, and what the
                             kitchen has to know about that one. The note has
                             the line to itself: beside a picker and a counter
