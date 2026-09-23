@@ -14,8 +14,8 @@ interface Props {
   item: OrderItem;
   /**
    * How many portions the tapped line folds. Above one, every action here is
-   * for one of them — the title says so — and a portion moved to another wave
-   * leaves the line and shows on its own.
+   * for one of them — the title says so — so taking one off a line of three
+   * leaves two.
    */
   portionOf?: number;
   /** Set on a menu's own row while it can still change: how many menus it feeds. */
@@ -81,7 +81,9 @@ export function LineActionSheet({
           </div>
         )}
 
-        {kotEnabled && canChangeRun && item.menu_role !== 'package' && (
+        {/* Not for a menu's rows: a menu is a running order, its courses go
+            out in their own turn, and its own row never reaches a station. */}
+        {kotEnabled && canChangeRun && !item.menu_role && (
           <div className="flex flex-col gap-2">
             <p className="text-sm font-semibold text-foreground">{tPos('serviceRun')}</p>
             {sent && <p className="text-sm text-muted-foreground">{tPos('serviceRunAlreadySent')}</p>}

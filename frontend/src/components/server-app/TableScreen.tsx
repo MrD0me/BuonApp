@@ -130,7 +130,10 @@ export function TableScreen({
           </div>
           <StatusBadge tone={status.tone} size="sm">{status.label}</StatusBadge>
         </div>
-        {kotPrintingEnabled && (
+        {/* Not inside a menu: there the running order is the menu's own, and
+            a picker under every plate of it was a column of buttons nobody
+            presses. */}
+        {kotPrintingEnabled && !insideMenu && (
           <div className="ps-11">
             <ServiceRunPicker
               value={serviceRunOf(item)}
