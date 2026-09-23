@@ -424,16 +424,31 @@ export interface CourseFillEntry {
  */
 export type CourseFill = Array<string | CourseFillEntry>;
 
-/** The dishes of one course of a selection, counted, ready for the fill route. */
-export function courseFillOf(selection: FixedMenuSelection, courseId: string): CourseFillEntry[] {
+/**
+ * The dishes of one course of a selection, counted, ready for the fill route.
+ *
+ * Every portion says which wave it goes out in, the dish's own default where
+ * the floor never moved it: left unsaid, the check reads it as "any wave" and
+ * a plain portion would quietly match the one somebody had moved — the window
+ * would show a lasagna back with the primi while the row stayed out with the
+ * starters.
+ */
+export function courseFillOf(
+  selection: FixedMenuSelection,
+  courseId: string,
+  defaultRunOf?: (productId: string) => number,
+): CourseFillEntry[] {
   return selection
     .filter((choice) => choice.course_id === courseId && portionsOf(choice) > 0)
-    .map((choice) => ({
-      product_id: choice.product_id,
-      quantity: portionsOf(choice),
-      ...(choice.note ? { note: choice.note } : {}),
-      ...(choice.service_run !== undefined ? { service_run: choice.service_run } : {}),
-    }));
+    .map((choice) => {
+      const run = choice.service_run ?? defaultRunOf?.(choice.product_id);
+      return {
+        product_id: choice.product_id,
+        quantity: portionsOf(choice),
+        ...(choice.note ? { note: choice.note } : {}),
+        ...(run !== undefined ? { service_run: run } : {}),
+      };
+    });
 }
 
 /** One line of a check as the screen draws it: portions that read the same, folded. */

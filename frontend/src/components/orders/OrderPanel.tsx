@@ -30,6 +30,7 @@ import { pendingDishCount, pendingKotItems } from '@/lib/kot';
 import {
   courseFillOf, menuAwareRowOrder, menuGroupsOfOrder, selectionOfGroup, type CourseFillEntry, type MenuGroupState,
 } from '@/lib/fixed-menu';
+import { serviceRunForProduct } from '@/lib/service-runs';
 import { useCatalogStore } from '@/store/catalog';
 import { ORDER_STATUS_TONE, PAYMENT_STATUS_TONE, TONE_STYLES } from '@/lib/status-styles';
 import { Modal, ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
@@ -117,7 +118,8 @@ export const paymentStatusOf = (order: Order): 'paid' | 'partial' | 'unpaid' | n
 interface OrderPanelProps {
   order: Order;
   /** Refetch whatever list or screen holds this order: it just changed. */
-  onChanged: () => void;
+  /** Reloads the order. Returns a promise where the caller has one, so a write can wait for it. */
+  onChanged: () => void | Promise<unknown>;
   discountMode: DiscountMode;
   discountRequiresApproval: boolean;
   /**
@@ -276,7 +278,10 @@ export function OrderPanel({
     setFillingMenu(true);
     try {
       await api.patch(`/orders/${order.id}/menu-groups/${groupId}`, { quantity });
-      onChanged();
+      // Waited for: the stepper is drawn from the row, and coming back to life
+      // before the new count arrives means a second tap sends the old number
+      // again — two taps on "−" from eight would land on seven.
+      await Promise.resolve(onChanged());
     } catch (error: unknown) {
       const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
       toast.error(code === 'menu_course_overflow' ? tOrders('menuCountOverflow') : tOrders('menuCountFailed'));
@@ -1515,7 +1520,9 @@ export function OrderPanel({
           onAdd={(_menu, _menus, selection) => setCourseDishes(
             menuFill.group.group_id,
             menuFill.courseId,
-            courseFillOf(selection, menuFill.courseId),
+            courseFillOf(selection, menuFill.courseId, (productId) => serviceRunForProduct(
+              catalogProducts.find((product) => product.id === productId), catalogCategories,
+            )),
           )}
         />
       )}

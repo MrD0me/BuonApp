@@ -7,7 +7,7 @@ import type { Category, Order, OrderItem, Product, Table } from '@/lib/types';
 import {
   compactMenuRows, courseFillOf, menuAwareRowOrder, menuGroupsOfOrder, selectionOfGroup, type CourseFill, type MenuGroupState,
 } from '@/lib/fixed-menu';
-import { serviceRunOf } from '@/lib/service-runs';
+import { serviceRunForProduct, serviceRunOf } from '@/lib/service-runs';
 import { isPendingKot, pendingDishCount } from '@/lib/kot';
 import { ITEM_STATUS_TONE, TABLE_STATUS_TONE, type Tone } from '@/lib/status-styles';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n/enums';
@@ -301,7 +301,9 @@ export function TableScreen({
           initialSelection={selectionOfGroup(menuFill.group)}
           onClose={() => { if (!filling) setMenuFill(null); }}
           onAdd={(_menu, _menus, selection) => {
-            void fillCourse(courseFillOf(selection, menuFill.courseId));
+            void fillCourse(courseFillOf(selection, menuFill.courseId, (productId) => serviceRunForProduct(
+              products.find((product) => product.id === productId), categories,
+            )));
           }}
         />
       )}

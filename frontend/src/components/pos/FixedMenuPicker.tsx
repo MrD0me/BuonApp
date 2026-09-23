@@ -280,7 +280,7 @@ export default function FixedMenuPicker({
                 variant="outline"
                 size="icon-touch"
                 aria-label={t('menuMoreThanCovers')}
-                onClick={() => setMenus((current) => Math.min(MAX_MENUS, Math.max(current ?? 0, quickCounts.length) + 1))}
+                onClick={() => setMenus((current) => Math.min(MAX_MENUS, (current ?? quickCounts.length) + 1))}
                 disabled={menus !== null && menus >= MAX_MENUS}
               >
                 <Plus />
@@ -352,8 +352,11 @@ export default function FixedMenuPicker({
 
                         {dishCount > 0 && (
                           <div className="flex flex-col gap-2 px-3 pb-2">
+                            {/* The note gets the line to itself: beside the run
+                                and the count it was down to a dozen characters,
+                                and "senza besciamella" read "nza besciamella". */}
                             {own.map((entry) => (
-                              <div key={entry.key} className="flex flex-wrap items-center gap-2 ps-3">
+                              <div key={entry.key} className="flex flex-col gap-2 ps-3">
                                 <input
                                   type="text"
                                   value={entry.note}
@@ -361,19 +364,21 @@ export default function FixedMenuPicker({
                                   placeholder={t('menuDishNotePlaceholder')}
                                   aria-label={`${t('menuDishNotePlaceholder')}: ${dish.name}`}
                                   maxLength={100}
-                                  className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                                  className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
                                 />
-                                <ServiceRunPicker
-                                  value={entry.service_run ?? defaultRunOf(dish.id)}
-                                  onChange={(run) => amendOwn(entry.key, { service_run: run })}
-                                />
-                                {stepper(
-                                  entry.quantity,
-                                  dish.name,
-                                  () => stepOwn(entry.key, -1, course.id, course.max_choices),
-                                  () => stepOwn(entry.key, 1, course.id, course.max_choices),
-                                  full,
-                                )}
+                                <div className="flex items-center justify-between gap-2">
+                                  <ServiceRunPicker
+                                    value={entry.service_run ?? defaultRunOf(dish.id)}
+                                    onChange={(run) => amendOwn(entry.key, { service_run: run })}
+                                  />
+                                  {stepper(
+                                    entry.quantity,
+                                    dish.name,
+                                    () => stepOwn(entry.key, -1, course.id, course.max_choices),
+                                    () => stepOwn(entry.key, 1, course.id, course.max_choices),
+                                    full,
+                                  )}
+                                </div>
                               </div>
                             ))}
                             <button
