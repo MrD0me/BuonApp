@@ -435,24 +435,35 @@ function buildMenuRows(
   const courses = readFixedMenuCourses(db, menu.id);
   if (courses.length === 0) throw invalid(`${menu.name} has no courses configured yet`);
 
-  // A counted choice — three lasagne — becomes three portions here, and each
-  // portion a row below.
-  const choices: FixedMenuChoiceInput[] = Array.isArray(selection)
-    ? selection.flatMap((entry: any) => {
-      const choice = {
-        course_id: String(entry?.course_id ?? ''),
-        product_id: String(entry?.product_id ?? ''),
-        note: choiceNote(entry?.note),
-        service_run: entry?.service_run,
-      };
-      return Array.from({ length: choicePortions(entry?.quantity, menu.name) }, () => choice);
-    })
-    : [];
+  // A counted choice — three lasagne — becomes three portions, and each
+  // portion a row below. The counts are added up and held to the course's
+  // ceiling *before* anything is expanded: a request asking for a thousand
+  // portions of a thousand dishes must be refused, not built in memory first.
+  const counted = (Array.isArray(selection) ? selection : []).map((entry: any) => ({
+    course_id: String(entry?.course_id ?? ''),
+    product_id: String(entry?.product_id ?? ''),
+    note: choiceNote(entry?.note),
+    service_run: entry?.service_run,
+    portions: choicePortions(entry?.quantity, menu.name),
+  }));
 
   const courseIds = new Set(courses.map((course) => course.id));
-  for (const choice of choices) {
+  for (const choice of counted) {
     if (!courseIds.has(choice.course_id)) throw invalid(`${menu.name}: a choice refers to a course that is not on this menu`);
   }
+  for (const course of courses) {
+    // A required course left empty is allowed through on purpose (see below).
+    // Too many is not: nine mains on eight menus is a mis-ring, and the ninth
+    // is ordered from the card.
+    const asked = counted
+      .filter((choice) => choice.course_id === course.id)
+      .reduce((total, choice) => total + choice.portions, 0);
+    if (asked > courseLimit(course, menus)) throw invalid(courseLimitMessage(menu.name, course, menus));
+  }
+
+  const choices: FixedMenuChoiceInput[] = counted.flatMap(({ portions, ...choice }) => (
+    Array.from({ length: portions }, () => choice)
+  ));
 
   // The package carries the price, once per menu; the dishes carry the
   // surcharge or nothing, and each its own note — the package row is filtered
@@ -476,11 +487,7 @@ function buildMenuRows(
     // hour later — refusing the menu until every course is filled meant the
     // floor could not take the order it was actually being given. What is
     // still missing is shown on the check and asked for again at the till;
-    // it is never a reason to refuse the order. Too many is: nine mains on
-    // eight menus is a mis-ring, and the ninth is ordered from the card.
-    if (picked.length > courseLimit(course, menus)) {
-      throw invalid(courseLimitMessage(menu.name, course, menus));
-    }
+    // it is never a reason to refuse the order.
 
     for (const choice of picked) {
       const dish = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(choice.product_id) as any;
@@ -660,23 +667,26 @@ export function planCourseFill(
   // already has. That is what a dish dropped in from the grid sends for the
   // ones already there, and it must not strip "senza besciamella" off them.
   if (!Array.isArray(productIds)) throw invalid('product_ids must be a list of dishes');
-  const wanted = productIds.flatMap((entry: any) => {
-    if (!entry || typeof entry !== 'object') {
-      return [{ product_id: String(entry ?? ''), note: null as string | null, service_run: undefined as unknown, anyNote: true }];
-    }
-    const dish = {
-      product_id: String(entry.product_id ?? ''),
-      note: choiceNote(entry.note),
-      service_run: entry.service_run as unknown,
-      anyNote: false,
-    };
-    return Array.from({ length: choicePortions(entry.quantity, menu.name) }, () => dish);
-  });
-  if (wanted.some((dish) => !dish.product_id)) throw invalid('product_ids must be a list of dishes');
+  const counted = productIds.map((entry: any) => (
+    !entry || typeof entry !== 'object'
+      ? { product_id: String(entry ?? ''), note: null as string | null, service_run: undefined as unknown, anyNote: true, portions: 1 }
+      : {
+        product_id: String(entry.product_id ?? ''),
+        note: choiceNote(entry.note),
+        service_run: entry.service_run as unknown,
+        anyNote: false,
+        portions: choicePortions(entry.quantity, menu.name),
+      }
+  ));
+  if (counted.some((dish) => !dish.product_id)) throw invalid('product_ids must be a list of dishes');
+  // The counts are added up and held to the ceiling before anything is
+  // expanded, so an absurd request is refused rather than built in memory.
   const menus = menusOnLine(pkg);
-  if (wanted.length > courseLimit(course, menus)) {
+  const asked = counted.reduce((total, dish) => total + dish.portions, 0);
+  if (asked > courseLimit(course, menus)) {
     throw invalid(courseLimitMessage(menu.name, course, menus));
   }
+  const wanted = counted.flatMap(({ portions, ...dish }) => Array.from({ length: portions }, () => dish));
 
   // What the course holds now. A row from before v95 carries no course, so it
   // is left alone rather than being claimed by the first course to ask.
