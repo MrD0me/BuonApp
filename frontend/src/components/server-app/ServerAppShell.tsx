@@ -402,7 +402,6 @@ export function ServerAppShell() {
           table={selectedTable}
           order={selectedOrder}
           products={data.products}
-          categories={data.categories}
           kotPrintingEnabled={data.settings.kotPrintingEnabled}
           busy={busy}
           onBack={backToFloor}

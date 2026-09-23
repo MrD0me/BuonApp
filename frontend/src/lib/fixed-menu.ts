@@ -396,15 +396,19 @@ export function menuGroupsOfOrder(items: OrderItem[], products: Product[]): Menu
 
 /**
  * What a menu line on the check already holds, as the window takes it: an
- * entry per portion, with the note and the run each one carries. The window
- * counts them; saving a course then keeps what every portion already said.
+ * entry per portion, with the note each one carries. The window counts them;
+ * saving a course then keeps what every portion already said.
+ *
+ * The wave is not read back, because the window does not ask for it: inside a
+ * menu the courses are the running order. A row somebody did move from the
+ * check keeps its wave all the same — the fill route matches a plain wish to a
+ * row whatever wave it is on.
  */
 export function selectionOfGroup(group: MenuGroupState): FixedMenuSelection {
   return group.slots.flatMap((slot) => slot.filled.map((row) => ({
     course_id: slot.course.id,
     product_id: String(row.product_id),
     ...(row.special_instructions ? { note: row.special_instructions } : {}),
-    service_run: serviceRunOf(row),
   })));
 }
 
@@ -427,28 +431,19 @@ export type CourseFill = Array<string | CourseFillEntry>;
 /**
  * The dishes of one course of a selection, counted, ready for the fill route.
  *
- * Every portion says which wave it goes out in, the dish's own default where
- * the floor never moved it: left unsaid, the check reads it as "any wave" and
- * a plain portion would quietly match the one somebody had moved — the window
- * would show a lasagna back with the primi while the row stayed out with the
- * starters.
+ * No wave is sent: the window does not ask for one inside a menu. The check
+ * reads a portion that says nothing about its wave as "any wave", so a course
+ * saved again leaves the rows it already has exactly where they are, and a
+ * portion that turns out to be new takes the wave its own category gives it.
  */
-export function courseFillOf(
-  selection: FixedMenuSelection,
-  courseId: string,
-  defaultRunOf?: (productId: string) => number,
-): CourseFillEntry[] {
+export function courseFillOf(selection: FixedMenuSelection, courseId: string): CourseFillEntry[] {
   return selection
     .filter((choice) => choice.course_id === courseId && portionsOf(choice) > 0)
-    .map((choice) => {
-      const run = choice.service_run ?? defaultRunOf?.(choice.product_id);
-      return {
-        product_id: choice.product_id,
-        quantity: portionsOf(choice),
-        ...(choice.note ? { note: choice.note } : {}),
-        ...(run !== undefined ? { service_run: run } : {}),
-      };
-    });
+    .map((choice) => ({
+      product_id: choice.product_id,
+      quantity: portionsOf(choice),
+      ...(choice.note ? { note: choice.note } : {}),
+    }));
 }
 
 /** One line of a check as the screen draws it: portions that read the same, folded. */
@@ -486,7 +481,7 @@ function sameMenuPortion(left: OrderItem, right: OrderItem): boolean {
  * Every portion is a row of its own on the check, so the kitchen's progress,
  * the run and the void work dish by dish. The floor reads "3× Lasagne". An
  * action on a folded line acts on one portion of it (`item`), which is how one
- * lasagna of three moves to the first wave, or comes off the check.
+ * lasagna of three comes off the check while the other two stay.
  */
 export function compactMenuRows(rows: OrderItem[]): OrderRowLine[] {
   const lines: OrderRowLine[] = [];

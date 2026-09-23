@@ -157,7 +157,6 @@ export function OrdinaView({
         <FixedMenuPicker
           menu={menuProduct}
           products={products}
-          categories={categories}
           covers={guests}
           onAdd={handleMenuAdd}
           onClose={() => setMenuProduct(null)}
@@ -183,7 +182,6 @@ export function OrdinaView({
         <FixedMenuPicker
           menu={editingMenuItem.product}
           products={products}
-          categories={categories}
           mode="edit"
           initialSelection={editingMenuItem.menu_selection || []}
           initialMenus={editingMenuItem.quantity}

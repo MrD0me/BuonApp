@@ -1126,7 +1126,6 @@ export default function POSPage() {
         <FixedMenuPicker
           menu={menuProduct}
           products={products}
-          categories={categories}
           covers={cart.guestCount}
           onAdd={handleMenuAdd}
           onClose={() => setMenuProduct(null)}
@@ -1155,7 +1154,6 @@ export default function POSPage() {
         <FixedMenuPicker
           menu={editingMenuItem.product}
           products={products}
-          categories={categories}
           mode="edit"
           initialSelection={editingMenuItem.menu_selection || []}
           initialMenus={editingMenuItem.quantity}

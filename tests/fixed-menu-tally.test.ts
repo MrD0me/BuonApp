@@ -12,7 +12,8 @@
  *  - surcharges count per dish, the menu price per menu, and the cart adds a
  *    menu line up that way;
  *  - an expected course is missing while it has fewer dishes than menus;
- *  - a course read back off the check, a row per portion, folds into counts;
+ *  - a course read back off the check, a row per portion, folds into counts,
+ *    with the note on it and without the wave, which the window never asks for;
  *  - the grid's "inside the menu?" offers a course only while it has room, and
  *    names a line by its count;
  *  - the check folds identical portions into one line for the screen, and an
@@ -36,7 +37,7 @@ Module._resolveFilename = function (request: string, parent: unknown, isMain: bo
 const {
   portionsOf, courseCount, courseCapacity, selectionSurcharge, cartLineTotal, selectionIsValid,
   missingRequiredCourses, tallySelection, menuGroupsOfOrder, menuLinesOfCart, menuLinesOfOrder,
-  openSlotsForProduct, compactMenuRows,
+  openSlotsForProduct, compactMenuRows, selectionOfGroup, courseFillOf,
 } = require('../frontend/src/lib/fixed-menu');
 const { useCartStore } = require('../frontend/src/store/cart');
 
@@ -151,6 +152,29 @@ function main() {
   assert.equal(mainSlot.free, 1, 'so one main is still to come');
   assert.deepEqual(group.missingRequired.map((course: any) => course.id), ['c-start', 'c-main'], 'and both courses are short of three');
   assert.equal(menuLinesOfOrder([group])[0].chosen.length, 2, 'the grid sees the two lasagne in it');
+
+  // ── What the window reads back, and what it sends ──────────────────────
+  // The wave stays on the check. Inside a menu the courses are the running
+  // order, so the window neither shows a wave nor sends one back, and a plain
+  // wish matches a row whatever wave somebody put it on.
+  const readGroup = menuGroupsOfOrder([
+    checkRows[0],
+    row(11, {}),
+    row(12, { service_run: 1 }),
+    row(14, { special_instructions: 'senza besciamella' }),
+  ], [menu])[0];
+  const held = selectionOfGroup(readGroup);
+  assert.equal(held.length, 3, 'a row per portion comes back');
+  assert.ok(held.every((choice: any) => choice.service_run === undefined), 'none of them carrying a wave');
+  assert.equal(held.filter((choice: any) => choice.note === 'senza besciamella').length, 1, 'while the note does come back');
+  assert.deepEqual(
+    courseFillOf(tallySelection(held), 'c-main'),
+    [
+      { product_id: 'p-lasagne', quantity: 2 },
+      { product_id: 'p-lasagne', quantity: 1, note: 'senza besciamella' },
+    ],
+    'and what goes back is a count per note, with no wave in it',
+  );
 
   // ── The check, as the screen draws it ──────────────────────────────────
   const lines = compactMenuRows([

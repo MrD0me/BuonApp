@@ -520,15 +520,23 @@
     "maxSelectionReached": "Máximo de {count} atingido",
     "menuAttachFailed": "Não foi possível pôr esse prato dentro do menu",
     "menuHowMany": "Quantos menus?",
-    "menuMoreThanCovers": "Mais menus do que pessoas",
+    "menuCoversHint": "Mesa de {count, plural, one {# pessoa} other {# pessoas}}",
     "menuOneMore": "Mais um",
     "menuOneLess": "Menos um",
     "menuCount": "{count, plural, one {# menu} other {# menus}}",
     "menuAddCount": "Adicionar {count, plural, one {# menu} other {# menus}} · {total}",
-    "menuPortionApart": "Nota ou saída para uma porção",
+    "menuPortionApart": "Nota para uma porção",
     "menuCourseTooMany": "{course}: pratos demais, os menus levam {count}",
     "menuCourseEmpty": "Nada disponível neste prato de momento.",
     "menuCourseOptional": "Opcional",
+
+    "menuCourseTaken": "{taken} de {of}",
+
+    "menuCourseToChoose": "A escolher",
+
+    "menuCourseFull": "Completo",
+
+    "menuNoteRemove": "Retirar a nota",
     "menuDishNotePlaceholder": "Nota para a cozinha",
     "menuCourses": "Pratos",
     "menuFixed": "Menu fixo",

@@ -30,7 +30,6 @@ import { pendingDishCount, pendingKotItems } from '@/lib/kot';
 import {
   courseFillOf, menuAwareRowOrder, menuGroupsOfOrder, selectionOfGroup, type CourseFillEntry, type MenuGroupState,
 } from '@/lib/fixed-menu';
-import { serviceRunForProduct } from '@/lib/service-runs';
 import { useCatalogStore } from '@/store/catalog';
 import { ORDER_STATUS_TONE, PAYMENT_STATUS_TONE, TONE_STYLES } from '@/lib/status-styles';
 import { Modal, ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
@@ -239,7 +238,6 @@ export function OrderPanel({
   // A menu on the check names its dishes but not its courses, so drawing the
   // slots still to fill needs the catalogue.
   const catalogProducts = useCatalogStore((state) => state.products);
-  const catalogCategories = useCatalogStore((state) => state.categories);
   const ensureCatalog = useCatalogStore((state) => state.ensureLoaded);
   const [menuFill, setMenuFill] = useState<{ group: MenuGroupState; courseId: string } | null>(null);
   const [fillingMenu, setFillingMenu] = useState(false);
@@ -1508,21 +1506,18 @@ export function OrderPanel({
         <FixedMenuPicker
           menu={menuFill.group.menu}
           products={catalogProducts}
-          categories={catalogCategories}
           mode="fill"
           restrictToCourseId={menuFill.courseId}
           initialMenus={menuFill.group.menus}
-          // Every course the menu already holds, each portion with its note
-          // and its run: onAdd sends back only the course on show, and the
-          // portions already in it keep what they said.
+          // Every course the menu already holds, each portion with its note:
+          // onAdd sends back only the course on show, and the portions already
+          // in it keep what they said.
           initialSelection={selectionOfGroup(menuFill.group)}
           onClose={() => { if (!fillingMenu) setMenuFill(null); }}
           onAdd={(_menu, _menus, selection) => setCourseDishes(
             menuFill.group.group_id,
             menuFill.courseId,
-            courseFillOf(selection, menuFill.courseId, (productId) => serviceRunForProduct(
-              catalogProducts.find((product) => product.id === productId), catalogCategories,
-            )),
+            courseFillOf(selection, menuFill.courseId),
           )}
         />
       )}

@@ -520,15 +520,23 @@
     "maxSelectionReached": "Maximum of {count} reached",
     "menuAttachFailed": "Could not put that dish inside the menu",
     "menuHowMany": "How many menus?",
-    "menuMoreThanCovers": "More menus than covers",
+    "menuCoversHint": "A table of {count, plural, one {# cover} other {# covers}}",
     "menuOneMore": "One more",
     "menuOneLess": "One fewer",
     "menuCount": "{count, plural, one {# menu} other {# menus}}",
     "menuAddCount": "Add {count, plural, one {# menu} other {# menus}} · {total}",
-    "menuPortionApart": "Note or run for one portion",
+    "menuPortionApart": "Note for one portion",
     "menuCourseTooMany": "{course}: too many dishes, the menus take {count}",
     "menuCourseEmpty": "Nothing available in this course right now.",
     "menuCourseOptional": "Optional",
+
+    "menuCourseTaken": "{taken} of {of}",
+
+    "menuCourseToChoose": "To choose",
+
+    "menuCourseFull": "Full",
+
+    "menuNoteRemove": "Remove the note",
     "menuDishNotePlaceholder": "Note for the kitchen",
     "menuCourses": "Courses",
     "menuFixed": "Fixed menu",

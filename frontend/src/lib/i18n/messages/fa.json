@@ -520,15 +520,23 @@
     "maxSelectionReached": "بیشینه {count} مورد رسیده است",
     "menuAttachFailed": "افزودن این غذا به منو ممکن نشد",
     "menuHowMany": "چند منو؟",
-    "menuMoreThanCovers": "منوی بیشتر از تعداد نفرات",
+    "menuCoversHint": "میزی {count, plural, one {# نفره} other {# نفره}}",
     "menuOneMore": "یکی بیشتر",
     "menuOneLess": "یکی کمتر",
     "menuCount": "{count, plural, one {# منو} other {# منو}}",
     "menuAddCount": "افزودن {count, plural, one {# منو} other {# منو}} · {total}",
-    "menuPortionApart": "یادداشت یا نوبت برای یک پرس",
+    "menuPortionApart": "یادداشت برای یک پرس",
     "menuCourseTooMany": "{course}: غذا بیش از حد است، منوها فقط {count} را می‌پذیرند",
     "menuCourseEmpty": "در این وعده فعلاً چیزی موجود نیست.",
     "menuCourseOptional": "اختیاری",
+
+    "menuCourseTaken": "{taken} از {of}",
+
+    "menuCourseToChoose": "برای انتخاب",
+
+    "menuCourseFull": "تکمیل",
+
+    "menuNoteRemove": "حذف یادداشت",
     "menuDishNotePlaceholder": "یادداشت برای آشپزخانه",
     "menuCourses": "وعده‌ها",
     "menuFixed": "منوی ثابت",
