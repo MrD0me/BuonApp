@@ -111,17 +111,16 @@ export function TableScreen({
 
   /**
    * One dish, or — inside a menu — every portion of it that reads the same,
-   * counted: "3× Lasagne". Moving the wave on a counted line moves one
-   * portion, which then shows on a line of its own; the rest stay put.
+   * counted: "3× Lasagne". Every line says how many, one included: a plate on
+   * its own under a menu showed a blank where the count goes, and the floor
+   * was left to read that empty space as a one.
    */
   const renderDish = (item: OrderItem, insideMenu: boolean, count = Number(item.quantity) || 1) => {
     const status = statusOf(item);
     return (
       <div key={item.id} className={`flex flex-col gap-2 py-3 ${insideMenu ? '' : 'border-b border-border last:border-0'}`}>
         <div className="flex items-center gap-3">
-          {insideMenu && count <= 1
-            ? <span className="w-8 shrink-0" aria-hidden="true" />
-            : <Ltr className="w-8 shrink-0 text-base font-bold text-muted-foreground">{count}×</Ltr>}
+          <Ltr className="w-8 shrink-0 text-base font-bold text-muted-foreground">{count}×</Ltr>
           <div className="min-w-0 flex-1">
             <p className="text-base font-medium text-foreground">{item.product_name}</p>
             {(item.addons || []).length > 0 && (

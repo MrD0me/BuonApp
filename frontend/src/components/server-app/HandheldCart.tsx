@@ -111,7 +111,7 @@ export function HandheldCart({
                         <span key={String(addon.id)} className="block text-sm text-muted-foreground">+ {addon.name}{(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}{Number(addon.price) > 0 ? ` (${fmt(Number(addon.price) * (addon.quantity || 1))})` : ''}</span>
                       ))}
                       {menuDishes.map((dish) => (
-                        <span key={dish.key} className="block text-sm text-muted-foreground">· {dish.name}{dish.quantity > 1 && <Ltr> ×{dish.quantity}</Ltr>}{dish.surcharge > 0 ? ` (+${fmt(dish.surcharge)})` : ''}{dish.note && <span className="italic"> — {dish.note}</span>}</span>
+                        <span key={dish.key} className="block text-sm text-muted-foreground">· {dish.name}<Ltr> ×{dish.quantity}</Ltr>{dish.surcharge > 0 ? ` (+${fmt(dish.surcharge)})` : ''}{dish.note && <span className="italic"> — {dish.note}</span>}</span>
                       ))}
                       {item.special_instructions && <span className="block text-sm italic text-muted-foreground">{item.special_instructions}</span>}
                     </button>

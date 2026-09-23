@@ -87,9 +87,11 @@ export function OrderLines({
               onClick={canAct ? () => onLineTap(item, line.quantity) : undefined}
               className={`flex min-h-touch-lg w-full items-center gap-3 rounded-xl px-2 py-2 text-start ${canAct ? 'transition active:bg-muted' : ''} ${isMenuCourse ? 'ps-6' : ''}`}
             >
-              {isMenuCourse && line.quantity <= 1
-                ? <span className="w-8 shrink-0 text-muted-foreground" aria-hidden="true">·</span>
-                : <Ltr className={`w-8 shrink-0 text-base font-bold ${isPackage ? 'text-foreground' : 'text-muted-foreground'}`}>{line.quantity}×</Ltr>}
+              {/* Every line says how many, one included: a single plate of a
+                  menu showed a bullet where the count goes, and a list where
+                  some lines count and others do not is a list to be read
+                  twice. */}
+              <Ltr className={`w-8 shrink-0 text-base font-bold ${isPackage ? 'text-foreground' : 'text-muted-foreground'}`}>{line.quantity}×</Ltr>
               <div className="min-w-0 flex-1">
                 <p className={`text-base ${isPackage ? 'font-bold' : 'font-medium'} text-foreground ${struck ? 'line-through opacity-60' : ''}`}>
                   {item.product_name}

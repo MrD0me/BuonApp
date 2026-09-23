@@ -239,7 +239,7 @@ export default function CartPanel({ tables, products, categories, submitting, on
                         ))}
                         {menuDishes.map((dish) => (
                           <span key={dish.key} className="block text-sm text-muted-foreground">
-                            · {dish.name}{dish.quantity > 1 && <Ltr> ×{dish.quantity}</Ltr>}{dish.surcharge > 0 ? ` (+${fmt(dish.surcharge)})` : ''}
+                            · {dish.name}<Ltr> ×{dish.quantity}</Ltr>{dish.surcharge > 0 ? ` (+${fmt(dish.surcharge)})` : ''}
                             {dish.note && <span className="italic"> — {dish.note}</span>}
                           </span>
                         ))}
