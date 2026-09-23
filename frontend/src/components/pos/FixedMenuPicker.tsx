@@ -126,13 +126,16 @@ export default function FixedMenuPicker({
     ...(entry.service_run !== undefined ? { service_run: entry.service_run } : {}),
   })));
 
-  const countOfCourse = (courseId: string) => tallies
+  const heldIn = (entries: Tally[], courseId: string) => entries
     .filter((entry) => entry.course_id === courseId)
     .reduce((total, entry) => total + entry.quantity, 0);
+  const countOfCourse = (courseId: string) => heldIn(tallies, courseId);
   // Until the count is given there is no ceiling to hold the courses to; the
   // floor may well start from the dishes.
   const capacityOf = (maxChoices: number) => (menus === null ? Infinity : courseCapacity({ max_choices: maxChoices }, menus));
-  const roomIn = (courseId: string, maxChoices: number) => countOfCourse(courseId) < capacityOf(maxChoices);
+  // Asked of the state being updated, not of the last render: two taps land
+  // before the screen redraws, and the second must still see the first.
+  const roomIn = (entries: Tally[], courseId: string, maxChoices: number) => heldIn(entries, courseId) < capacityOf(maxChoices);
 
   const surcharge = selectionSurcharge(menu, selection);
   const lineTotal = (Number(menu.price) || 0) * (menus ?? 0) + surcharge;
@@ -152,8 +155,8 @@ export default function FixedMenuPicker({
 
   /** One more portion of a dish, on its plain count. */
   const addOne = (courseId: string, productId: string, maxChoices: number) => {
-    if (!roomIn(courseId, maxChoices)) return;
     setTallies((current) => {
+      if (!roomIn(current, courseId, maxChoices)) return current;
       const plain = current.find((entry) => isPlain(entry, courseId, productId));
       if (plain) return current.map((entry) => (entry === plain ? { ...entry, quantity: entry.quantity + 1 } : entry));
       return [...current, { key: nextTallyKey(), course_id: courseId, product_id: productId, quantity: 1, note: '', own: false }];
@@ -180,14 +183,16 @@ export default function FixedMenuPicker({
    * move; otherwise it is one more portion, if the course has room.
    */
   const splitOne = (courseId: string, productId: string, maxChoices: number) => {
-    const hasPlain = tallies.some((entry) => isPlain(entry, courseId, productId) && entry.quantity > 0);
-    if (!hasPlain && !roomIn(courseId, maxChoices)) return;
-    setTallies((current) => [
-      ...current
-        .map((entry) => (hasPlain && isPlain(entry, courseId, productId) ? { ...entry, quantity: entry.quantity - 1 } : entry))
-        .filter((entry) => entry.quantity > 0),
-      { key: nextTallyKey(), course_id: courseId, product_id: productId, quantity: 1, note: '', own: true },
-    ]);
+    setTallies((current) => {
+      const plain = current.find((entry) => isPlain(entry, courseId, productId) && entry.quantity > 0);
+      if (!plain && !roomIn(current, courseId, maxChoices)) return current;
+      return [
+        ...current
+          .map((entry) => (entry === plain ? { ...entry, quantity: entry.quantity - 1 } : entry))
+          .filter((entry) => entry.quantity > 0),
+        { key: nextTallyKey(), course_id: courseId, product_id: productId, quantity: 1, note: '', own: true },
+      ];
+    });
   };
 
   const amendOwn = (key: string, changes: Partial<Pick<Tally, 'note' | 'service_run'>>) => {
@@ -195,10 +200,12 @@ export default function FixedMenuPicker({
   };
 
   const stepOwn = (key: string, delta: 1 | -1, courseId: string, maxChoices: number) => {
-    if (delta > 0 && !roomIn(courseId, maxChoices)) return;
-    setTallies((current) => current
-      .map((entry) => (entry.key === key ? { ...entry, quantity: entry.quantity + delta } : entry))
-      .filter((entry) => entry.quantity > 0));
+    setTallies((current) => {
+      if (delta > 0 && !roomIn(current, courseId, maxChoices)) return current;
+      return current
+        .map((entry) => (entry.key === key ? { ...entry, quantity: entry.quantity + delta } : entry))
+        .filter((entry) => entry.quantity > 0);
+    });
   };
 
   const stepper = (
