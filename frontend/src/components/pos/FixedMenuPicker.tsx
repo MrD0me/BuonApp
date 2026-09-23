@@ -217,7 +217,9 @@ export default function FixedMenuPicker({
     setMenus(digits === '' || value === 0 ? null : Math.min(MAX_MENUS, value));
   };
 
-  const countButton = 'bg-muted text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-touch-xl shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
+  // 44 px is the house minimum for anything a finger aims at; the counters
+  // sit on it rather than above it, so a long menu fits on one screenful.
+  const countButton = 'bg-muted text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-touch shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
   const dishButton = 'bg-card text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-10 shrink-0 items-center justify-center rounded-full border border-border outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
 
   /**
@@ -230,13 +232,13 @@ export default function FixedMenuPicker({
       {count > 0 && (
         <>
           <button type="button" aria-label={`${t('menuOneLess')}: ${name}`} onClick={onMinus} className={dishButton}>
-            <Minus className="size-5" />
+            <Minus className="size-4" />
           </button>
-          <Ltr className="w-7 text-center text-lg font-bold text-brand tabular-nums">{count}</Ltr>
+          <Ltr className="w-6 text-center text-base font-bold text-brand tabular-nums">{count}</Ltr>
         </>
       )}
       <button type="button" aria-label={`${t('menuOneMore')}: ${name}`} onClick={onPlus} disabled={full} className={dishButton}>
-        <Plus className="size-5" />
+        <Plus className="size-4" />
       </button>
     </div>
   );
@@ -258,9 +260,9 @@ export default function FixedMenuPicker({
         {/* The first question at the table. On the check the count changes
             from the menu's own row instead, so it is not asked twice. */}
         {mode !== 'fill' && (
-          <div className="border-b border-border px-5 py-4 text-center">
-            <h3 className="text-base font-semibold text-foreground">{t('menuHowMany')}</h3>
-            <div className="mt-2 flex items-center justify-center gap-3">
+          <div className="border-b border-border px-4 py-3 text-center">
+            <h3 className="text-sm font-semibold text-foreground">{t('menuHowMany')}</h3>
+            <div className="mt-1.5 flex items-center justify-center gap-2">
               <button
                 type="button"
                 aria-label={t('menuOneLess')}
@@ -268,7 +270,7 @@ export default function FixedMenuPicker({
                 onClick={() => setMenus((current) => (current === null || current <= 1 ? null : current - 1))}
                 className={countButton}
               >
-                <Minus className="size-6" />
+                <Minus className="size-5" />
               </button>
               <input
                 type="text"
@@ -281,7 +283,7 @@ export default function FixedMenuPicker({
                 onFocus={(event) => event.target.select()}
                 aria-label={t('menuHowMany')}
                 placeholder="0"
-                className={`h-touch-xl w-20 rounded-xl border border-input bg-card text-center text-3xl font-bold tabular-nums outline-none focus:ring-2 focus:ring-brand ${
+                className={`h-touch w-16 rounded-xl border border-input bg-card text-center text-2xl font-bold tabular-nums outline-none focus:ring-2 focus:ring-brand ${
                   menus === null ? 'text-muted-foreground' : 'text-brand'
                 }`}
               />
@@ -292,17 +294,17 @@ export default function FixedMenuPicker({
                 onClick={() => setMenus((current) => Math.min(MAX_MENUS, (current ?? 0) + 1))}
                 className={countButton}
               >
-                <Plus className="size-6" />
+                <Plus className="size-5" />
               </button>
             </div>
             {(covers ?? 0) > 1 && (
-              <p className="mt-2 text-sm text-muted-foreground">{t('menuCoversHint', { count: Number(covers) })}</p>
+              <p className="mt-1.5 text-xs text-muted-foreground">{t('menuCoversHint', { count: Number(covers) })}</p>
             )}
           </div>
         )}
 
         {courses.length === 0 && (
-          <p className="px-5 py-4 text-sm text-muted-foreground">{t('menuHasNoCourses')}</p>
+          <p className="px-4 py-3 text-sm text-muted-foreground">{t('menuHasNoCourses')}</p>
         )}
 
         {courses.map((course) => {
@@ -323,9 +325,9 @@ export default function FixedMenuPicker({
               {/* The course stays in sight while its dishes scroll under it:
                   twelve primi is a long list to come out of no longer knowing
                   how many are still to be chosen. */}
-              <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background px-5 py-2">
-                <h3 className="min-w-0 truncate text-base font-bold text-foreground">{course.label}</h3>
-                <span className="flex shrink-0 items-center gap-2 text-sm">
+              <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background px-4 py-1.5">
+                <h3 className="min-w-0 truncate text-sm font-bold text-foreground">{course.label}</h3>
+                <span className="flex shrink-0 items-center gap-2 text-xs">
                   {state && <span className={state.tone}>{state.label}</span>}
                   {(menus !== null || count > 0) && (
                     <span className={`font-semibold ${tooMany ? 'text-destructive' : count > 0 ? 'text-brand' : 'text-muted-foreground'}`}>
@@ -338,13 +340,13 @@ export default function FixedMenuPicker({
               </header>
 
               {tooMany && (
-                <p className="border-b border-border bg-destructive/10 px-5 py-2 text-sm font-semibold text-destructive">
+                <p className="border-b border-border bg-destructive/10 px-4 py-1.5 text-xs font-semibold text-destructive">
                   {t('menuCourseTooMany', { course: course.label, count: capacity })}
                 </p>
               )}
 
               {choices.length === 0 ? (
-                <p className="px-5 py-3 text-sm text-muted-foreground">{t('menuCourseEmpty')}</p>
+                <p className="px-4 py-2 text-sm text-muted-foreground">{t('menuCourseEmpty')}</p>
               ) : choices.map((dish) => {
                 const entries = tallies.filter((entry) => entry.course_id === course.id && entry.product_id === dish.id);
                 const dishCount = entries.reduce((total, entry) => total + entry.quantity, 0);
@@ -355,18 +357,18 @@ export default function FixedMenuPicker({
                     key={dish.id}
                     className={`border-b border-border last:border-0 ${dishCount > 0 ? 'bg-brand-light' : ''}`}
                   >
-                    <div className="flex items-center gap-2 ps-5 pe-3">
+                    <div className="flex items-center gap-2 ps-4 pe-2">
                       {/* The whole name is the plus: the floor counts by tapping the dish. */}
                       <button
                         type="button"
                         onClick={() => addOne(course.id, dish.id, course.max_choices)}
                         disabled={room === 0}
                         aria-label={`${t('menuOneMore')}: ${dish.name}`}
-                        className="flex min-h-touch-lg min-w-0 flex-1 items-center justify-between gap-3 text-start disabled:cursor-not-allowed"
+                        className="flex min-h-touch min-w-0 flex-1 items-center justify-between gap-3 text-start disabled:cursor-not-allowed"
                       >
-                        <span className={`text-base ${dishCount > 0 ? 'font-semibold text-brand' : 'font-medium text-foreground'}`}>{dish.name}</span>
+                        <span className={`text-sm ${dishCount > 0 ? 'font-semibold text-brand' : 'font-medium text-foreground'}`}>{dish.name}</span>
                         {extra > 0 && (
-                          <span className={`shrink-0 text-sm ${dishCount > 0 ? 'font-semibold text-brand' : 'text-muted-foreground'}`}>
+                          <span className={`shrink-0 text-xs ${dishCount > 0 ? 'font-semibold text-brand' : 'text-muted-foreground'}`}>
                             <Ltr>+{fmt(extra)}</Ltr>
                           </span>
                         )}
@@ -381,7 +383,7 @@ export default function FixedMenuPicker({
                     </div>
 
                     {dishCount > 0 && (
-                      <div className="flex flex-col gap-2 pb-3 ps-8 pe-3">
+                      <div className="flex flex-col gap-1.5 pb-2 ps-7 pe-2">
                         {/* One of the plates counted above, and what the
                             kitchen has to know about that one. The note has
                             the line to itself: beside a picker and a counter
@@ -389,7 +391,7 @@ export default function FixedMenuPicker({
                             besciamella" read "nza besciamella". */}
                         {noted.map((entry) => (
                           <div key={entry.key} className="flex items-center gap-2">
-                            <Ltr className="shrink-0 text-sm font-bold text-brand">1×</Ltr>
+                            <Ltr className="shrink-0 text-xs font-bold text-brand">1×</Ltr>
                             <input
                               type="text"
                               value={entry.note}
@@ -397,24 +399,24 @@ export default function FixedMenuPicker({
                               placeholder={t('menuDishNotePlaceholder')}
                               aria-label={`${t('menuDishNotePlaceholder')}: ${dish.name}`}
                               maxLength={NOTE_LENGTH}
-                              className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                              className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
                             />
                             <button
                               type="button"
                               onClick={() => dropNote(entry.key)}
                               aria-label={`${t('menuNoteRemove')}: ${dish.name}`}
-                              className="flex size-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:text-foreground active:scale-95"
+                              className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:text-foreground active:scale-95"
                             >
-                              <X className="size-5" />
+                              <X className="size-4" />
                             </button>
                           </div>
                         ))}
                         <button
                           type="button"
                           onClick={() => noteOne(course.id, dish.id, course.max_choices)}
-                          className="flex min-h-touch items-center gap-2 self-start rounded-lg pe-2 text-sm font-semibold text-brand active:bg-muted"
+                          className="flex min-h-9 items-center gap-1.5 self-start rounded-lg pe-2 text-xs font-semibold text-brand active:bg-muted"
                         >
-                          <MessageSquarePlus className="size-4" />
+                          <MessageSquarePlus className="size-3.5" />
                           {t('menuPortionApart')}
                         </button>
                       </div>
@@ -427,21 +429,21 @@ export default function FixedMenuPicker({
         })}
       </ModalBody>
 
-      <ModalFooter>
+      <ModalFooter className="px-4 py-3">
         {/* Said once, plainly, next to the button that takes the order
             anyway. A dialog here would be a dialog every evening in a house
             that sells the menu without dessert. */}
         {missing.length > 0 && (
-          <p className="text-center text-sm text-pending">
+          <p className="text-center text-xs text-pending">
             {t('menuMissingCourses', { courses: missing.map((course) => course.label).join(', ') })}
           </p>
         )}
         {surcharge > 0 && menus !== null && mode !== 'fill' && (
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-xs text-muted-foreground">
             {t('menuSurchargeNote', { base: fmt((Number(menu.price) || 0) * menus), extra: fmt(surcharge) })}
           </p>
         )}
-        <Button onClick={() => { if (menus !== null) onAdd(menu, menus, selection); }} disabled={!canSave} className="w-full" size="touch-xl">
+        <Button onClick={() => { if (menus !== null) onAdd(menu, menus, selection); }} disabled={!canSave} className="w-full" size="touch-lg">
           {menus === null
             ? t('menuHowMany')
             : mode === 'add'
