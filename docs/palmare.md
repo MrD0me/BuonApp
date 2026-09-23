@@ -32,17 +32,18 @@ volta che la finestra del menu si apriva sopra, perché stavano sullo stesso liv
   pillola che dice «Da inviare» finché il giro non è partito e poi lo stato di cucina;
 - i coperti, correggibili con `−`/`+` da 56 px (`PATCH /orders/:id/guests`): il coperto sul conto si
   riprezza da solo;
-- l'uscita di ogni piatto, spostabile con un tocco prima e dopo l'invio
-  (`PATCH /orders/:id/items/:itemId/service-run`);
+- l'uscita di ogni piatto alla carta, spostabile con un tocco prima e dopo l'invio
+  (`PATCH /orders/:id/items/:itemId/service-run`). Dentro un menu no: lì l'ordine delle uscite lo
+  fanno le portate, e un selettore sotto ogni piatto era una colonna di pulsanti che nessuno preme;
 - **«Secondo 0/8: da scegliere»**, un pulsante a tutta larghezza sulla portata di un menu già
   mandato che ha ancora posto, con il conteggio di quanti piatti ha su quanti ne tiene: apre la
   stessa finestra del PC ristretta a quella portata e scrive con
   `PUT /orders/:id/menu-groups/:groupId/courses/:courseId`. Un piatto che la cucina ha già preso
   in mano non si scavalca: 409 `course_in_progress`, e il messaggio lo dice;
 - il menu come riga da N, «8× Menu completo», con `−`/`+` per quanti menu
-  (`PATCH /orders/:id/menu-groups/:groupId`) e sotto i piatti contati, «3× Lasagne»; spostare
-  l'uscita su una riga contata sposta una porzione, che poi si vede da sola (vedi il menu a
-  conteggio in [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md));
+  (`PATCH /orders/:id/menu-groups/:groupId`) e sotto i piatti contati, «3× Lasagne». Ogni riga dice
+  quante, «1×» compreso (vedi il menu a conteggio in
+  [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md));
 - in fondo, fissi, **Invia in cucina (n)** se c'è un giro pendente e **Aggiungi piatti** (o **Prendi
   ordine** su un tavolo libero), che porta in Ordina con il carrello agganciato a quel tavolo.
 

@@ -287,7 +287,8 @@ singola riga con un tocco, prima e dopo l'invio.
   `service_run`, sulla carta `1ª USCITA`.
 - **Un piatto dentro un menu prende l'uscita dalla sua categoria**, non dalla portata del menu:
   un primo dentro un menu è un primo ed esce coi primi. È la stessa ragione per cui il menu
-  scrive righe vere.
+  scrive righe vere. E lì si ferma: dentro un menu l'uscita non si sposta più a mano (vedi il menu
+  a conteggio), perché l'ordine delle uscite è il menu stesso.
 - **La comanda si sezione per uscita, e dentro l'uscita per categoria.** L'uscita dice *quando* e
   va sopra; la categoria dice *cosa* e resta sotto. Con tutto in uscita 1 il codice prende lo
   stesso ramo di prima e la comanda esce identica — asserito byte per byte in `test:printer`.
@@ -399,24 +400,41 @@ già mandata. Con una riga per porzione tutto questo esisteva già.
 
 **La finestra** (`FixedMenuPicker`):
 
-- in testa **«Quanti menu?»**, con un pulsante per ogni numero fino ai coperti del tavolo e un `+`
-  per andare oltre. **Non parte da nessun numero**, e senza non si aggiunge: con i tavoli misti,
-  partire dai coperti farebbe pagare menu non presi a chi si dimentica di abbassarlo;
-- per ogni portata i suoi piatti con `−` conteggio `+`, e un tocco sul nome vale uno in più, come la
-  tacca sul foglio. La portata dice «6/8», in ambra finché mancano piatti e in rosso se sono troppi;
-- **«Nota o uscita per una porzione»** stacca una lasagna dal conteggio semplice e le dà una riga sua,
-  con la nota («senza besciamella») e l'uscita;
+- in testa **«Quanti menu?»**, un solo `−` numero `+` col numero anche battibile a tastiera (sul
+  telefono si apre il tastierino). **Non parte da nessun numero**, e senza non si aggiunge: con i
+  tavoli misti, partire dai coperti farebbe pagare menu non presi a chi si dimentica di abbassarlo.
+  Sotto, per informazione, i coperti del tavolo. La fila di numeri da 1 ai coperti che c'era prima,
+  con un `+` in fondo, al tavolo da uno si riduceva a un «1» fermo a sinistra e a un più: leggeva
+  come uno stepper a cui manca il meno;
+- **ogni numero su questa schermata conta piatti.** La portata dice «3 di 8» — tre degli otto piatti
+  che quei menu si aspettano — in ambra finché ne mancano, in rosso se sono troppi, e la sua
+  intestazione resta appiccicata in cima mentre i piatti scorrono. Un piatto dice quante porzioni,
+  **quelle con la nota comprese**: la nota non fa un secondo piatto, segna una delle porzioni già
+  contate;
+- i piatti sono righe con `−` conteggio `+`, e un tocco sul nome vale uno in più, come la tacca sul
+  foglio; quelli contati si tingono per tutta la riga, così da fuori si legge cosa è stato preso;
+- **«Nota per una porzione»** prende una lasagna dal conteggio semplice e le dà una riga sua con la
+  nota («senza besciamella»); la ✕ toglie la nota e la riporta nel conteggio, senza cambiare il
+  totale del piatto;
+- **l'uscita non si chiede dentro il menu**: un menu è già un ordine di uscite — antipasto, primo,
+  secondo — e ogni piatto prende l'uscita della sua categoria. Chiederla porzione per porzione
+  voleva dire un selettore sotto ogni piatto scelto, per una cosa che al locale non si fa;
 - via **«Un altro uguale»**: il conteggio lo rende inutile;
 - toccare di nuovo un menu che è già nel carrello riapre quella riga, invece di aprirne una seconda.
 
 **Sul conto già inviato**, al PC e sul palmare:
 
-- la riga del menu dice «8×», e le porzioni uguali di un piatto sono una riga «3× Lasagne». Le
-  azioni su quella riga valgono per **una** porzione, e la scheda lo dice («una di 3»). Spostata di
-  uscita, la porzione si stacca e si vede da sola;
+- la riga del menu dice «8×», e le porzioni uguali di un piatto sono una riga «3× Lasagne». Ogni
+  riga dice quante, **«1×» compreso**: una porzione sola mostrava un pallino al posto del numero, e
+  una lista in cui certe righe contano e altre no si legge due volte. Le azioni su quella riga
+  valgono per **una** porzione, e la scheda lo dice («una di 3»);
+- **l'uscita di una riga di menu non si sposta**, né al PC né sul palmare, per la stessa ragione per
+  cui la finestra non la chiede;
 - i pulsanti delle portate con posto dicono quanto sono pieni («Secondo 0/8»), e aprono la finestra
-  ristretta a quella portata, con i conteggi. Salvando si mandano anche nota e uscita delle porzioni
-  che c'erano già: prima la finestra partiva dai soli piatti, e le perdeva;
+  ristretta a quella portata, con i conteggi. Salvando si manda la nota di ogni porzione che c'era
+  già — prima la finestra partiva dai soli piatti, e le perdeva — ma non l'uscita: una richiesta che
+  non dice l'uscita si abbina a una riga qualunque, così le righe restano dove sono anche se
+  qualcuno le aveva spostate, e una porzione davvero nuova prende l'uscita della sua categoria;
 - **`PATCH /orders/:id/menu-groups/:groupId` `{ quantity }`** cambia quanti menu: l'amico che arriva
   dopo, o chi alla fine ordina alla carta. Sotto il numero di piatti già in una portata risponde 409
   `menu_course_overflow`, e dice quale portata: il piatto in più lo toglie la sala. Stessi ruoli e
