@@ -32,26 +32,33 @@ volta che la finestra del menu si apriva sopra, perché stavano sullo stesso liv
   pillola che dice «Da inviare» finché il giro non è partito e poi lo stato di cucina;
 - i coperti, correggibili con `−`/`+` da 56 px (`PATCH /orders/:id/guests`): il coperto sul conto si
   riprezza da solo;
-- l'uscita di ogni piatto, spostabile con un tocco prima e dopo l'invio
-  (`PATCH /orders/:id/items/:itemId/service-run`);
-- **«Secondo: da scegliere»**, un pulsante a tutta larghezza sulla portata lasciata vuota di un menu
-  già mandato: apre la stessa finestra del PC ristretta a quella portata e scrive con
+- l'uscita di ogni piatto alla carta, spostabile con un tocco prima e dopo l'invio
+  (`PATCH /orders/:id/items/:itemId/service-run`). Dentro un menu no: lì l'ordine delle uscite lo
+  fanno le portate, e un selettore sotto ogni piatto era una colonna di pulsanti che nessuno preme;
+- **«Secondo 0/8: da scegliere»**, un pulsante a tutta larghezza sulla portata di un menu già
+  mandato che ha ancora posto, con il conteggio di quanti piatti ha su quanti ne tiene: apre la
+  stessa finestra del PC ristretta a quella portata e scrive con
   `PUT /orders/:id/menu-groups/:groupId/courses/:courseId`. Un piatto che la cucina ha già preso
   in mano non si scavalca: 409 `course_in_progress`, e il messaggio lo dice;
+- il menu come riga da N, «8× Menu completo», con `−`/`+` per quanti menu
+  (`PATCH /orders/:id/menu-groups/:groupId`) e sotto i piatti contati, «3× Lasagne». Ogni riga dice
+  quante, «1×» compreso (vedi il menu a conteggio in
+  [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md));
 - in fondo, fissi, **Invia in cucina (n)** se c'è un giro pendente e **Aggiungi piatti** (o **Prendi
   ordine** su un tavolo libero), che porta in Ordina con il carrello agganciato a quel tavolo.
 
 **Ordina.** In testa il tavolo e i coperti; poi ricerca, categorie come selettore a scorrimento,
 griglia a due colonne. Il tocco su un piatto fa quello che fa sul PC: un menu fisso apre la finestra
-delle portate (con "Un altro uguale"), un piatto che entra in una portata libera di un menu aperto —
+che chiede quanti menu e conta i piatti portata per portata (se quel menu è già nel carrello riapre
+la sua riga), un piatto che entra in una portata libera di un menu aperto —
 nel carrello o già sul conto — chiede "compreso nel menu?", un piatto con aggiuntivi o a prezzo da
 definire apre le sue opzioni. **Tutto il resto va dritto in comanda**, senza finestra
 (`lib/product-options.ts`): un'acqua non ha niente da decidere, e una finestra per ogni piatto era
 un tocco in più tutta la sera. La matita sul riquadro apre comunque nota e quantità. La comanda è
 una barra fissa in basso che dice quanti piatti e quanto, e un tocco la apre a schermo intero: righe
 da 48 px con il cestino, lo stepper e un pulsante con l'uscita corrente («2ª uscita») che apre la
-griglia solo se va cambiata, perché il piatto la eredita già dalla categoria; un menu è una riga di
-quantità uno coi piatti scelti sotto; per un ordine nuovo ci sono i coperti, che partono dalla
+griglia solo se va cambiata, perché il piatto la eredita già dalla categoria; un menu è una riga
+«8× Menu completo» coi piatti contati sotto; per un ordine nuovo ci sono i coperti, che partono dalla
 prenotazione o dai posti del tavolo (con la riga informativa del coperto, se la casa lo fa pagare;
 vedi [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md)), e le note. Le tre finestre stanno un livello sopra la pagina,
 quindi la comanda resta dov'è mentre si corregge una riga.
@@ -99,7 +106,7 @@ pagina e un 200):
 ```
 GET   /categories  /products  /tables  /rooms  /settings  /orders  /orders/:id
 POST  /orders  /orders/:id/items  /printers/print-kot
-PATCH /orders/:id/guests  /orders/:id/items/:itemId/service-run
+PATCH /orders/:id/guests  /orders/:id/items/:itemId/service-run  /orders/:id/menu-groups/:groupId
 PUT   /orders/:id/menu-groups/:groupId/courses/:courseId
 ```
 
@@ -164,7 +171,8 @@ Tre scelte da sapere:
 
 `npm run test:server-app-server-role` per il proxy; `test:orders-authz`, `test:security`,
 `test:issue-255-append`, `test:authz-phase3`, `test:fixed-menu`, `test:service-runs` per la caduta
-del vincolo di proprietà; `npm run lint`, `npm run build`, `npm run build:frontend`,
+del vincolo di proprietà; `test:fixed-menu-tally` per i conteggi del menu che il palmare condivide
+col PC; `npm run lint`, `npm run build`, `npm run build:frontend`,
 `npm run i18n:check`, `npm run test:rtl-kds-server-whatsapp` per il frontend (i file del palmare
 stanno nella lista dei file che devono usare solo utilità logiche). Lo spec Playwright
 `frontend/e2e/i18n-batch-5d.spec.ts` percorre login, sala, scheda tavolo e finestra aggiuntivi in

@@ -14,6 +14,7 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
+import { menuCourseLine, printableBillRows } from './bill-rows';
 import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
@@ -163,19 +164,6 @@ function col4Header(widths: Col4Widths): string {
   return item + qty + rate + amt;
 }
 
-/**
- * How a row of a fixed menu reads on paper. The package line is the one that
- * costs; a dish chosen inside it sits underneath, indented, and shows only a
- * surcharge — with the sign on it, so the guest can add the indented lines to
- * the package in their head and land on the total.
- */
-function menuCourseLine(
-  item: { menu_role?: string | null; total?: number | string },
-): { indent: boolean; suppressAmount: boolean; sign: string } {
-  const isCourse = item?.menu_role === 'course';
-  if (!isCourse) return { indent: false, suppressAmount: false, sign: '' };
-  return { indent: true, suppressAmount: !(Number(item.total) > 0), sign: '+' };
-}
 
 function col4Rows(
   name: string,
@@ -278,7 +266,8 @@ export function buildClassicReceiptBytes(
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
-  const col4Layout = resolveCol4Widths(cols, order?.items ?? [], currency, locale, trimDecimals);
+  const billRows = printableBillRows(order?.items ?? []);
+  const col4Layout = resolveCol4Widths(cols, billRows, currency, locale, trimDecimals);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -317,19 +306,19 @@ export function buildClassicReceiptBytes(
   enc.rule({ style: 'single' });
 
   // Line items
-  const items = order?.items ?? [];
-  for (const item of items) {
+  for (const item of billRows) {
     const course = menuCourseLine(item);
-    const rows = course.suppressAmount
-      ? [truncate(`  ${item.product_name}`, cols - 1)]
-      : col4Rows(
-        course.indent ? `  ${item.product_name}` : item.product_name,
-        item.quantity,
-        course.indent ? '' : item.unit_price,
-        item.total,
-        currency, col4Layout, locale, trimDecimals,
-        amountTextFor(item, currency, locale, trimDecimals),
-      );
+    // A dish the package covers still says how many, in the quantity column
+    // like any row — three lasagne under the menu, not one name. It only
+    // leaves the rate and the amount empty.
+    const rows = col4Rows(
+      course.indent ? `  ${item.product_name}` : item.product_name,
+      item.quantity,
+      course.indent ? '' : item.unit_price,
+      item.total,
+      currency, col4Layout, locale, trimDecimals,
+      course.suppressAmount ? '' : amountTextFor(item, currency, locale, trimDecimals),
+    ).map((row) => (course.suppressAmount ? row.trimEnd() : row));
     for (const row of rows) {
       safePrinterText(enc, row, warnings).newline();
     }
@@ -479,11 +468,15 @@ export function buildCompactReceiptBytes(
 
   enc.rule({ style: 'single' });
 
-  // Items — compact: one line per item with total, qty x rate below if qty > 1
-  const items = order?.items ?? [];
-  for (const item of items) {
+  // Items — compact: one line per item with total, qty x rate below if qty > 1.
+  // A dish inside a menu says its count after its name instead, the way an
+  // add-on does: "qty x rate" is for things priced one by one, and the package
+  // is what prices these.
+  for (const item of printableBillRows(order?.items ?? [])) {
     const course = menuCourseLine(item);
-    const name = course.indent ? `  ${item.product_name}` : item.product_name;
+    const name = course.indent
+      ? `  ${item.product_name}${item.quantity > 1 ? ` x${item.quantity}` : ''}`
+      : item.product_name;
     if (course.suppressAmount) {
       safePrinterText(enc, truncate(name, cols), warnings).newline();
     } else {
@@ -492,7 +485,7 @@ export function buildCompactReceiptBytes(
       safePrinterText(enc, padRow(truncate(name, nameMax), amount, cols), warnings).newline();
     }
 
-    if (item.quantity > 1) {
+    if (item.quantity > 1 && !course.indent) {
       enc
         .size('small')
         .align('right')

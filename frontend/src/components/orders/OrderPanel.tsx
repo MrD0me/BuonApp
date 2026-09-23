@@ -27,7 +27,9 @@ import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useSendKot } from '@/hooks/useSendKot';
 import { pendingDishCount, pendingKotItems } from '@/lib/kot';
-import { menuAwareRowOrder, menuGroupsOfOrder, type MenuGroupState } from '@/lib/fixed-menu';
+import {
+  courseFillOf, menuAwareRowOrder, menuGroupsOfOrder, selectionOfGroup, type CourseFillEntry, type MenuGroupState,
+} from '@/lib/fixed-menu';
 import { useCatalogStore } from '@/store/catalog';
 import { ORDER_STATUS_TONE, PAYMENT_STATUS_TONE, TONE_STYLES } from '@/lib/status-styles';
 import { Modal, ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
@@ -115,7 +117,8 @@ export const paymentStatusOf = (order: Order): 'paid' | 'partial' | 'unpaid' | n
 interface OrderPanelProps {
   order: Order;
   /** Refetch whatever list or screen holds this order: it just changed. */
-  onChanged: () => void;
+  /** Reloads the order. Returns a promise where the caller has one, so a write can wait for it. */
+  onChanged: () => void | Promise<unknown>;
   discountMode: DiscountMode;
   discountRequiresApproval: boolean;
   /**
@@ -197,6 +200,8 @@ export function OrderPanel({
   const [rowEdit, setRowEdit] = useState<RowEdit | null>(null);
   // The row whose action sheet is open, by id so a refetch never leaves it stale.
   const [lineSheetId, setLineSheetId] = useState<number | null>(null);
+  // How many portions the tapped line folded: the sheet acts on one of them, and says so.
+  const [lineSheetOf, setLineSheetOf] = useState(1);
   const [savingRow, setSavingRow] = useState(false);
 
 
@@ -233,7 +238,6 @@ export function OrderPanel({
   // A menu on the check names its dishes but not its courses, so drawing the
   // slots still to fill needs the catalogue.
   const catalogProducts = useCatalogStore((state) => state.products);
-  const catalogCategories = useCatalogStore((state) => state.categories);
   const ensureCatalog = useCatalogStore((state) => state.ensureLoaded);
   const [menuFill, setMenuFill] = useState<{ group: MenuGroupState; courseId: string } | null>(null);
   const [fillingMenu, setFillingMenu] = useState(false);
@@ -247,10 +251,10 @@ export function OrderPanel({
    * because that is the shape the endpoint takes: the list is what the course
    * ends up with, not what to do to it.
    */
-  const setCourseDishes = async (groupId: string, courseId: string, productIds: string[]) => {
+  const setCourseDishes = async (groupId: string, courseId: string, dishes: CourseFillEntry[]) => {
     setFillingMenu(true);
     try {
-      await api.put(`/orders/${order.id}/menu-groups/${groupId}/courses/${courseId}`, { product_ids: productIds });
+      await api.put(`/orders/${order.id}/menu-groups/${groupId}/courses/${courseId}`, { product_ids: dishes });
       setMenuFill(null);
       onChanged();
     } catch (error: unknown) {
@@ -258,6 +262,27 @@ export function OrderPanel({
       // the manager PIN it asks for — not something to do behind their back.
       const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
       toast.error(code === 'course_in_progress' ? tOrders('menuCourseInProgress') : tOrders('menuCourseFillFailed'));
+    } finally {
+      setFillingMenu(false);
+    }
+  };
+
+  /**
+   * How many menus a line on the check feeds: the friend who arrives late, or
+   * the guest who orders from the card after all. Below what a course already
+   * holds the backend refuses, and the floor takes the extra dish off first.
+   */
+  const setMenuCount = async (groupId: string, quantity: number) => {
+    setFillingMenu(true);
+    try {
+      await api.patch(`/orders/${order.id}/menu-groups/${groupId}`, { quantity });
+      // Waited for: the stepper is drawn from the row, and coming back to life
+      // before the new count arrives means a second tap sends the old number
+      // again — two taps on "−" from eight would land on seven.
+      await Promise.resolve(onChanged());
+    } catch (error: unknown) {
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      toast.error(code === 'menu_course_overflow' ? tOrders('menuCountOverflow') : tOrders('menuCountFailed'));
     } finally {
       setFillingMenu(false);
     }
@@ -498,9 +523,12 @@ export function OrderPanel({
       toast.error(tOrders('onlyOwnersRemove'));
       return;
     }
-    // Pressing the menu's own row takes the whole menu; pressing one of its
-    // dishes takes only that dish. The question has to say which.
-    const question = item?.menu_role === 'package' ? tOrders('removeMenuConfirm') : tOrders('removeItemConfirm');
+    // Pressing the menu's own row takes the whole line, every menu on it;
+    // pressing one of its dishes takes only that portion. The question has to
+    // say which, and how many menus go.
+    const question = item?.menu_role === 'package'
+      ? tOrders('removeMenuConfirm', { count: Math.max(1, Number(item.quantity) || 1) })
+      : tOrders('removeItemConfirm');
     if (!await confirm(question, { destructive: true, confirmLabel: tCommon('remove') })) return;
     try {
       await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: tOrders('removedByManager') });
@@ -775,10 +803,6 @@ export function OrderPanel({
             // still open, and which required ones nobody has chosen for.
             const menuGroups = menuGroupsOfOrder(activeItems, catalogProducts);
             const menusMissingCourses = menuGroups.filter((entry) => entry.missingRequired.length > 0);
-            const lastRowOfGroup = new Map<string, number>();
-            for (const row of activeItems) {
-              if (row.menu_group_id) lastRowOfGroup.set(String(row.menu_group_id), row.id);
-            }
             const cancelledItems = (order.items || []).filter((i: OrderItem) => i.status === 'cancelled');
             const paid = isOrderPaid(order);
             const payStatus = paymentStatusOf(order);
@@ -936,12 +960,11 @@ export function OrderPanel({
             <OrderLines
               items={activeItems}
               menuGroups={menuGroups}
-              lastRowOfGroup={lastRowOfGroup}
               canAct={canAct}
               canFillCourses={!paid && orderOpen}
               kotEnabled={kotPrintingEnabled}
               awaitsPrice={awaitsPrice}
-              onLineTap={(item) => setLineSheetId(item.id)}
+              onLineTap={(item, of) => { setLineSheetId(item.id); setLineSheetOf(of); }}
               onFillCourse={(group, courseId) => setMenuFill({ group, courseId })}
             />
 
@@ -1086,6 +1109,14 @@ export function OrderPanel({
       {sheetItem && (
         <LineActionSheet
           item={sheetItem}
+          portionOf={sheetItem.menu_role === 'course' ? lineSheetOf : 1}
+          menuCount={sheetItem.menu_role === 'package' && sheetItem.menu_group_id && !paid && orderOpen
+            ? {
+              value: Math.max(1, Number(sheetItem.quantity) || 1),
+              busy: fillingMenu,
+              onChange: (quantity) => { void setMenuCount(String(sheetItem.menu_group_id), quantity); },
+            }
+            : undefined}
           kotEnabled={kotPrintingEnabled}
           canChangeRun={!paid && orderOpen}
           canEditPrice={isOwnerOrManager && !paid && orderOpen}
@@ -1475,21 +1506,18 @@ export function OrderPanel({
         <FixedMenuPicker
           menu={menuFill.group.menu}
           products={catalogProducts}
-          categories={catalogCategories}
           mode="fill"
           restrictToCourseId={menuFill.courseId}
-          // Every course the menu already holds, not only the one on show:
-          // the window reads "still missing" and the line price off the whole
-          // selection, and with the others left out it listed courses that
-          // were full and priced a menu without its surcharges. onAdd keeps
-          // only the shown course, so nothing else is rewritten.
-          initialSelection={menuFill.group.slots
-            .flatMap((slot) => slot.filled.map((row) => ({ course_id: slot.course.id, product_id: String(row.product_id) })))}
+          initialMenus={menuFill.group.menus}
+          // Every course the menu already holds, each portion with its note:
+          // onAdd sends back only the course on show, and the portions already
+          // in it keep what they said.
+          initialSelection={selectionOfGroup(menuFill.group)}
           onClose={() => { if (!fillingMenu) setMenuFill(null); }}
-          onAdd={(_menu, selection) => setCourseDishes(
+          onAdd={(_menu, _menus, selection) => setCourseDishes(
             menuFill.group.group_id,
             menuFill.courseId,
-            selection.filter((choice) => choice.course_id === menuFill.courseId).map((choice) => choice.product_id),
+            courseFillOf(selection, menuFill.courseId),
           )}
         />
       )}

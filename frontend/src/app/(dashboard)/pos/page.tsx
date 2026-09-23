@@ -431,9 +431,13 @@ export default function POSPage() {
 
   const handleProductClick = (product: Product) => {
     // A fixed menu is not ordered, it is composed: the window that opens asks
-    // for a dish per course and writes them as real rows.
+    // how many menus and counts the dishes, and they are written as real rows.
+    // A menu already in the cart reopens that line — the table's count and
+    // dishes go on one line, not two.
     if (isFixedMenu(product)) {
-      setMenuProduct(product);
+      const existing = cart.items.find((item) => item.menu_selection && item.product.id === product.id);
+      if (existing) setEditingMenuItem(existing);
+      else setMenuProduct(product);
       return;
     }
 
@@ -484,20 +488,14 @@ export default function POSPage() {
     }
   };
 
-  const handleMenuAdd = (menu: Product, selection: FixedMenuSelection) => {
-    cart.addFixedMenu(menu, selection);
+  const handleMenuAdd = (menu: Product, menus: number, selection: FixedMenuSelection) => {
+    cart.addFixedMenu(menu, menus, selection);
     setMenuProduct(null);
   };
 
-  // Adds this menu and leaves the window open with the same choices, ready for
-  // the next guest taking the same thing.
-  const handleMenuAddAnother = (menu: Product, selection: FixedMenuSelection) => {
-    cart.addFixedMenu(menu, selection);
-  };
-
-  const handleMenuEditSave = (_menu: Product, selection: FixedMenuSelection) => {
+  const handleMenuEditSave = (_menu: Product, menus: number, selection: FixedMenuSelection) => {
     if (!editingMenuItem) return;
-    cart.updateMenuSelection(editingMenuItem.id, selection);
+    cart.updateMenuSelection(editingMenuItem.id, menus, selection);
     setEditingMenuItem(null);
   };
 
@@ -1128,9 +1126,8 @@ export default function POSPage() {
         <FixedMenuPicker
           menu={menuProduct}
           products={products}
-          categories={categories}
+          covers={cart.guestCount}
           onAdd={handleMenuAdd}
-          onAddAnother={(selection) => handleMenuAddAnother(menuProduct, selection)}
           onClose={() => setMenuProduct(null)}
         />
       )}
@@ -1157,9 +1154,10 @@ export default function POSPage() {
         <FixedMenuPicker
           menu={editingMenuItem.product}
           products={products}
-          categories={categories}
           mode="edit"
           initialSelection={editingMenuItem.menu_selection || []}
+          initialMenus={editingMenuItem.quantity}
+          covers={cart.guestCount}
           onAdd={handleMenuEditSave}
           onClose={() => setEditingMenuItem(null)}
         />

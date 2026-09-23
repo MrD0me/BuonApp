@@ -5,7 +5,7 @@ import { useTranslations } from 'use-intl';
 import type { CartItem, Category, Order, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import { cartLineUnitPrice, courseSurcharge } from '@/lib/fixed-menu';
+import { cartLineTotal, menuLineDishes } from '@/lib/fixed-menu';
 import { serviceRunOfCartLine } from '@/lib/service-runs';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/ui/stepper';
@@ -81,17 +81,8 @@ export function HandheldCart({
           <div>
             {cart.items.map((item) => {
               const isMenu = Boolean(item.menu_selection);
-              const menuCourses = (item.menu_selection || []).map((choice) => {
-                const course = (item.product.courses || []).find((entry) => entry.id === choice.course_id);
-                const dish = products.find((candidate) => candidate.id === choice.product_id);
-                return {
-                  key: `${choice.course_id}:${choice.product_id}`,
-                  name: dish?.name ?? '—',
-                  surcharge: course ? courseSurcharge(course, choice.product_id) : 0,
-                  note: choice.note || '',
-                };
-              });
-              const lineTotal = cartLineUnitPrice(item) * (isMenu ? 1 : item.quantity);
+              const menuDishes = menuLineDishes(item, products);
+              const lineTotal = cartLineTotal(item);
               return (
                 <div key={item.id} className="flex flex-col gap-2 border-b border-border py-3 last:border-0">
                   <div className="flex items-center gap-1">
@@ -112,14 +103,15 @@ export function HandheldCart({
                       className="min-w-0 flex-1 rounded-lg py-1 text-start active:bg-muted"
                     >
                       <span className="flex items-center gap-1.5">
+                        {isMenu && <Ltr className="shrink-0 text-base font-bold text-brand">{item.quantity}×</Ltr>}
                         <span className="truncate text-base font-semibold text-foreground">{item.product.name}</span>
                         <SquarePen size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
                       </span>
                       {item.addons.map((addon) => (
                         <span key={String(addon.id)} className="block text-sm text-muted-foreground">+ {addon.name}{(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}{Number(addon.price) > 0 ? ` (${fmt(Number(addon.price) * (addon.quantity || 1))})` : ''}</span>
                       ))}
-                      {menuCourses.map((course) => (
-                        <span key={course.key} className="block text-sm text-muted-foreground">· {course.name}{course.surcharge > 0 ? ` (+${fmt(course.surcharge)})` : ''}{course.note && <span className="italic"> — {course.note}</span>}</span>
+                      {menuDishes.map((dish) => (
+                        <span key={dish.key} className="block text-sm text-muted-foreground">· {dish.name}<Ltr> ×{dish.quantity}</Ltr>{dish.surcharge > 0 ? ` (+${fmt(dish.surcharge)})` : ''}{dish.note && <span className="italic"> — {dish.note}</span>}</span>
                       ))}
                       {item.special_instructions && <span className="block text-sm italic text-muted-foreground">{item.special_instructions}</span>}
                     </button>

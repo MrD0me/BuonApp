@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem } from '@/lib/types';
 import type { FixedMenuSelection } from '@/lib/types';
 import { generateCartItemId, newMenuLineId, normalizeCartItems } from '@/lib/cart-identity';
-import { cartLineUnitPrice } from '@/lib/fixed-menu';
+import { cartLineTotal, portionsOf } from '@/lib/fixed-menu';
 
 export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
@@ -24,8 +24,9 @@ interface CartState {
   orderNotes: string;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
-  addFixedMenu: (menu: Product, selection: FixedMenuSelection, specialInstructions?: string) => void;
-  updateMenuSelection: (cartItemId: string, selection: FixedMenuSelection, specialInstructions?: string) => void;
+  /** A line of `menus` menus, with the dishes the table chose for it counted. */
+  addFixedMenu: (menu: Product, menus: number, selection: FixedMenuSelection) => void;
+  updateMenuSelection: (cartItemId: string, menus: number, selection: FixedMenuSelection) => void;
   setServiceRun: (cartItemId: string, run: number) => void;
   attachToMenu: (cartItemId: string, courseId: string, productId: string) => void;
   updateItemDetails: (cartItemId: string, quantity: number, addons: Addon[], specialInstructions: string) => void;
@@ -80,35 +81,29 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   /**
-   * One menu, one line, quantity one. Six identical menus are six lines and
-   * that is deliberate: a split check hands a menu to a guest whole, and a
-   * block of six cannot be shared between six of them.
+   * One line for the menus the table took, however many: its quantity is how
+   * many menus, and its dishes are counted under it. The dishes are the
+   * table's, not a guest's — nobody says which of the eight had the lasagne.
    */
-  addFixedMenu: (menu, selection, specialInstructions = '') => {
+  addFixedMenu: (menu, menus, selection) => {
     const lineId = newMenuLineId();
     set({
       items: [...get().items, {
-        id: generateCartItemId(menu.id, [], specialInstructions, lineId),
+        id: generateCartItemId(menu.id, [], '', lineId),
         product: menu,
-        quantity: 1,
+        quantity: menus,
         addons: [],
-        special_instructions: specialInstructions,
+        special_instructions: '',
         menu_selection: selection,
         menu_line_id: lineId,
       }],
     });
   },
 
-  updateMenuSelection: (cartItemId, selection, specialInstructions) => {
+  updateMenuSelection: (cartItemId, menus, selection) => {
     set({
       items: get().items.map((item) => (
-        item.id === cartItemId
-          ? {
-            ...item,
-            menu_selection: selection,
-            special_instructions: specialInstructions ?? item.special_instructions,
-          }
-          : item
+        item.id === cartItemId ? { ...item, quantity: menus, menu_selection: selection } : item
       )),
     });
   },
@@ -116,18 +111,28 @@ export const useCartStore = create<CartState>((set, get) => ({
   /**
    * Puts a dish battered from the grid inside a menu already in the cart.
    *
-   * The dish becomes one of that menu's choices instead of a line of its own,
-   * so it costs what the menu says — nothing, or the surcharge — and the
-   * kitchen ticket still lists it as the dish it is. Which is the whole point
-   * of the menu writing real rows.
+   * The dish becomes one more portion of that menu's choices instead of a line
+   * of its own, so it costs what the menu says — nothing, or the surcharge —
+   * and the kitchen ticket still lists it as the dish it is. Which is the whole
+   * point of the menu writing real rows. It joins the plain count of that dish
+   * when there is one: a lasagna more is "Lasagne 4", not a second "Lasagne 1".
    */
   attachToMenu: (cartItemId, courseId, productId) => {
     set({
-      items: get().items.map((item) => (
-        item.id === cartItemId
-          ? { ...item, menu_selection: [...(item.menu_selection || []), { course_id: courseId, product_id: productId }] }
-          : item
-      )),
+      items: get().items.map((item) => {
+        if (item.id !== cartItemId) return item;
+        const selection = item.menu_selection || [];
+        const plain = selection.findIndex((choice) => (
+          choice.course_id === courseId && choice.product_id === productId
+          && !choice.note && choice.service_run === undefined
+        ));
+        return {
+          ...item,
+          menu_selection: plain >= 0
+            ? selection.map((choice, index) => (index === plain ? { ...choice, quantity: portionsOf(choice) + 1 } : choice))
+            : [...selection, { course_id: courseId, product_id: productId, quantity: 1 }],
+        };
+      }),
     });
   },
 
@@ -234,9 +239,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOrderNotes: (notes) => set({ orderNotes: notes }),
 
   subtotal: () => {
-    // cartLineUnitPrice folds in a fixed menu's surcharges, which are what the
-    // chosen dishes add to its one price.
-    return get().items.reduce((sum, item) => sum + cartLineUnitPrice(item) * (Number(item.quantity) || 1), 0);
+    // cartLineTotal prices a menu line as its menus plus its dishes' surcharges.
+    return get().items.reduce((sum, item) => sum + cartLineTotal(item), 0);
   },
 
   itemCount: () => {

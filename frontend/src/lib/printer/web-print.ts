@@ -25,6 +25,7 @@ import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { parseDbTimestamp } from '@/lib/utils';
+import { menuCourseLine, printableBillRows } from './bill-rows';
 
 export type PaperSize = 'thermal58' | 'thermal80';
 
@@ -285,7 +286,9 @@ export function generateBillHtml(
 
   const styles = getPaperStyles(paperSize);
 
-  const items = order?.items ?? [];
+  // The same rows the two ESC/POS paths draw: no cancelled dishes, and the
+  // portions of a menu folded into one line each.
+  const items = printableBillRows(order?.items ?? []);
   const fmtAmount = (value: number | string) => formatAmount(value, tenant, trimDecimals);
   const fmtQuantity = (value: number | string) => formatNumberForTenant(
     Number(value) || 0,
@@ -341,18 +344,24 @@ export function generateBillHtml(
         </tr>
       </thead>
       <tbody>
-        ${items.map(item => `
+        ${items.map(item => {
+          // A dish chosen inside a fixed menu sits under the menu that pays
+          // for it: indented, with no rate of its own, and showing only a
+          // surcharge — so the indented lines add up to the total in the head.
+          const course = menuCourseLine(item);
+          return `
           <tr>
-            <td>
+            <td${course.indent ? ' style="padding-inline-start: 1.5em"' : ''}>
               ${escapeHtml(item.product_name)}
               ${item.addons && item.addons.length > 0 ? `<br><small class="text-muted">${item.addons.map(a => `+ ${escapeHtml(a.name)}${(a.quantity || 1) > 1 ? ` ×${escapeHtml(a.quantity)}` : ''}`).join(', ')}</small>` : ''}
               ${item.special_instructions ? `<br><small class="text-italic">${escapeHtml(item.special_instructions)}</small>` : ''}
             </td>
             <td class="text-end num">${fmtQuantity(item.quantity)}</td>
-            <td class="text-end num">${fmtAmount(Number(item.unit_price))}</td>
-            <td class="text-end num">${fmtAmount(item.total)}</td>
+            <td class="text-end num">${course.indent ? '' : fmtAmount(Number(item.unit_price))}</td>
+            <td class="text-end num">${course.suppressAmount ? '' : course.sign + fmtAmount(item.total)}</td>
           </tr>
-        `).join('')}
+        `;
+        }).join('')}
       </tbody>
     </table>
 

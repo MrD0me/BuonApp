@@ -3,8 +3,10 @@
 import { useMemo, useState } from 'react';
 import { ArrowLeft, ChevronRight, ClipboardList, Plus, Send, Users } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import type { Category, Order, OrderItem, Product, Table } from '@/lib/types';
-import { menuAwareRowOrder, menuGroupsOfOrder, type MenuGroupState } from '@/lib/fixed-menu';
+import type { Order, OrderItem, Product, Table } from '@/lib/types';
+import {
+  compactMenuRows, courseFillOf, menuAwareRowOrder, menuGroupsOfOrder, selectionOfGroup, type CourseFill, type MenuGroupState,
+} from '@/lib/fixed-menu';
 import { serviceRunOf } from '@/lib/service-runs';
 import { isPendingKot, pendingDishCount } from '@/lib/kot';
 import { ITEM_STATUS_TONE, TABLE_STATUS_TONE, type Tone } from '@/lib/status-styles';
@@ -34,15 +36,16 @@ interface Props {
   /** The open order on the table, rows included; null when it is free. */
   order: Order | null;
   products: Product[];
-  categories: Category[];
   kotPrintingEnabled: boolean;
   busy: boolean;
   onBack: () => void;
   onAddItems: () => void;
   onChangeGuests: (count: number) => Promise<void>;
   onChangeServiceRun: (itemId: number, run: number) => Promise<void>;
+  /** How many menus a menu line feeds. */
+  onChangeMenuCount: (groupId: string, quantity: number) => Promise<void>;
   /** What the course holds afterwards; resolves false when the check refused it. */
-  onFillCourse: (groupId: string, courseId: string, productIds: string[]) => Promise<boolean>;
+  onFillCourse: (groupId: string, courseId: string, dishes: CourseFill) => Promise<boolean>;
   onSendToKitchen: () => Promise<void>;
 }
 
@@ -60,8 +63,8 @@ interface Props {
  * a back arrow, and the window (a `Modal`, one layer up) simply opens on top.
  */
 export function TableScreen({
-  table, order, products, categories, kotPrintingEnabled, busy,
-  onBack, onAddItems, onChangeGuests, onChangeServiceRun, onFillCourse, onSendToKitchen,
+  table, order, products, kotPrintingEnabled, busy,
+  onBack, onAddItems, onChangeGuests, onChangeServiceRun, onChangeMenuCount, onFillCourse, onSendToKitchen,
 }: Props) {
   const t = useTranslations('serverApp');
   const tPos = useTranslations('pos');
@@ -84,11 +87,11 @@ export function TableScreen({
     ? [t('coversCount', { count: guests }), elapsed !== null ? t('openSince', { minutes: elapsed }) : null].filter(Boolean).join(' · ')
     : tTables('capacitySeats', { count: table.capacity });
 
-  const fillCourse = async (productIds: string[]) => {
+  const fillCourse = async (dishes: CourseFill) => {
     if (!menuFill) return;
     setFilling(true);
     try {
-      const done = await onFillCourse(menuFill.group.group_id, menuFill.courseId, productIds);
+      const done = await onFillCourse(menuFill.group.group_id, menuFill.courseId, dishes);
       if (done) setMenuFill(null);
     } finally {
       setFilling(false);
@@ -106,14 +109,18 @@ export function TableScreen({
     return { tone, label };
   };
 
-  const renderDish = (item: OrderItem, insideMenu: boolean) => {
+  /**
+   * One dish, or — inside a menu — every portion of it that reads the same,
+   * counted: "3× Lasagne". Every line says how many, one included: a plate on
+   * its own under a menu showed a blank where the count goes, and the floor
+   * was left to read that empty space as a one.
+   */
+  const renderDish = (item: OrderItem, insideMenu: boolean, count = Number(item.quantity) || 1) => {
     const status = statusOf(item);
     return (
       <div key={item.id} className={`flex flex-col gap-2 py-3 ${insideMenu ? '' : 'border-b border-border last:border-0'}`}>
         <div className="flex items-center gap-3">
-          {insideMenu
-            ? <span className="w-8 shrink-0" aria-hidden="true" />
-            : <Ltr className="w-8 shrink-0 text-base font-bold text-muted-foreground">{item.quantity}×</Ltr>}
+          <Ltr className="w-8 shrink-0 text-base font-bold text-muted-foreground">{count}×</Ltr>
           <div className="min-w-0 flex-1">
             <p className="text-base font-medium text-foreground">{item.product_name}</p>
             {(item.addons || []).length > 0 && (
@@ -123,7 +130,10 @@ export function TableScreen({
           </div>
           <StatusBadge tone={status.tone} size="sm">{status.label}</StatusBadge>
         </div>
-        {kotPrintingEnabled && (
+        {/* Not inside a menu: there the running order is the menu's own, and
+            a picker under every plate of it was a column of buttons nobody
+            presses. */}
+        {kotPrintingEnabled && !insideMenu && (
           <div className="ps-11">
             <ServiceRunPicker
               value={serviceRunOf(item)}
@@ -137,16 +147,35 @@ export function TableScreen({
     );
   };
 
+  const renderDishes = (rows: OrderItem[]) => compactMenuRows(rows).map((line) => renderDish(line.item, true, line.quantity));
+
   const renderMenu = (packageItem: OrderItem) => {
     const group = groupById.get(String(packageItem.menu_group_id));
+    const menus = Math.max(1, Number(packageItem.quantity) || 1);
     return (
       <div key={packageItem.id} className="my-3 rounded-2xl border border-border bg-muted/40 px-3 py-2">
-        <p className="py-1 text-base font-bold text-foreground">{packageItem.product_name}</p>
+        {/* How many menus the line feeds, changed here for the friend who
+            turns up late — below what a course holds, the check says no. */}
+        <div className="flex items-center justify-between gap-2 py-1">
+          <p className="min-w-0 truncate text-base font-bold text-foreground">
+            <Ltr className="text-brand">{menus}×</Ltr> {packageItem.product_name}
+          </p>
+          <Stepper
+            size="sm"
+            min={1}
+            max={99}
+            value={menus}
+            disabled={busy}
+            onChange={(quantity) => { void onChangeMenuCount(String(packageItem.menu_group_id), quantity); }}
+            decreaseLabel={`${tPos('menuOneLess')}: ${packageItem.product_name}`}
+            increaseLabel={`${tPos('menuOneMore')}: ${packageItem.product_name}`}
+          />
+        </div>
         {group ? (
           <>
             {group.slots.map((slot) => (
               <div key={slot.course.id}>
-                {slot.filled.map((row) => renderDish(row, true))}
+                {renderDishes(slot.filled)}
                 {slot.free > 0 && (
                   <Button
                     type="button"
@@ -154,19 +183,23 @@ export function TableScreen({
                     size="touch-lg"
                     disabled={busy}
                     onClick={() => setMenuFill({ group, courseId: slot.course.id })}
-                    className={`my-1.5 w-full justify-between bg-card ${slot.course.is_required && slot.filled.length === 0 ? 'border-pending text-pending' : 'border-brand text-brand'}`}
+                    className={`my-1.5 w-full justify-between bg-card ${slot.course.is_required && slot.filled.length < group.menus ? 'border-pending text-pending' : 'border-brand text-brand'}`}
                   >
-                    <span className="truncate">{slot.course.label}: {t('courseToChoose')}</span>
+                    <span className="truncate">
+                      {slot.course.label}
+                      {' '}<Ltr>{slot.filled.length}/{slot.filled.length + slot.free}</Ltr>
+                      {slot.filled.length === 0 && <>: {t('courseToChoose')}</>}
+                    </span>
                     <ChevronRight className="rtl-flip" />
                   </Button>
                 )}
               </div>
             ))}
-            {group.strays.map((row) => renderDish(row, true))}
+            {renderDishes(group.strays)}
           </>
         ) : (
           // The menu product is gone from the catalogue: the dishes still show, unlabelled.
-          activeItems.filter((row) => row.menu_group_id === packageItem.menu_group_id && row.menu_role === 'course').map((row) => renderDish(row, true))
+          renderDishes(activeItems.filter((row) => row.menu_group_id === packageItem.menu_group_id && row.menu_role === 'course'))
         )}
       </div>
     );
@@ -260,16 +293,15 @@ export function TableScreen({
         <FixedMenuPicker
           menu={menuFill.group.menu}
           products={products}
-          categories={categories}
           mode="fill"
           restrictToCourseId={menuFill.courseId}
-          // The whole menu as it stands, so "still missing" and the price are
-          // true; onAdd keeps only the course on show.
-          initialSelection={menuFill.group.slots
-            .flatMap((slot) => slot.filled.map((row) => ({ course_id: slot.course.id, product_id: String(row.product_id) })))}
+          initialMenus={menuFill.group.menus}
+          // The whole menu as it stands, each portion with its note; onAdd
+          // sends back only the course on show.
+          initialSelection={selectionOfGroup(menuFill.group)}
           onClose={() => { if (!filling) setMenuFill(null); }}
-          onAdd={(_menu, selection) => {
-            void fillCourse(selection.filter((choice) => choice.course_id === menuFill.courseId).map((choice) => choice.product_id));
+          onAdd={(_menu, _menus, selection) => {
+            void fillCourse(courseFillOf(selection, menuFill.courseId));
           }}
         />
       )}

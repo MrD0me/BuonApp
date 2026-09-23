@@ -12,7 +12,7 @@ import { cancelOrder } from '../services/orders';
 import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
 import { seatReservationForTable } from '../services/reservations';
 import { syncUnpaidBillsForOrder } from './bills';
-import { coveredGuestCount, expandFixedMenuItems, planCourseFill, type ExpandedOrderItem } from '../services/fixed-menu';
+import { coveredGuestCount, expandFixedMenuItems, planCourseFill, planMenuCount, type ExpandedOrderItem } from '../services/fixed-menu';
 import { normalizeServiceRun, resolveServiceRun, MAX_SERVICE_RUNS } from '../services/service-runs';
 import expressRateLimit from 'express-rate-limit';
 
@@ -1460,6 +1460,90 @@ router.patch('/:id/guests', orderWriteRateLimit, requireRole('owner', 'manager',
 });
 
 /**
+ * The order a menu is being changed on, re-read under the transaction lock —
+ * two handhelds filling the same menu is an ordinary evening — and refused once
+ * it is finished or money has been taken against it. Same predicate the cancel
+ * route uses: once money has been taken against the check, the rows behind it
+ * stop moving.
+ */
+function orderOpenForMenuChange(db: ReturnType<typeof getDatabase>, orderId: string): any {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+  if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+  if (['completed', 'cancelled'].includes(order.status)) {
+    throw Object.assign(new Error('Cannot change a menu on a completed or cancelled order'), { statusCode: 400 });
+  }
+  if (db.prepare(`
+    SELECT 1
+    FROM bills
+    WHERE order_id = ?
+      AND (
+        COALESCE(payment_status, 'unpaid') <> 'unpaid'
+        OR COALESCE(paid_amount, 0) > 0
+        OR (payment_details IS NOT NULL AND TRIM(payment_details) NOT IN ('', '[]', '{}', 'null'))
+      )
+    LIMIT 1
+  `).get(orderId)) {
+    throw Object.assign(new Error('Cannot change a menu on a paid or partially paid order'), { statusCode: 409 });
+  }
+  return order;
+}
+
+/**
+ * Re-prices an order off its rows after one of its menus changed, the same
+ * tail POST /:id/items runs, and hands it back with its rows. A surcharge
+ * coming or going moves the check, so does a menu more or fewer, and the cover
+ * moves with them if the menu is the kind that includes one.
+ */
+function repriceAfterMenuChange(db: ReturnType<typeof getDatabase>, orderId: string, order: any): any {
+  const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(orderId) as any[];
+  const subtotal = activeItems.reduce((sum, row) => sum + row.subtotal, 0);
+
+  let discountAmount = order.discount_amount || 0;
+  if (discountAmount > 0 && order.subtotal > 0 && order.discount_type === 'percentage') {
+    discountAmount = roundMoney(subtotal * (order.discount_value || 0) / 100);
+  }
+  // A discount agreed in euros stays what it was, but never more than what is
+  // left on the check: taking six menus of eight off a table would otherwise
+  // print "Sconto -50,00" under a subtotal of 30,00, and the lines on the
+  // paper would not add up to the total under them.
+  discountAmount = Math.min(discountAmount, subtotal);
+
+  const coverCharge = orderCoverCharge(db, orderId);
+  const total = roundMoney(Math.max(0, subtotal - discountAmount) + orderCharges({ ...order, cover_charge: coverCharge }));
+
+  db.prepare('UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
+    .run(subtotal, discountAmount, total, coverCharge, now(), orderId);
+
+  syncUnpaidBillsForOrder(db, orderId, {
+    subtotal,
+    discountAmount,
+    deliveryCharge: order.delivery_charge || 0,
+    packagingCharge: order.packaging_charge || 0,
+    coverCharge,
+    total,
+  });
+
+  const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)) as any;
+  const updatedItems = attachEffectiveAddons(
+    db,
+    db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[],
+  );
+  return Object.assign({}, updatedOrder, { items: updatedItems });
+}
+
+/** How the two menu routes answer a failure: the code, and the row or course it is about. */
+function sendMenuChangeError(res: Response, error: any): void {
+  console.error("[API] Internal error:", error);
+  const body: Record<string, unknown> = {
+    error: error.statusCode ? error.message : "Internal server error",
+  };
+  if (error.code) body.code = error.code;
+  if (error.item_id) body.item_id = error.item_id;
+  if (error.course_id) body.course_id = error.course_id;
+  res.status(error.statusCode || 500).json(body);
+}
+
+/**
  * Fills in, swaps, or clears one course of a menu already on the check.
  *
  * The table takes the starters, the ticket goes to the kitchen, and the main
@@ -1487,28 +1571,7 @@ router.put(
       const orderId = String(req.params.id);
 
       const result = withTxn(() => {
-        // Re-read under the transaction lock: two handhelds filling the same
-        // menu is an ordinary evening.
-        const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
-        if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-        if (['completed', 'cancelled'].includes(order.status)) {
-          throw Object.assign(new Error('Cannot change a menu on a completed or cancelled order'), { statusCode: 400 });
-        }
-        // Same predicate the cancel route uses: once money has been taken
-        // against the check, the rows behind it stop moving.
-        if (db.prepare(`
-          SELECT 1
-          FROM bills
-          WHERE order_id = ?
-            AND (
-              COALESCE(payment_status, 'unpaid') <> 'unpaid'
-              OR COALESCE(paid_amount, 0) > 0
-              OR (payment_details IS NOT NULL AND TRIM(payment_details) NOT IN ('', '[]', '{}', 'null'))
-            )
-          LIMIT 1
-        `).get(orderId)) {
-          throw Object.assign(new Error('Cannot change a menu on a paid or partially paid order'), { statusCode: 409 });
-        }
+        const order = orderOpenForMenuChange(db, orderId);
 
         const plan = planCourseFill(db, orderId, String(req.params.groupId), String(req.params.courseId), (req.body || {}).product_ids);
         if (plan.blocked) {
@@ -1530,50 +1593,91 @@ router.put(
 
         if (plan.insert.length > 0) insertOrderItemRows(db, orderId, plan.insert);
 
-        // Re-price off the rows, the same tail POST /:id/items runs: a
-        // surcharge coming or going moves the check, and the cover moves if
-        // the menu is the kind that includes one.
-        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(orderId) as any[];
-        const subtotal = activeItems.reduce((sum, row) => sum + row.subtotal, 0);
-
-        let discountAmount = order.discount_amount || 0;
-        if (discountAmount > 0 && order.subtotal > 0 && order.discount_type === 'percentage') {
-          discountAmount = roundMoney(subtotal * (order.discount_value || 0) / 100);
-        }
-
-        const coverCharge = orderCoverCharge(db, orderId);
-        const total = roundMoney(Math.max(0, subtotal - discountAmount) + orderCharges({ ...order, cover_charge: coverCharge }));
-
-        db.prepare('UPDATE orders SET subtotal = ?, discount_amount = ?, total = ?, cover_charge = ?, updated_at = ? WHERE id = ?')
-          .run(subtotal, discountAmount, total, coverCharge, now(), orderId);
-
-        syncUnpaidBillsForOrder(db, orderId, {
-          subtotal,
-          discountAmount,
-          deliveryCharge: order.delivery_charge || 0,
-          packagingCharge: order.packaging_charge || 0,
-          coverCharge,
-          total,
-        });
-
-        const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)) as any;
-        const updatedItems = attachEffectiveAddons(
-          db,
-          db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[],
-        );
-        return Object.assign({}, updatedOrder, { items: updatedItems });
+        return repriceAfterMenuChange(db, orderId, order);
       });
 
       notifyKdsUpdate();
       res.json({ order: result });
     } catch (error: any) {
-      console.error("[API] Internal error:", error);
-      const body: Record<string, unknown> = {
-        error: error.statusCode ? error.message : "Internal server error",
-      };
-      if (error.code) body.code = error.code;
-      if (error.item_id) body.item_id = error.item_id;
-      res.status(error.statusCode || 500).json(body);
+      sendMenuChangeError(res, error);
+    }
+  },
+);
+
+/**
+ * Changes how many menus a menu line feeds: `{ quantity }`.
+ *
+ * A friend arrives and takes the menu too, or one of the eight orders from the
+ * card after all. The package row carries the count and the price times it,
+ * and its courses make room. Going down is refused while a course still holds
+ * more dishes than the smaller count takes, so which dish goes is decided from
+ * that course, by the floor. Taking the whole line off the check stays the
+ * cancel route's business, on the package row.
+ *
+ * Same roles and guards as filling a course: it is the same kind of change,
+ * and a handheld at the table is where the late friend is noticed.
+ */
+router.patch(
+  '/:id/menu-groups/:groupId',
+  orderWriteRateLimit,
+  requireRole('owner', 'manager', 'cashier', 'server'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const orderId = String(req.params.id);
+
+      const result = withTxn(() => {
+        const order = orderOpenForMenuChange(db, orderId);
+        const plan = planMenuCount(db, orderId, String(req.params.groupId), (req.body || {}).quantity);
+
+        if (plan.to !== plan.from) {
+          const row = db.prepare('SELECT * FROM order_items WHERE id = ?').get(plan.packageItemId) as any;
+          const product = db.prepare('SELECT * FROM products WHERE id = ?').get(row.product_id) as any;
+          const delta = plan.to - plan.from;
+
+          // Stock follows the count the way it did when the row was written:
+          // a menu more comes off the shelf, and a menu fewer goes back only as
+          // far as it was ever taken.
+          let deducted = Number(row.inventory_deducted_quantity) || 0;
+          if (delta > 0 && product?.track_inventory) {
+            if (product.stock_quantity < delta) {
+              throw Object.assign(new Error(`Insufficient stock for ${product.name}`), { statusCode: 400 });
+            }
+            db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
+              .run(delta, now(), row.product_id);
+            deducted += delta;
+          } else if (delta < 0 && deducted > 0) {
+            const back = Math.min(-delta, deducted);
+            db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
+              .run(back, now(), row.product_id);
+            deducted -= back;
+          }
+
+          // The price the table was quoted, times the new count. A discount
+          // agreed on the row follows the count it was agreed on: kept whole,
+          // eight menus' worth of discount would land on the one menu left and
+          // hand it over for nothing — and this route is open to the floor,
+          // while agreeing a discount is not. Capped as well, so a smaller line
+          // can never go negative and quietly pay the guest.
+          const addonRows = db.prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?').all(row.id) as { price: number; quantity?: number }[];
+          const addonTotal = addonRows.reduce((sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * plan.to, 0);
+          const gross = roundMoney(Number(row.unit_price) * plan.to + addonTotal);
+          const agreed = Number(row.discount_amount) || 0;
+          const discount = Math.min(plan.from > 0 ? roundMoney(agreed * plan.to / plan.from) : agreed, gross);
+          const subtotal = roundMoney(gross - discount);
+          db.prepare(`
+            UPDATE order_items SET quantity = ?, inventory_deducted_quantity = ?, discount_amount = ?,
+              subtotal = ?, total = ?, updated_at = ? WHERE id = ?
+          `).run(plan.to, deducted, discount, subtotal, subtotal, now(), row.id);
+        }
+
+        return repriceAfterMenuChange(db, orderId, order);
+      });
+
+      notifyKdsUpdate();
+      res.json({ order: result });
+    } catch (error: any) {
+      sendMenuChangeError(res, error);
     }
   },
 );

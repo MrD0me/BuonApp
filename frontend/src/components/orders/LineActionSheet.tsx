@@ -6,11 +6,20 @@ import type { OrderItem } from '@/lib/types';
 import { SERVICE_RUNS, serviceRunOf } from '@/lib/service-runs';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { Button } from '@/components/ui/button';
+import { Stepper } from '@/components/ui/stepper';
 import { Modal, ModalBody, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Ltr } from '@/components/layout/Ltr';
 
 interface Props {
   item: OrderItem;
+  /**
+   * How many portions the tapped line folds. Above one, every action here is
+   * for one of them — the title says so — so taking one off a line of three
+   * leaves two.
+   */
+  portionOf?: number;
+  /** Set on a menu's own row while it can still change: how many menus it feeds. */
+  menuCount?: { value: number; busy: boolean; onChange: (quantity: number) => void };
   kotEnabled: boolean;
   /** Which of the actions this user may take on this row right now. */
   canChangeRun: boolean;
@@ -32,7 +41,7 @@ interface Props {
  * on a phone, a card on the till; every choice a button a finger can hit.
  */
 export function LineActionSheet({
-  item, kotEnabled, canChangeRun, canEditPrice, canDelete, canVoid, canSwap,
+  item, portionOf = 1, menuCount, kotEnabled, canChangeRun, canEditPrice, canDelete, canVoid, canSwap,
   onChangeRun, onEditPrice, onDelete, onVoid, onSwap, onClose,
 }: Props) {
   const tOrders = useTranslations('orders');
@@ -45,14 +54,36 @@ export function LineActionSheet({
   return (
     <Modal open onOpenChange={(open) => { if (!open) onClose(); }} size="sm">
       <ModalHeader closeLabel={tCommon('close')}>
-        <ModalTitle><Ltr>{item.quantity}×</Ltr> {item.product_name}</ModalTitle>
+        <ModalTitle>
+          <Ltr>{item.quantity}×</Ltr> {item.product_name}
+          {portionOf > 1 && <span className="text-base font-normal text-muted-foreground"> · {tOrders('portionOf', { count: portionOf })}</span>}
+        </ModalTitle>
         <ModalDescription>
           {item.special_instructions ? `${item.special_instructions} · ` : ''}
           <Ltr>{fmt(Number(item.unit_price))}</Ltr>
         </ModalDescription>
       </ModalHeader>
       <ModalBody className="flex flex-col gap-5">
-        {kotEnabled && canChangeRun && item.menu_role !== 'package' && (
+        {/* The friend who arrives late, or the guest who orders from the card
+            after all. Each tap is sent at once, like moving a wave. */}
+        {menuCount && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-foreground">{tOrders('menuCount')}</p>
+            <Stepper
+              value={menuCount.value}
+              min={1}
+              max={99}
+              disabled={menuCount.busy}
+              onChange={menuCount.onChange}
+              decreaseLabel={tPos('menuOneLess')}
+              increaseLabel={tPos('menuOneMore')}
+            />
+          </div>
+        )}
+
+        {/* Not for a menu's rows: a menu is a running order, its courses go
+            out in their own turn, and its own row never reaches a station. */}
+        {kotEnabled && canChangeRun && !item.menu_role && (
           <div className="flex flex-col gap-2">
             <p className="text-sm font-semibold text-foreground">{tPos('serviceRun')}</p>
             {sent && <p className="text-sm text-muted-foreground">{tPos('serviceRunAlreadySent')}</p>}

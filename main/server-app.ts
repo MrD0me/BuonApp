@@ -241,8 +241,9 @@ export function startServerApp(): Promise<void> {
     });
 
     // What a handheld may do (docs/palmare.md): read the catalogue, the floor
-    // and the open orders; open an order, add to it, fill in a menu, move a
-    // row to another wave, correct the covers; fire the kitchen ticket. No
+    // and the open orders; open an order, add to it, fill in a menu or change
+    // how many it feeds, move a row to another wave, correct the covers; fire
+    // the kitchen ticket. No
     // bill, no payment, no table write — those stay on the central PC. The
     // main API still runs its own role checks behind every forward.
     const segment = (value: unknown) => encodeURIComponent(String(value));
@@ -258,6 +259,7 @@ export function startServerApp(): Promise<void> {
     app.patch('/api/orders/:id/guests', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${segment(req.params.id)}/guests`));
     app.patch('/api/orders/:id/items/:itemId/service-run', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${segment(req.params.id)}/items/${segment(req.params.itemId)}/service-run`));
     app.put('/api/orders/:id/menu-groups/:groupId/courses/:courseId', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${segment(req.params.id)}/menu-groups/${segment(req.params.groupId)}/courses/${segment(req.params.courseId)}`));
+    app.patch('/api/orders/:id/menu-groups/:groupId', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${segment(req.params.id)}/menu-groups/${segment(req.params.groupId)}`));
     // Sending an order from a handheld has to reach the kitchen printers, not
     // just the KDS. The main API still enforces kot_printing_enabled and the
     // role check, and only ever prints the rows that have not gone out yet.

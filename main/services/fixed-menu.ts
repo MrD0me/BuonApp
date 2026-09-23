@@ -18,9 +18,14 @@
  * The price stays in one place, on the package row. The dish rows carry zero,
  * or the surcharge alone.
  *
- * One menu is one group of quantity 1. Six identical menus are six groups, and
- * that is deliberate: a split check moves a group whole, and a block of six
- * cannot be shared between six guests.
+ * A menu line is one group however many guests it feeds: "Menu completo ×8"
+ * is one package row of quantity 8, and under it the dishes the table chose,
+ * counted rather than handed out. The floor takes a set menu the way it always
+ * wrote it on paper — three lasagne, two carbonara, one risotto — and nobody
+ * says which of the eight had which, so the check does not invent it either.
+ * Every portion is still a row of its own: the kitchen's progress, the run,
+ * the note and the void work per dish, and the paper folds identical portions
+ * into one line (compactKotItems, compactMenuCourseRows).
  */
 
 import { getDatabase, now } from '../db';
@@ -49,18 +54,22 @@ export interface FixedMenuCourse {
 }
 
 /**
- * One dish the guest picked, as the client sends it.
+ * One dish the table picked, as the client sends it.
  *
  * The note and the run belong to the dish, not to the menu: a menu's package
  * row never reaches a station, so a note written against the menu as a whole
  * was read by nobody. And a primo inside a menu leaves with the primi, which
  * is a fact about that dish and not about the menu it was chosen from.
+ *
+ * `quantity` is how many portions of it: the window counts, and each portion
+ * still becomes a row of its own.
  */
 export interface FixedMenuChoiceInput {
   course_id: string;
   product_id: string;
   note?: string | null;
   service_run?: unknown;
+  quantity?: unknown;
 }
 
 /**
@@ -95,7 +104,8 @@ const TERMINAL_STATUSES = ['cancelled', 'voided', 'void_adjustment'];
 
 const MAX_COURSES_PER_MENU = 20;
 const MAX_CHOICES_PER_COURSE = 10;
-const MAX_MENUS_PER_LINE = 20;
+/** The covers ceiling `POST /orders` holds a table to: one menu each, at most. */
+const MAX_MENUS_PER_LINE = 99;
 /** Same ceiling the ordinary item note is held to by default. */
 const MAX_CHOICE_NOTE = 100;
 
@@ -112,6 +122,31 @@ function choiceNote(value: unknown): string | null {
 
 function invalid(message: string): Error {
   return Object.assign(new Error(message), { statusCode: 400 });
+}
+
+/**
+ * How many portions one choice stands for. Missing means one, which is what
+ * every choice meant before the window started counting. The course ceiling
+ * is checked by the caller; this only turns away what is not a count at all.
+ */
+function choicePortions(value: unknown, menuName: string): number {
+  if (value === undefined || value === null) return 1;
+  const portions = Number(value);
+  if (!Number.isSafeInteger(portions) || portions < 1 || portions > MAX_MENUS_PER_LINE * MAX_CHOICES_PER_COURSE) {
+    throw invalid(`${menuName}: a dish was asked for an invalid number of times`);
+  }
+  return portions;
+}
+
+/** The most dishes one course can hold on a line of this many menus. */
+function courseLimit(course: FixedMenuCourse, menus: number): number {
+  return course.max_choices * menus;
+}
+
+function courseLimitMessage(menuName: string, course: FixedMenuCourse, menus: number): string {
+  const limit = courseLimit(course, menus);
+  return `${menuName}: ${course.label} takes at most ${limit} ${limit === 1 ? 'dish' : 'dishes'}`
+    + (menus > 1 ? ` for ${menus} menus` : '');
 }
 
 // ── Reading and writing the configuration ────────────────────────────────
@@ -373,57 +408,72 @@ export function expandFixedMenuItems(db: Db, items: any[]): ExpandedOrderItem[] 
     if (!menu) throw invalid(`Product ${productId} not found`);
     if (!menu.is_active) throw invalid(`${menu.name} is not on the menu right now`);
 
-    // A menu is ordered one at a time. Asking for three of them is three
-    // separate menus with the same choices — what the "one more like it"
-    // button does at the till — never one row of three, which a split check
-    // could not hand to three guests.
-    const howMany = Number(item?.quantity ?? 1);
-    if (!Number.isSafeInteger(howMany) || howMany < 1 || howMany > MAX_MENUS_PER_LINE) {
+    // How many guests take it. However many, it is one group: the package row
+    // carries the count, and the courses hold that many times their dishes.
+    const menus = Number(item?.quantity ?? 1);
+    if (!Number.isSafeInteger(menus) || menus < 1 || menus > MAX_MENUS_PER_LINE) {
       throw invalid(`Invalid quantity for ${menu.name}`);
     }
 
-    const rows = buildMenuRows(db, menu, item?.menu_selection, base);
-    for (let copy = 0; copy < howMany; copy++) {
-      const groupId = randomUUID();
-      for (const row of rows) expanded.push({ ...row, menu_group_id: groupId });
+    const groupId = randomUUID();
+    for (const row of buildMenuRows(db, menu, item?.menu_selection, base, menus)) {
+      expanded.push({ ...row, menu_group_id: groupId });
     }
   }
 
   return expanded;
 }
 
-/** The rows of one menu, group id still to be stamped on by the caller. */
+/** The rows of one menu line, group id still to be stamped on by the caller. */
 function buildMenuRows(
   db: Db,
   menu: any,
   selection: unknown,
   base: Omit<ExpandedOrderItem, 'quantity' | 'menu_group_id' | 'menu_role' | 'menu_course_id' | 'unit_price_override'>,
+  menus: number,
 ): ExpandedOrderItem[] {
   const courses = readFixedMenuCourses(db, menu.id);
   if (courses.length === 0) throw invalid(`${menu.name} has no courses configured yet`);
 
-  const choices: FixedMenuChoiceInput[] = Array.isArray(selection)
-    ? selection.map((entry: any) => ({
-      course_id: String(entry?.course_id ?? ''),
-      product_id: String(entry?.product_id ?? ''),
-      note: choiceNote(entry?.note),
-      service_run: entry?.service_run,
-    }))
-    : [];
+  // A counted choice — three lasagne — becomes three portions, and each
+  // portion a row below. The counts are added up and held to the course's
+  // ceiling *before* anything is expanded: a request asking for a thousand
+  // portions of a thousand dishes must be refused, not built in memory first.
+  const counted = (Array.isArray(selection) ? selection : []).map((entry: any) => ({
+    course_id: String(entry?.course_id ?? ''),
+    product_id: String(entry?.product_id ?? ''),
+    note: choiceNote(entry?.note),
+    service_run: entry?.service_run,
+    portions: choicePortions(entry?.quantity, menu.name),
+  }));
 
   const courseIds = new Set(courses.map((course) => course.id));
-  for (const choice of choices) {
+  for (const choice of counted) {
     if (!courseIds.has(choice.course_id)) throw invalid(`${menu.name}: a choice refers to a course that is not on this menu`);
   }
+  for (const course of courses) {
+    // A required course left empty is allowed through on purpose (see below).
+    // Too many is not: nine mains on eight menus is a mis-ring, and the ninth
+    // is ordered from the card.
+    const asked = counted
+      .filter((choice) => choice.course_id === course.id)
+      .reduce((total, choice) => total + choice.portions, 0);
+    if (asked > courseLimit(course, menus)) throw invalid(courseLimitMessage(menu.name, course, menus));
+  }
 
-  // The package carries the price; the dishes carry the surcharge or nothing,
-  // and each its own note — the package row is filtered out of every kitchen
-  // ticket, so a note written against the menu itself reached no cook.
+  const choices: FixedMenuChoiceInput[] = counted.flatMap(({ portions, ...choice }) => (
+    Array.from({ length: portions }, () => choice)
+  ));
+
+  // The package carries the price, once per menu; the dishes carry the
+  // surcharge or nothing, and each its own note — the package row is filtered
+  // out of every kitchen ticket, so a note written against the menu itself
+  // reached no cook.
   const rows: ExpandedOrderItem[] = [{
     ...base,
     special_instructions: null,
     product_id: menu.id,
-    quantity: 1,
+    quantity: menus,
     menu_group_id: null,
     menu_role: 'package',
     menu_course_id: null,
@@ -438,9 +488,6 @@ function buildMenuRows(
     // floor could not take the order it was actually being given. What is
     // still missing is shown on the check and asked for again at the till;
     // it is never a reason to refuse the order.
-    if (picked.length > course.max_choices) {
-      throw invalid(`${menu.name}: ${course.label} allows at most ${course.max_choices} ${course.max_choices === 1 ? 'choice' : 'choices'}`);
-    }
 
     for (const choice of picked) {
       const dish = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(choice.product_id) as any;
@@ -515,7 +562,8 @@ export function menuGroupRowIds(db: Db, item: { id: number; order_id: number; me
  * the starter they have already eaten.
  *
  * That split is the whole difference between a menu you have to redo and one
- * you can correct.
+ * you can correct. On a line of eight menus the package row is all eight; one
+ * guest fewer is a smaller count (`planMenuCount`), not a cancel.
  */
 export function cancelTargetIds(
   db: Db,
@@ -530,10 +578,45 @@ interface MenuGroupRow {
   id: number;
   product_id: string;
   status: string;
+  quantity: number;
   menu_role: string | null;
   menu_course_id: string | null;
   special_instructions: string | null;
   service_run: number | null;
+}
+
+/**
+ * Every row of one menu line, with its live package row and the menu it is.
+ * Shared by the two planners, which refuse a missing or retired menu alike.
+ */
+function readMenuLine(db: Db, orderId: string | number, menuGroupId: string): { rows: MenuGroupRow[]; pkg: MenuGroupRow; menu: any } {
+  const rows = db.prepare(`
+    SELECT id, product_id, status, quantity, menu_role, menu_course_id, special_instructions, service_run
+    FROM order_items WHERE order_id = ? AND menu_group_id = ? ORDER BY id
+  `).all(orderId, menuGroupId) as MenuGroupRow[];
+
+  const pkg = rows.find((row) => row.menu_role === 'package' && !TERMINAL_STATUSES.includes(row.status));
+  if (!pkg) throw Object.assign(new Error('Menu not found on this order'), { statusCode: 404 });
+
+  const menu = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(pkg.product_id) as any;
+  if (!menu || Number(menu.is_fixed_menu || 0) !== 1) {
+    throw Object.assign(new Error('That product is no longer a fixed menu'), { statusCode: 409 });
+  }
+  return { rows, pkg, menu };
+}
+
+/** How many menus a line feeds, read off its package row. */
+function menusOnLine(pkg: MenuGroupRow): number {
+  return Math.max(1, Number(pkg.quantity) || 1);
+}
+
+/** The live dish rows a course of a menu line holds. */
+function heldByCourse(rows: MenuGroupRow[], courseId: string): MenuGroupRow[] {
+  return rows.filter((row) => (
+    row.menu_role === 'course'
+    && row.menu_course_id === courseId
+    && !TERMINAL_STATUSES.includes(row.status)
+  ));
 }
 
 export interface MenuCoursePlan {
@@ -557,6 +640,10 @@ export interface MenuCoursePlan {
  * quietly overridden — the whole plan is refused and handed back as `blocked`.
  * The kitchen has that dish; taking it off the check is the cancel endpoint's
  * business, with the manager PIN and the void adjustment it already owns.
+ *
+ * The course holds as many dishes as the line has menus, times its choices:
+ * the list is a count, three lasagne being the same dish three times over or
+ * one entry with `quantity: 3`.
  */
 export function planCourseFill(
   db: Db,
@@ -565,18 +652,7 @@ export function planCourseFill(
   courseId: string,
   productIds: unknown,
 ): MenuCoursePlan {
-  const rows = db.prepare(`
-    SELECT id, product_id, status, menu_role, menu_course_id, special_instructions, service_run
-    FROM order_items WHERE order_id = ? AND menu_group_id = ? ORDER BY id
-  `).all(orderId, menuGroupId) as MenuGroupRow[];
-
-  const pkg = rows.find((row) => row.menu_role === 'package' && !TERMINAL_STATUSES.includes(row.status));
-  if (!pkg) throw Object.assign(new Error('Menu not found on this order'), { statusCode: 404 });
-
-  const menu = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(pkg.product_id) as any;
-  if (!menu || Number(menu.is_fixed_menu || 0) !== 1) {
-    throw Object.assign(new Error('That product is no longer a fixed menu'), { statusCode: 409 });
-  }
+  const { rows, pkg, menu } = readMenuLine(db, orderId, menuGroupId);
 
   const course = readFixedMenuCourses(db, menu.id).find((entry) => entry.id === courseId);
   if (!course) {
@@ -585,36 +661,50 @@ export function planCourseFill(
     });
   }
 
-  // Either bare ids or the full shape — the window sends a note and a run
-  // with each dish, the same as it does when the menu is first composed.
+  // Either bare ids or the full shape — the window sends a note, a run and a
+  // count with each dish, the same as it does when the menu is first composed.
+  // A bare id says only which dish: it keeps whatever note and run the row
+  // already has. That is what a dish dropped in from the grid sends for the
+  // ones already there, and it must not strip "senza besciamella" off them.
   if (!Array.isArray(productIds)) throw invalid('product_ids must be a list of dishes');
-  const wanted = productIds.map((entry: any) => (
-    entry && typeof entry === 'object'
-      ? {
+  const counted = productIds.map((entry: any) => (
+    !entry || typeof entry !== 'object'
+      ? { product_id: String(entry ?? ''), note: null as string | null, service_run: undefined as unknown, anyNote: true, portions: 1 }
+      : {
         product_id: String(entry.product_id ?? ''),
         note: choiceNote(entry.note),
-        service_run: entry.service_run,
+        service_run: entry.service_run as unknown,
+        anyNote: false,
+        portions: choicePortions(entry.quantity, menu.name),
       }
-      : { product_id: String(entry ?? ''), note: null, service_run: undefined }
   ));
-  if (wanted.some((dish) => !dish.product_id)) throw invalid('product_ids must be a list of dishes');
-  if (wanted.length > course.max_choices) {
-    throw invalid(`${menu.name}: ${course.label} allows at most ${course.max_choices} ${course.max_choices === 1 ? 'choice' : 'choices'}`);
+  if (counted.some((dish) => !dish.product_id)) throw invalid('product_ids must be a list of dishes');
+  // The counts are added up and held to the ceiling before anything is
+  // expanded, so an absurd request is refused rather than built in memory.
+  const menus = menusOnLine(pkg);
+  const asked = counted.reduce((total, dish) => total + dish.portions, 0);
+  if (asked > courseLimit(course, menus)) {
+    throw invalid(courseLimitMessage(menu.name, course, menus));
   }
+  const wanted = counted.flatMap(({ portions, ...dish }) => Array.from({ length: portions }, () => dish));
 
   // What the course holds now. A row from before v95 carries no course, so it
   // is left alone rather than being claimed by the first course to ask.
-  const held = rows.filter((row) => (
-    row.menu_role === 'course'
-    && row.menu_course_id === courseId
-    && !TERMINAL_STATUSES.includes(row.status)
-  ));
+  const held = heldByCourse(rows, courseId);
 
   // Match one for one by dish, so asking for what is already there changes
-  // nothing and only the difference moves.
+  // nothing and only the difference moves. The kitchen's rows are matched
+  // first: taking one lasagna off three releases one still waiting, rather
+  // than stopping on the one already in the pan and refusing the lot.
+  // And the precise wishes before the loose ones: "a lasagna, out with the
+  // starters" gets the row that is out with the starters, before a plain
+  // "a lasagna", which would have taken any, can take it from under it.
+  const precision = (dish: { anyNote: boolean; service_run: unknown }) => (
+    (dish.anyNote ? 0 : 1) + (dish.service_run === undefined ? 0 : 1)
+  );
   const insert: ExpandedOrderItem[] = [];
-  const spare = [...held];
-  for (const wantedDish of wanted) {
+  const spare = [...held].sort((left, right) => Number(left.status === 'pending') - Number(right.status === 'pending'));
+  for (const wantedDish of [...wanted].sort((left, right) => precision(right) - precision(left))) {
     const { product_id: productId } = wantedDish;
     // Matched on the note and the run as well as the dish, so correcting
     // "no garlic" on a pending row rewrites it — and a row the kitchen has
@@ -622,7 +712,7 @@ export function planCourseFill(
     // the cook.
     const already = spare.findIndex((row) => (
       row.product_id === productId
-      && (row.special_instructions || null) === (wantedDish.note || null)
+      && (wantedDish.anyNote || (row.special_instructions || null) === (wantedDish.note || null))
       && (wantedDish.service_run === undefined || Number(row.service_run) === Number(wantedDish.service_run))
     ));
     if (already >= 0) {
@@ -657,4 +747,46 @@ export function planCourseFill(
   }
 
   return { insert, cancel: spare.map((row) => row.id), blocked: null };
+}
+
+export interface MenuCountPlan {
+  /** The menu line's own row, as it stands before the change. */
+  packageItemId: number;
+  /** How many menus it fed until now. */
+  from: number;
+  /** How many it feeds from now on. */
+  to: number;
+}
+
+/**
+ * "This menu line now feeds this many."
+ *
+ * The count the table gave at the start is not always the last word: a friend
+ * arrives and takes the menu too, or one of the eight decides to order from
+ * the card. Raising it only makes room. Lowering it is refused while a course
+ * still holds more dishes than the smaller count takes — which dish goes is
+ * for the floor to say from that course, not for this to guess.
+ */
+export function planMenuCount(
+  db: Db,
+  orderId: string | number,
+  menuGroupId: string,
+  quantity: unknown,
+): MenuCountPlan {
+  const to = Number(quantity);
+  if (!Number.isSafeInteger(to) || to < 1 || to > MAX_MENUS_PER_LINE) {
+    throw invalid(`The number of menus must be a whole number between 1 and ${MAX_MENUS_PER_LINE}`);
+  }
+
+  const { rows, pkg, menu } = readMenuLine(db, orderId, menuGroupId);
+  for (const course of readFixedMenuCourses(db, menu.id)) {
+    const held = heldByCourse(rows, course.id).length;
+    if (held > courseLimit(course, to)) {
+      throw Object.assign(new Error(`${menu.name}: ${course.label} already holds ${held} dishes, more than ${to} ${to === 1 ? 'menu takes' : 'menus take'}`), {
+        statusCode: 409, code: 'menu_course_overflow', course_id: course.id,
+      });
+    }
+  }
+
+  return { packageItemId: Number(pkg.id), from: menusOnLine(pkg), to };
 }

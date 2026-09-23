@@ -52,9 +52,10 @@ export function generateCartItemId(
   menuLineId?: string | null,
   serviceRun?: number | null,
 ): string {
-  // A fixed menu is never merged with another one, not even an identical one:
-  // one menu is one line of one, so a split check can hand each of them to a
-  // different guest whole. Its own line id is its identity.
+  // A menu line is never merged with another line, not even one of the same
+  // menu: it carries its own count of menus and its own dishes, and adding
+  // them up is the window's job, not a side effect of an identity. Its own
+  // line id is its identity.
   if (menuLineId) return `cart-menu:${menuLineId}`;
 
   const normalizedAddons = addons.map((addon) => ({
@@ -93,8 +94,8 @@ export function normalizeCartItems(items: CartItem[]): CartItem[] {
 }
 
 /**
- * A fresh identity for one menu line. Not derived from the choices: two guests
- * ordering the very same menu are still two menus.
+ * A fresh identity for one menu line. Not derived from the choices: a line is
+ * itself, whatever its dishes happen to be.
  */
 export function newMenuLineId(): string {
   try {

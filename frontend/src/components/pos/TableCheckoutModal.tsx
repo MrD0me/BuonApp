@@ -9,6 +9,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem } from '@/lib/types';
 import { pendingKotItems } from '@/lib/kot';
+import { compactMenuRows, menuAwareRowOrder } from '@/lib/fixed-menu';
 import { usePosSettingsStore } from '@/store/pos-settings';
 
 interface Props {
@@ -147,11 +148,13 @@ export default function TableCheckoutModal({
           <div className="mb-3">
             <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">{t('previousItems')}</p>
             <div className="space-y-1">
-              {activeItems.map((item) => (
-                <div key={item.id} className="flex justify-between items-start py-1.5 px-2 bg-gray-50 rounded-lg">
+              {/* A menu's portions that read the same are one line, "3x Lasagne",
+                  under the menu that pays for them. */}
+              {compactMenuRows(menuAwareRowOrder(activeItems)).map(({ item, rows, quantity, total }) => (
+                <div key={rows[0].id} className={`flex justify-between items-start py-1.5 px-2 bg-gray-50 rounded-lg ${item.menu_role === 'course' ? 'ms-4' : ''}`}>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-gray-700 font-medium">
-                      {item.quantity}x {item.product_name}
+                      {quantity}x {item.product_name}
                       {(item.kot_batch === null || item.kot_batch === undefined) && (
                         <span className="ms-2 px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px] font-semibold align-middle">
                           {t('kotPending')}
@@ -162,8 +165,12 @@ export default function TableCheckoutModal({
                       <p className="text-xs text-gray-400 italic">{item.special_instructions}</p>
                     )}
                   </div>
+                  {/* A dish inside a menu is paid for by the menu: it shows its
+                      surcharge, or nothing. */}
                   <span className="text-xs text-gray-600 ms-2 font-medium">
-                    {formatItemTotal(item.total, item.subtotal)}
+                    {item.menu_role === 'course'
+                      ? (total > 0 ? `+${fmt(total)}` : '')
+                      : formatItemTotal(item.total, item.subtotal)}
                   </span>
                 </div>
               ))}

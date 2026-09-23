@@ -111,7 +111,8 @@ export interface FixedMenuCourse {
 }
 
 /**
- * What the guest picked, course by course.
+ * What the table picked, course by course, counted: three lasagne are one
+ * entry with `quantity: 3`, and one lasagna "senza besciamella" another.
  *
  * The note and the wave hang off the dish, not off the menu: the menu's own
  * row never reaches a kitchen ticket, so anything written against it was
@@ -122,6 +123,8 @@ export type FixedMenuSelection = {
   product_id: string;
   note?: string;
   service_run?: number;
+  /** How many portions of it. Missing means one. */
+  quantity?: number;
 }[];
 
 export interface AddonGroup {
@@ -388,12 +391,15 @@ export interface CartItem {
   quantity: number;
   addons: Addon[];
   special_instructions: string;
-  /** Set on a fixed menu: the dishes chosen for it, course by course. */
+  /**
+   * Set on a fixed menu: the dishes chosen for it, course by course, counted.
+   * On such a line `quantity` is how many menus it feeds.
+   */
   menu_selection?: FixedMenuSelection;
   /**
-   * What keeps two identical menus apart in the cart. A menu is always one
-   * line of one, because a split check moves a menu whole and a block of six
-   * cannot be shared between six guests.
+   * What keeps a menu line apart from every other line in the cart. It is
+   * never merged, not even with a line of the same menu: its count and its
+   * dishes are its own.
    */
   menu_line_id?: string;
   /** Which wave this line goes out in. Unset means the category decides. */
