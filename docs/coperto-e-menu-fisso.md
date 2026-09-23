@@ -423,6 +423,12 @@ già mandata. Con una riga per porzione tutto questo esisteva già.
   controlli del riempimento, ed è nell'allowlist del palmare. Al PC sta nella scheda della riga del
   menu, sul palmare sulla testata del menu. Togliere la riga del menu toglie tutti gli N menu, e la
   conferma dice quanti.
+- **Lo sconto segue il numero.** Uno sconto concordato sulla riga vale per la riga com'era: cinque
+  menu su otto se ne portano via cinque ottavi. Tenerlo intero avrebbe lasciato lo sconto di otto
+  menu sull'unico rimasto — e il numero di menu lo cambia anche la sala, mentre concordare uno
+  sconto vuole il responsabile col PIN. Lo sconto in euro sull'ordine, che non si riproporziona, si
+  ferma a quello che resta sul conto, altrimenti la carta stampa «Sconto −50,00» sotto un imponibile
+  di 30,00.
 
 **Il riempimento abbina meglio.** Due difetti venuti fuori strada facendo, tutti e due sistemati in
 `planCourseFill`:
@@ -437,8 +443,12 @@ già mandata. Con una riga per porzione tutto questo esisteva già.
 **Trovato e sistemato perché stava in mezzo: il preconto stampava le righe annullate.** Una lasagna
 tolta prima di andare in cucina usciva a 10,00 sopra un totale che non la contava. Col conteggio,
 togliere un piatto da una portata diventa una correzione di tutte le sere. Ora le righe annullate
-restano fuori dalla carta, termica e browser; quelle stornate col PIN restano, accanto alla riga
-negativa che le compensa.
+restano fuori dalla carta; quelle stornate col PIN restano, accanto alla riga negativa che le
+compensa. Il preconto esce da tre parti — la stampante termica, l'encoder ESC/POS del browser e la
+pagina HTML per la stampante di sistema, che è quella che si usa quando la cassa non ha stampanti —
+e la regola delle righe da stampare sta in un posto per parte: `printableBillRows` in
+`main/printers/thermal.ts` e `frontend/src/lib/printer/bill-rows.ts`, condiviso dalle due strade del
+browser.
 
 **Resta com'era:**
 
