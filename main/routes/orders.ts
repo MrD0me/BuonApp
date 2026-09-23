@@ -1502,6 +1502,11 @@ function repriceAfterMenuChange(db: ReturnType<typeof getDatabase>, orderId: str
   if (discountAmount > 0 && order.subtotal > 0 && order.discount_type === 'percentage') {
     discountAmount = roundMoney(subtotal * (order.discount_value || 0) / 100);
   }
+  // A discount agreed in euros stays what it was, but never more than what is
+  // left on the check: taking six menus of eight off a table would otherwise
+  // print "Sconto -50,00" under a subtotal of 30,00, and the lines on the
+  // paper would not add up to the total under them.
+  discountAmount = Math.min(discountAmount, subtotal);
 
   const coverCharge = orderCoverCharge(db, orderId);
   const total = roundMoney(Math.max(0, subtotal - discountAmount) + orderCharges({ ...order, cover_charge: coverCharge }));
@@ -1649,12 +1654,16 @@ router.patch(
           }
 
           // The price the table was quoted, times the new count. A discount
-          // agreed on the row stays, capped so a smaller line can never go
-          // negative and quietly pay the guest.
+          // agreed on the row follows the count it was agreed on: kept whole,
+          // eight menus' worth of discount would land on the one menu left and
+          // hand it over for nothing — and this route is open to the floor,
+          // while agreeing a discount is not. Capped as well, so a smaller line
+          // can never go negative and quietly pay the guest.
           const addonRows = db.prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?').all(row.id) as { price: number; quantity?: number }[];
           const addonTotal = addonRows.reduce((sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * plan.to, 0);
           const gross = roundMoney(Number(row.unit_price) * plan.to + addonTotal);
-          const discount = Math.min(Number(row.discount_amount) || 0, gross);
+          const agreed = Number(row.discount_amount) || 0;
+          const discount = Math.min(plan.from > 0 ? roundMoney(agreed * plan.to / plan.from) : agreed, gross);
           const subtotal = roundMoney(gross - discount);
           db.prepare(`
             UPDATE order_items SET quantity = ?, inventory_deducted_quantity = ?, discount_amount = ?,

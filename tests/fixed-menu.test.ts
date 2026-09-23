@@ -951,6 +951,78 @@ async function main() {
     assertEqual(soupRows().map((row) => row.id).join(','), beforeWindow, 'and not a row moves: every portion found its own');
     assert(soupIds.length > 0, 'the soups were there to begin with');
 
+    console.log('\n24. Fewer menus take their share of the discounts with them');
+    // A discount agreed on the menu row was agreed on the line as it stood.
+    // Kept whole, eight menus' worth of it would land on the one menu left —
+    // and the count is something the floor may change, while agreeing a
+    // discount is not.
+    const discounted = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'p-menu', quantity: 4, menu_selection: [] }] },
+    });
+    assertEqual(discounted.status, 201, 'four menus, nothing chosen yet');
+    const discountedId = discounted.data.order.id;
+    const discountedPackage = () => rowsOf(discountedId).find((row) => row.menu_role === 'package');
+
+    const rowDiscount = await api(baseUrl, `/api/orders/${discountedId}/items/${discountedPackage().id}/discount`, {
+      method: 'PATCH', headers: authHeader, body: { discount_type: 'percentage', discount_value: 20 },
+    });
+    assertEqual(rowDiscount.status, 200, 'the manager takes 20% off the menus');
+    assertEqual(Number(discountedPackage().discount_amount), 20, 'twenty euro off a hundred');
+
+    const halved = await api(baseUrl, `/api/orders/${discountedId}/menu-groups/${discountedPackage().menu_group_id}`, {
+      method: 'PATCH', headers: serverAuth, body: { quantity: 2 },
+    });
+    assertEqual(halved.status, 200, 'two of the four cancel, and a waiter says so');
+    assertEqual(Number(discountedPackage().discount_amount), 10, 'and half the discount goes with them');
+    assertEqual(Number(discountedPackage().total), MENU_PRICE * 2 - 10, 'the row is two menus less their share');
+    assertEqual(Number(halved.data.order.total), MENU_PRICE * 2 - 10, 'and so is the check');
+
+    console.log('\n25. A discount in euros never outgrows what is left on the check');
+    const flat = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'p-menu', quantity: 4, menu_selection: [] }] },
+    });
+    const flatId = flat.data.order.id;
+    const flatGroup = rowsOf(flatId).find((row) => row.menu_role === 'package').menu_group_id;
+    // The house has to allow discounts in euros before one can be given.
+    const allowFlat = await api(baseUrl, '/api/settings/discount', {
+      method: 'PUT', headers: authHeader, body: { discount_mode: 'both' },
+    });
+    assertEqual(allowFlat.status, 200, 'the house allows discounts in euros too');
+    const orderDiscount = await api(baseUrl, `/api/orders/${flatId}/discount`, {
+      method: 'PATCH', headers: authHeader, body: { discount_type: 'amount', discount_value: 50 },
+    });
+    assertEqual(orderDiscount.status, 200, 'fifty euro off the whole order');
+
+    const downToOne = await api(baseUrl, `/api/orders/${flatId}/menu-groups/${flatGroup}`, {
+      method: 'PATCH', headers: authHeader, body: { quantity: 1 },
+    });
+    assertEqual(downToOne.status, 200, 'three of the four menus come off');
+    assertEqual(
+      Number(downToOne.data.order.discount_amount), MENU_PRICE,
+      'the discount stops at what is left, so the printed lines still add up',
+    );
+    assertEqual(Number(downToOne.data.order.total), 0, 'and the check comes to nothing, not below it');
+
+    console.log('\n26. An absurd count is refused, not built');
+    const absurd = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'takeaway',
+        items: [{
+          product_id: 'p-menu', quantity: 1,
+          menu_selection: [{ course_id: starterCourse.id, product_id: 'p-bruschetta', quantity: 990 }],
+        }],
+      },
+    });
+    assertEqual(absurd.status, 400, 'nine hundred starters on one menu');
+    const absurdFill = await api(baseUrl, notedUrl, {
+      method: 'PUT', headers: authHeader,
+      body: { product_ids: [{ product_id: 'p-soup', quantity: 990 }] },
+    });
+    assertEqual(absurdFill.status, 400, 'and the same asked of a course already on the check');
+
     // ── Summary ───────────────────────────────────────────────────────────
     console.log('\n' + '='.repeat(60));
     const results = getResults();
