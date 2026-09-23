@@ -1118,6 +1118,24 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
       );
       assert(`[frontend ${name}] a cancelled row never reaches the paper`, !text.includes('Acqua'));
     }
+
+    // The third way a bill comes out — the browser's own print dialog, used
+    // when the till has no printer configured — draws the same rows.
+    const html = generateBillHtml(
+      { id: 'b5', bill_number: 'INV-MENU-3', order: menuOrder, subtotal: 75, discount_amount: 0, total: 75 } as any,
+      // Latin digits here: this tenant prints Persian numerals, and the count
+      // is what is being read.
+      { ...frontendTenant, number_digits: 'latin' } as any,
+      { useUnicode: false },
+    );
+    const htmlRows = html.split('<tr>').filter((row: string) => row.includes('Lasagne'));
+    assert(
+      '[frontend html] the two lasagne left are one row of two',
+      htmlRows.length === 1 && />\s*2\s*</.test(htmlRows[0]),
+      htmlRows.join(' | '),
+    );
+    assert('[frontend html] a cancelled row never reaches the paper', !html.includes('Acqua'));
+    assert('[frontend html] and the dishes of a menu carry no price of their own', !/Lasagne[\s\S]*?0[.,]00/.test(htmlRows[0]), htmlRows[0]);
   }
 
   // The frontend classic template also needs to keep the three-character IRR
