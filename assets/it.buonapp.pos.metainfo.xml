@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.1.0" date="2026-09-24">
+      <description>
+        <p>A fixed menu was one guest's menu. Eight menus were eight groups, and the waiter had to walk the table asking each guest for the whole of their meal, starter to dessert. The floor has always written it the other way round: how many menus, then how many of each dish — three lasagne, two carbonara, one risotto — without ever knowing who eats what, and at the same table some take the menu while the others order from the card. A menu on a check is now one line with a number on it, and the dishes under it are counted. No migration: a menu written the old way is a menu for one and goes on working.</p>
+      </description>
+    </release>
     <release version="6.0.1" date="2026-09-20">
       <description>
         <p>6.0.0 met the till it was written for, and a real service found what only a real service finds. A kitchen ticket took the best part of ten seconds to come out of the USB printer. The window opened larger than the 1024x768 screen it opened on, so the till saw its top-left corner. The handheld served the menu as it had been at the moment the phone was switched on. A table of six identical fixed menus printed six lines of one, a foot of paper for a dish the cook makes six of. Corrections only: no new feature, and no database migration, so an upgrade touches nothing in the data.</p>

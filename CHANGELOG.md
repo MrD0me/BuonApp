@@ -4,6 +4,39 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.1.0] - 2026-09-24
+
+A fixed menu was one guest's menu. Eight menus were eight groups, and the
+waiter had to walk the table asking each guest for the whole of their meal,
+starter to dessert. The floor has always written it the other way round: how
+many menus, then how many of each dish — three lasagne, two carbonara, one
+risotto — without ever knowing who eats what, and at the same table some take
+the menu while the others order from the card. A menu on a check is now one
+line with a number on it, and the dishes under it are counted. No migration:
+a menu written the old way is a menu for one and goes on working.
+
+### Added
+
+- **A menu line holds as many menus as the table takes.** One group, whatever the party: the menu's own row carries quantity N and costs N times the price, a course holds at most `max_choices × N` dishes, and an included cover counts for N covers. Dishes stay one row per portion, so kitchen state, service run, note and the PIN cancel go on working plate by plate; the counting happens where it is read, on screen and on paper, the way the kitchen ticket has folded identical dishes since 6.0.1. A choice may carry a `quantity` and becomes that many rows, checked against the course's cap before anything is expanded. A group written by any earlier version is a menu for one.
+- **The window asks how many menus, then counts the dishes.** *How many menus?* is a `− 4 +` with the number typeable — a phone opens its keypad — with the table's covers beside it for information and no starting number: with mixed tables this common, starting from the covers would charge menus nobody took. Each course lists its dishes with a count, a tap on the name being one more, and says where it stands: "3 of 8", a word for its state (to choose, full, optional), and a heading that stays put while the dishes scroll. A dish nobody has taken shows only a `+`; the ones taken are tinted across the row. *Note for one portion* lifts one lasagna out of the count and gives it its own line inside the dish's row, with `1×` in front, so a note never hides a portion from the count.
+- **`PATCH /orders/:id/menu-groups/:groupId` `{ quantity }` changes how many menus** on a check already open — the friend who arrives late, or the one who ends up ordering from the card. Below the dishes a course already holds, it refuses with `409 menu_course_overflow` and names the course, since which plate goes is the floor's call. Same roles and checks as filling a course, and it is on the handheld's allowlist. Filling a course now matches the rows the kitchen already has first, so taking one lasagna out of three frees one still waiting instead of stopping on the one in the oven.
+
+### Changed
+
+- **Inside a menu a service run is neither asked for nor moved.** A menu is already an order of runs — starter, pasta, main — and each dish takes the run of its category, so moving one means nothing. The window no longer reads or sends a run, and the row sheet no longer offers the nine run buttons on a menu's rows, on the till or on the handheld. The run is still written on those rows and still read, on the bill as on the ticket.
+- **Every line of ordered dishes says how many it is, `1×` included.** The count only appeared from two upwards, so a single portion inside a menu showed a bullet on the check, nothing at all on the handheld's table sheet, and no count in the cart; with a note under it the bullet read as another list. A list where some rows count and others do not is read twice.
+- **The per-guest menu and "One more the same" are gone,** replaced by the count. Tapping a menu already in the cart reopens that line instead of opening a second one, and on the table — till and handheld alike — identical portions read as one row, "3× Lasagne", with the actions on it applying to one portion.
+
+### Fixed
+
+- **The bill repeated the same dish once per portion, and printed cancelled rows.** Three lasagne inside a menu for eight are three rows, because that is how the kitchen, the runs and the cancels work; the guest wants to read `Lasagne 3` under the menu. Portions of the same menu with the same dish, price and note are now folded on paper, quantities and amounts summed, while a dish written off with the PIN stays apart beside the negative row that clears it. Off the same thread: the bill printed cancelled rows too, so a lasagna dropped before it ever reached the kitchen came out at 10,00 above a total that did not count it.
+- **The bill printed by the browser was still the old one.** A preconto leaves by three roads — the thermal printer, the browser's ESC/POS encoder, and the HTML page the browser sends to the system printer — and the third is the one a till without a configured printer uses. It printed `Lasagne 1 0,00` eight times, unindented, cancelled rows included. The rule now lives in one file, `printer/bill-rows.ts`, shared by both browser roads, and the HTML bill is covered by `test:printer` beside the other two.
+- **Adding a dish to a course already sent stripped the notes off the dishes in it.** Filling a course takes the whole of what the course must hold afterwards and matches it against what is there. From the grid only ids arrive, so a bare id meant "this dish with no note": the soup ordered *without salt* did not match, was cancelled and rewritten plain, and went back to the kitchen as if it were new. A bare id now says only which dish and keeps the note and the run the row already has, and the more precise wishes are matched first.
+- **Taking menus off a line left the whole discount on the ones that remained.** A line discount is agreed on the row as it stands — 20% on eight menus is twenty euro — and dropping to one menu kept those twenty euro, so the menu came out free. The discount now follows the number: five menus out of eight take five eighths of it. The order's cash discount is capped at what is left on the check, so a bill can no longer print `Discount -50,00` under a taxable 30,00.
+- **Sending a portion back to its ordinary run did not move it.** In a course fill a portion with no run declared means "any run", so the plain count took the row somebody had moved to the second run and the window reported a save that had changed nothing. Every portion now states its run. In the same window the `+` beside the count jumped ahead, and on the till the *How many menus* stepper re-armed on the reply instead of on the reloaded order, so two taps on `−` went from eight to seven.
+- **Two quick taps on the same dish could push a course past its cap.** The counters read how full the course was from the last paint, so two taps arriving before the screen redrew both saw the same count and the second went through on a full course. The check now happens inside the state update, which sees the moment before.
+- **The table window in Ordering listed a row for every portion.** Opening an open table from Ordering showed the check's rows as they are: eight menus with their courses were thirty rows of "1x", and the menu's dishes cost "0,00". Identical portions are now one row, indented under the menu that pays for them, with the surcharge alone where there is one.
+
 ## [6.0.1] - 2026-09-20
 
 6.0.0 met the till it was written for, and a real service found what only a real
