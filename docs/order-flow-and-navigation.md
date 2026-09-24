@@ -189,7 +189,7 @@ dietro nome e prezzo suoi.
 - **Personale** entra nelle Impostazioni (pagina da 324 righe; la barra laterale delle impostazioni
   la accoglie senza modifiche strutturali).
 - **WhatsApp** entra nelle Impostazioni: è l'accoppiamento col telefono e lo stato della connessione,
-  non un posto dove si lavora.
+  non un posto dove si lavora. Dal 2026-09-24 è spento: vedi gli emendamenti.
 - **KDS** era già una scheda delle impostazioni travestita da sezione: sparisce dalla sidebar.
 - **Impostazioni** scende in fondo alla barra, sopra Esci.
 
@@ -307,6 +307,19 @@ Cose decise mentre si implementava, che il piano non prevedeva:
     `printableBillRows` nel browser). Una riga stornata resta accanto alla sua riga negativa.
   - **Il contatore** di «Invia in cucina (n)» e del badge «N da inviare» conta i piatti e non le
     righe (`pendingDishCount`): due tiramisù battuti insieme sono 2, e prima risultavano 1.
+- **WhatsApp è spento, non cancellato**, deciso dall'utente il 2026-09-24. Non lo usava e non l'aveva
+  mai provato; il codice resta per un uso futuro. Riguarda sia il conto condiviso con un link `wa.me`
+  sia il telefono collegato. Lo spengono due interruttori, `WHATSAPP_AVAILABLE` in
+  `main/features.ts` e in `frontend/src/lib/features.ts`:
+  - nessuna schermata lo offre: la scheda WhatsApp e la condivisione nelle Impostazioni, i pulsanti
+    nel pannello ordine e dopo il pagamento, e la prova nella pagina di stampa. `/whatsapp` rimanda
+    alle Impostazioni;
+  - nessuno chiede più il suo stato ogni cinque secondi;
+  - il backend non monta `/api/whatsapp` e non avvia il servizio, qualunque cosa dica
+    `whatsapp_enabled`.
+
+  Tabelle, impostazioni e sessione salvata restano dove sono. Per riaccenderlo si cambiano i due
+  interruttori e si ricompila.
 
 ## Fuori ambito
 

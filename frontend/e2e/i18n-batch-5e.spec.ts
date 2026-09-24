@@ -9,6 +9,7 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
 }
 
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
+import { WHATSAPP_AVAILABLE } from '../src/lib/features';
 
 async function login(page: Page, email: string): Promise<void> {
   await page.goto(`${BASE}/auth/login`);
@@ -62,11 +63,14 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
     await expect(page.getByText('Add Staff').first()).toBeVisible();
     await captureScreenshot(page, 'batch-5e-staff-en.png');
 
-    // 1f. WhatsApp (EN)
-    await page.goto(`${BASE}/whatsapp`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('WhatsApp');
-    await captureScreenshot(page, 'batch-5e-whatsapp-en.png');
+    // 1f. WhatsApp (EN) — only while it is offered: it is switched off
+    // (src/lib/features.ts), and the page then sends the browser to Settings.
+    if (WHATSAPP_AVAILABLE) {
+      await page.goto(`${BASE}/whatsapp`);
+      await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('WhatsApp');
+      await captureScreenshot(page, 'batch-5e-whatsapp-en.png');
+    }
 
     // 1g. Print Test (EN)
     await page.goto(`${BASE}/print-test`);
@@ -104,11 +108,13 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Personal');
     await captureScreenshot(page, 'batch-5e-staff-es.png');
 
-    // 2f. WhatsApp (ES)
-    await page.goto(`${BASE}/whatsapp`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('WhatsApp');
-    await captureScreenshot(page, 'batch-5e-whatsapp-es.png');
+    // 2f. WhatsApp (ES), while it is offered.
+    if (WHATSAPP_AVAILABLE) {
+      await page.goto(`${BASE}/whatsapp`);
+      await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('WhatsApp');
+      await captureScreenshot(page, 'batch-5e-whatsapp-es.png');
+    }
 
     // 2g. Print Test (ES)
     await page.goto(`${BASE}/print-test`);
@@ -147,11 +153,13 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
       await expect(page.getByRole('heading', { level: 1 })).toHaveText('کارمند');
       await captureScreenshot(page, 'batch-5e-staff-fa.png');
 
-      // 3f. WhatsApp (FA)
-      await page.goto(`${BASE}/whatsapp`);
-      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('واتساپ');
-      await captureScreenshot(page, 'batch-5e-whatsapp-fa.png');
+      // 3f. WhatsApp (FA), while it is offered.
+      if (WHATSAPP_AVAILABLE) {
+        await page.goto(`${BASE}/whatsapp`);
+        await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText('واتساپ');
+        await captureScreenshot(page, 'batch-5e-whatsapp-fa.png');
+      }
 
       // 3g. Print Test (FA)
       await page.goto(`${BASE}/print-test`);

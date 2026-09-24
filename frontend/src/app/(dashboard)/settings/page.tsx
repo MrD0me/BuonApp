@@ -28,6 +28,7 @@ import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
+import { WHATSAPP_AVAILABLE } from '@/lib/features';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
@@ -321,7 +322,10 @@ export default function SettingsPage() {
   const [tableInfo, setTableInfo] = useState<{ name: string; rows: number }[]>([]);
 
   const searchParams = useSearchParams();
-  const requestedTab = searchParams?.get('tab') || 'store';
+  const tabParam = searchParams?.get('tab') || 'store';
+  // WhatsApp is switched off (lib/features.ts): an old link to its tab opens
+  // the store details rather than a page with nothing on it.
+  const requestedTab = tabParam === 'whatsapp' && !WHATSAPP_AVAILABLE ? 'store' : tabParam;
   // ── DB tools: master PIN, health check, initialize ──────────────────────
   // activeTab/healthCheckOpen/initializeDbOpen/pinGate read their initial value from the
   // ?tab=/?action= deep-link params directly. activeTab also stays synchronized below when
@@ -1879,8 +1883,11 @@ export default function SettingsPage() {
             <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tablesideOrdering')} value="server-app" active={activeTab} onClick={handleSettingsTabChange} />
             {/* WhatsApp opt-in lives under Operations because the receive-bill
-                workflow is what the cashier touches every time a customer pays. */}
-            <SettingsNavItem label={t('tabWhatsapp')} value="whatsapp" active={activeTab} onClick={handleSettingsTabChange} />
+                workflow is what the cashier touches every time a customer pays.
+                Switched off for now (lib/features.ts). */}
+            {WHATSAPP_AVAILABLE && (
+              <SettingsNavItem label={t('tabWhatsapp')} value="whatsapp" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
@@ -3477,19 +3484,22 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Share2 size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('whatsappSharing')}</h2>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">{t('enableWhatsappShare')}</p>
-                  <p className="text-sm text-gray-500">{t('enableWhatsappShareHint')}</p>
+            {/* WhatsApp is switched off (lib/features.ts). */}
+            {WHATSAPP_AVAILABLE && (
+              <div className="bg-white rounded-xl border border-gray-100 p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Share2 size={20} className="text-gray-500" />
+                  <h2 className="font-semibold text-gray-900">{t('whatsappSharing')}</h2>
                 </div>
-                <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }))} />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">{t('enableWhatsappShare')}</p>
+                    <p className="text-sm text-gray-500">{t('enableWhatsappShareHint')}</p>
+                  </div>
+                  <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }))} />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
             <div className="space-y-6">
@@ -3938,24 +3948,27 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* Integrations tab — cloud + OrderFlow + More Apps */}
-        <TabsContent value="whatsapp">
-          <div className="pb-6 max-w-3xl space-y-6">
-            {!whatsappEnabled ? (
-              <WhatsAppEnableCard />
-            ) : (
-              <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-semibold text-gray-900">{tWhatsappSettings('enabled')}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{tWhatsappSettings('enabledHint')}</p>
+        {/* Integrations tab — cloud + OrderFlow + More Apps. WhatsApp is
+            switched off (lib/features.ts). */}
+        {WHATSAPP_AVAILABLE && (
+          <TabsContent value="whatsapp">
+            <div className="pb-6 max-w-3xl space-y-6">
+              {!whatsappEnabled ? (
+                <WhatsAppEnableCard />
+              ) : (
+                <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-semibold text-gray-900">{tWhatsappSettings('enabled')}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{tWhatsappSettings('enabledHint')}</p>
+                  </div>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/whatsapp">{tWhatsappSettings('openConnection')}</Link>
+                  </Button>
                 </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/whatsapp">{tWhatsappSettings('openConnection')}</Link>
-                </Button>
-              </div>
-            )}
-          </div>
-        </TabsContent>
+              )}
+            </div>
+          </TabsContent>
+        )}
 
         {/* About tab */}
         {/* Software Updates tab */}

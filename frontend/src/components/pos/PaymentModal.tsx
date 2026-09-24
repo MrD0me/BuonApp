@@ -14,6 +14,7 @@ import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
+import { WHATSAPP_AVAILABLE } from '@/lib/features';
 import { useAuthStore } from '@/store/auth';
 
 interface Props {
@@ -476,7 +477,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         <div className="px-5 pb-5 border-t border-gray-100 pt-3 space-y-2">
           {justPaid ? (
             <>
-              {cartCustomer?.phone && (
+              {/* WhatsApp is switched off (lib/features.ts). */}
+              {WHATSAPP_AVAILABLE && cartCustomer?.phone && (
                 isWhatsAppReady ? (
                   <Button
                     onClick={handleSendWhatsApp}

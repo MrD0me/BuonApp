@@ -13,6 +13,7 @@ import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive
 import { setupKdsWebSocket } from './services/kds';
 import { rateLimit, staticRouteRateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
+import { WHATSAPP_AVAILABLE } from './features';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
@@ -322,10 +323,13 @@ export function startServer(): Promise<void> {
 
       // main/index.ts (Electron) also calls this; dev-server and pm2 boot
       // through here instead and would otherwise start with module defaults.
-      try {
-        initWhatsAppFromDb();
-      } catch (error) {
-        console.error('[Server] WhatsApp startup initialization failed:', error);
+      // Switched off (main/features.ts), WhatsApp never starts.
+      if (WHATSAPP_AVAILABLE) {
+        try {
+          initWhatsAppFromDb();
+        } catch (error) {
+          console.error('[Server] WhatsApp startup initialization failed:', error);
+        }
       }
 
       resolve();

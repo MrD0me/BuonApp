@@ -20,6 +20,7 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
+import { WHATSAPP_AVAILABLE } from '@/lib/features';
 import { useConfirm } from '@/hooks/use-confirm';
 import { ORDER_TYPES_SETTING_KEY, parseOrderTypes } from '@/lib/order-types';
 import {
@@ -117,10 +118,13 @@ export default function AppSidebar() {
     // Sync the WhatsApp enabled flag from the backend so the sidebar shows
     // the nav entry only when the integration is actually enabled on this
     // tenant. The WhatsApp page also writes the store on enable/disable so
-    // the sidebar updates without a refetch when the user toggles.
-    api.get('/whatsapp/status')
-      .then((res) => setWhatsappEnabled(!!res.data?.enabled))
-      .catch(() => { });
+    // the sidebar updates without a refetch when the user toggles. Switched
+    // off (lib/features.ts), there is nothing to ask.
+    if (WHATSAPP_AVAILABLE) {
+      api.get('/whatsapp/status')
+        .then((res) => setWhatsappEnabled(!!res.data?.enabled))
+        .catch(() => { });
+    }
   }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes]);
 
   return (

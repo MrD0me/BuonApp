@@ -24,6 +24,7 @@ import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
+import { WHATSAPP_AVAILABLE } from '@/lib/features';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useSendKot } from '@/hooks/useSendKot';
 import { pendingDishCount, pendingKotItems } from '@/lib/kot';
@@ -848,7 +849,8 @@ export function OrderPanel({
             timeSince={getTimeSince(order.created_at)}
             actions={(
               <>
-                {paid && order.customer?.phone && (
+                {/* WhatsApp is switched off (lib/features.ts). */}
+                {WHATSAPP_AVAILABLE && paid && order.customer?.phone && (
                   <Button
                     type="button"
                     variant="outline"
