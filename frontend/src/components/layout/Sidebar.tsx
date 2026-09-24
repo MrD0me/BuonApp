@@ -75,7 +75,15 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/customers', labelKey: 'customers', icon: Users, roles: ['owner', 'manager'], businessTypes: null },
 ];
 
-const ROW = 'text-[15px] [&>svg]:size-5';
+/**
+ * Collapsed to icons, a row is the `lg` size's 32 px square, which drops its
+ * padding (`p-0!`) so the brand's initial can fill it. A 20 px icon and the
+ * 8 px gap left 4 px of the label showing — half of its first letter beside
+ * every icon — and the icon sat off to one side. So, collapsed, the label is
+ * there for screen readers only, the icon is centred, and the tooltip says
+ * the name.
+ */
+const ROW = 'text-[15px] [&>svg]:size-5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:[&>span]:sr-only';
 
 export default function AppSidebar() {
   const pathname = usePathname();
@@ -209,10 +217,11 @@ export default function AppSidebar() {
             )}
             <SidebarMenuItem>
               {/* Identity label, not a button — nothing to click through to, so it
-                  deliberately skips SidebarMenuButton's interactive/hover styling. */}
+                  deliberately skips SidebarMenuButton's interactive/hover styling.
+                  Collapsed, it centres its icon like the rows above (ROW). */}
               <div
                 title={user?.name || user?.email || t('user')}
-                className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-5 [&>svg]:shrink-0"
+                className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:[&>span]:sr-only [&>span:last-child]:truncate [&>svg]:size-5 [&>svg]:shrink-0"
               >
                 <UserCircle />
                 <span className="truncate">{user?.name || user?.email || t('user')}</span>
