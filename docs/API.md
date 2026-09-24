@@ -10,7 +10,7 @@ The desktop app runs three HTTP servers on the local network, advertised over mD
 | --- | --- | --- |
 | `3001` | Express API and WebSocket | Every endpoint documented here, plus the POS interface |
 | `3002` | Standalone KDS | The kitchen display and its WebSocket. Enabled by default; with `kds_enabled` switched off, `/api/kds-info`, `/api/kitchen/*`, and `/api/kds/*` answer `403` |
-| `3003` | Server App | The tableside handheld interface (`docs/palmare.md`). It forwards a deliberately narrow allowlist to `:3001` — the catalogue, `GET /settings`, `GET /rooms` and `GET /tables` read-only, the order routes a waiter needs (`POST /orders`, `POST /orders/:id/items`, `PATCH .../guests`, `PATCH .../service-run`, `PUT .../menu-groups/...`), and `POST /api/printers/print-kot` — and answers `404` to everything else under `/api`. No table write, no bill, no payment, no customer route is forwarded |
+| `3003` | Server App | The tableside handheld interface (`docs/palmare.md`). It forwards a deliberately narrow allowlist to `:3001` — the catalogue, `GET /settings`, `GET /rooms` and `GET /tables` read-only, the order routes a waiter needs (`POST /orders`, `POST /orders/:id/items`, `PATCH .../guests`, `PATCH .../service-run`, `PUT .../menu-groups/...`), and `POST /api/printers/print-kot` — and answers `404` to everything else under `/api`. No table write, no bill, no payment, no customer route is forwarded. The one route it serves without a token is `GET /api/products/:id/image`, the dish photo for the menu's `<img>`, open for the same reason as on `:3001` and passed through byte for byte with its `ETag` |
 
 None of the three should ever be reachable from the public internet.
 

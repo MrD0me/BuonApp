@@ -6,6 +6,7 @@ import { useTranslations } from 'use-intl';
 import type { Addon, CartItem, Category, FixedMenuSelection, Order, Product, Table } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { generateCartItemId } from '@/lib/cart-identity';
 import { isFixedMenu, menuGroupsOfOrder, menuLinesOfCart, menuLinesOfOrder, openSlotsForProduct, type OpenSlot } from '@/lib/fixed-menu';
 import { needsOptionsDialog } from '@/lib/product-options';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import AddonModal from '@/components/pos/AddonModal';
 import FixedMenuPicker from '@/components/pos/FixedMenuPicker';
 import AttachToMenuModal from '@/components/pos/AttachToMenuModal';
-import { HandheldProductGrid } from './HandheldProductGrid';
+import { HandheldProductList } from './HandheldProductList';
 import { HandheldCart } from './HandheldCart';
 
 interface Props {
@@ -54,7 +55,7 @@ export function OrdinaView({
   const fmt = useFormatCurrency();
   const cart = useCartStore();
   const [cartOpen, setCartOpen] = useState(false);
-  // The menu's own filter, kept up here because the grid comes off the page
+  // The menu's own filter, kept up here because the list comes off the page
   // whenever the ticket is opened: held inside it, the category the waiter
   // had found would be gone on the way back from every glance at the check.
   const [menuQuery, setMenuQuery] = useState('');
@@ -91,6 +92,18 @@ export function OrdinaView({
       return;
     }
     cart.addItem(product, 1, [], '');
+  };
+
+  // The − on a dish takes a plate off the line its + fills: the plain one, no
+  // note and no add-on, which is where a tap made by mistake went. A dish with
+  // no plain line — every plate carries add-ons, or a note from the pencil —
+  // gives up its latest line instead. A plate inside a menu is not reached:
+  // it is the menu's, and comes off in the menu's window.
+  const handleProductRemove = (product: Product) => {
+    const plainId = generateCartItemId(product.id, [], '');
+    const line = cart.items.find((item) => item.id === plainId)
+      ?? [...cart.items].reverse().find((item) => item.product.id === product.id && !item.menu_selection);
+    if (line) cart.updateQuantity(line.id, line.quantity - 1);
   };
 
   const handleAttachToMenu = async (slot: OpenSlot) => {
@@ -234,7 +247,7 @@ export function OrdinaView({
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       {header(table.name, t('backToFloor'), onBack)}
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-3">
-        <HandheldProductGrid
+        <HandheldProductList
           products={products}
           categories={categories}
           query={menuQuery}
@@ -242,6 +255,7 @@ export function OrdinaView({
           categoryId={menuCategoryId}
           onCategoryChange={setMenuCategoryId}
           onProductClick={handleProductClick}
+          onProductRemove={handleProductRemove}
           onProductOptions={setAddonProduct}
         />
       </main>

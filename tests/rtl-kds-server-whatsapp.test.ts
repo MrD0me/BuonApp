@@ -82,7 +82,7 @@ const SCREEN_FILES = [
   'frontend/src/components/server-app/TableTile.tsx',
   'frontend/src/components/server-app/TableScreen.tsx',
   'frontend/src/components/server-app/OrdinaView.tsx',
-  'frontend/src/components/server-app/HandheldProductGrid.tsx',
+  'frontend/src/components/server-app/HandheldProductList.tsx',
   'frontend/src/components/server-app/HandheldCart.tsx',
   // WhatsApp
   'frontend/src/app/(dashboard)/whatsapp/page.tsx',

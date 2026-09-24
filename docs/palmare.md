@@ -1,7 +1,9 @@
 # Il palmare
 
 **Stato:** CURRENT. Deciso e fatto il 2026-09-15 sul branch `palmare`; rifatto nella grafica il
-2026-09-16 sul branch `rifacimento-grafica` (fase B del piano approvato quel giorno).
+2026-09-16 sul branch `rifacimento-grafica` (fase B del piano approvato quel giorno). Il 2026-09-24
+Ordina è passata dalla griglia di riquadri a un elenco di righe con foto, matita e `−  n  +`, e la
+ricerca ha preso la «x» per svuotarla.
 
 Il Server App è la pagina che i camerieri aprono sul telefono, servita sulla porta `:3003` da
 `main/server-app.ts` e raggiungibile in LAN come `buonapp.local:3003`. Fino alla 5.0.0 era rimasto
@@ -47,17 +49,34 @@ volta che la finestra del menu si apriva sopra, perché stavano sullo stesso liv
 - in fondo, fissi, **Invia in cucina (n)** se c'è un giro pendente e **Aggiungi piatti** (o **Prendi
   ordine** su un tavolo libero), che porta in Ordina con il carrello agganciato a quel tavolo.
 
-**Ordina.** In testa il tavolo e i coperti; poi ricerca, categorie come selettore a scorrimento,
-griglia a due colonne. Il tocco su un piatto fa quello che fa sul PC: un menu fisso apre la finestra
-che chiede quanti menu e conta i piatti portata per portata (se quel menu è già nel carrello riapre
-la sua riga), un piatto che entra in una portata libera di un menu aperto —
-nel carrello o già sul conto — chiede "compreso nel menu?", un piatto con aggiuntivi o a prezzo da
-definire apre le sue opzioni. **Tutto il resto va dritto in comanda**, senza finestra
-(`lib/product-options.ts`): un'acqua non ha niente da decidere, e una finestra per ogni piatto era
-un tocco in più tutta la sera. La matita sul riquadro apre comunque nota e quantità. La comanda è
-una barra fissa in basso che dice quanti piatti e quanto, e un tocco la apre a schermo intero: righe
-da 48 px con il cestino, lo stepper e un pulsante con l'uscita corrente («2ª uscita») che apre la
-griglia solo se va cambiata, perché il piatto la eredita già dalla categoria; un menu è una riga
+**Ordina.** In testa il tavolo e i coperti. Poi la ricerca, con una «x» che la svuota e lascia la
+tastiera aperta per cercare subito il piatto dopo; le categorie come selettore a scorrimento; e i
+piatti in **elenco**, uno per riga (due colonne su un tablet). Ogni riga presenta il piatto come lo
+cerca l'occhio — la foto, il nome, il prezzo — e finisce con quello che gli si può fare: la matita e
+`−  n  +`. La foto arriva dal `:3003` (vedi il proxy più sotto). Un piatto senza foto mostra le sue
+iniziali sul suo colore, lo stesso quadratino del PC. Prima era una griglia di riquadri a due
+colonne, e l'occhio saltava da un nome all'altro: la riga è più alta, ma si legge in un colpo.
+
+Il tocco sulla riga, e il `+`, fanno quello che fa il tocco sul PC:
+- un menu fisso apre la finestra che chiede quanti menu e conta i piatti portata per portata (se
+  quel menu è già nel carrello riapre la sua riga);
+- un piatto che entra in una portata libera di un menu aperto — nel carrello o già sul conto —
+  chiede "compreso nel menu?";
+- un piatto con aggiuntivi o a prezzo da definire apre le sue opzioni.
+
+**Tutto il resto va dritto in comanda**, senza finestra (`lib/product-options.ts`): un'acqua non ha
+niente da decidere, e una finestra per ogni piatto era un tocco in più tutta la sera. La matita apre
+comunque nota e quantità.
+
+Il numero fra `−` e `+` conta il piatto ovunque sia in comanda, anche dentro i menu. Il `−` serve a
+togliere un tocco sbagliato dalla riga stessa, senza aprire la comanda e tornare indietro. Toglie un
+piatto dalla riga che il `+` riempie, quella semplice senza note né aggiunte; se non c'è, dall'ultima
+riga di quel piatto. Un piatto scelto dentro un menu non lo tocca: si toglie nella finestra del
+menu. Quando non resta niente che possa togliere, il `−` si spegne.
+
+La comanda è una barra fissa in basso che dice quanti piatti e quanto, e un tocco la apre a schermo
+intero: righe da 48 px con il cestino, lo stepper e un pulsante con l'uscita corrente («2ª uscita»)
+che apre la griglia solo se va cambiata, perché il piatto la eredita già dalla categoria; un menu è una riga
 «8× Menu completo» coi piatti contati sotto; per un ordine nuovo ci sono i coperti, che partono dalla
 prenotazione o dai posti del tavolo (con la riga informativa del coperto, se la casa lo fa pagare;
 vedi [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md)), e le note. Le tre finestre stanno un livello sopra la pagina,
@@ -114,6 +133,18 @@ Il ruolo è controllato due volte: dal proxy, che ammette solo `server`, e dall'
 dietro ogni inoltro. `tests/server-app-server-role.test.ts` percorre tutta la lista, aperta e
 chiusa.
 
+**La foto di un piatto** è l'eccezione: `GET /products/:id/image` passa senza token, perché un
+`<img>` non può portarlo. Non espone niente di nuovo: l'API principale lascia aperta la stessa rotta
+per lo stesso motivo (`main/server.ts`), ed è in ascolto su tutte le interfacce, quindi quei byte
+erano già raggiungibili in LAN dal `:3001`. L'inoltro serve solo a portarli sulla stessa origine
+della pagina, l'unica da cui la sua CSP (`img-src 'self' data:`) accetta immagini. Solo lettura, e
+404 quando il Server App è spento. Passa i byte come byte, non come il testo degli altri inoltri,
+che li rovinerebbe, e rimanda l'`ETag`: una foto che il telefono ha già torna come 304. Cosa si può
+servire (webp, png o jpeg, mai un SVG) lo decide l'API principale, una volta sola. Un id fatto di
+punti (`.` o `..`) viene rifiutato: nell'indirizzo inoltrato sparirebbe, e porterebbe una
+richiesta senza token su un'altra rotta. Il test la controlla contro una controfigura dell'API
+principale: byte identici, 304, `POST` chiuso, id di punti rifiutati, Server App spento.
+
 ## Come è fatto
 
 `frontend/src/app/server-standalone/page.tsx` è una pagina sottile che eredita la lingua da
@@ -127,14 +158,14 @@ chiusa.
 | `tenant-format.ts` | semina valuta e paese nello store auth, così `useFormatCurrency` formatta in euro dentro le finestre condivise |
 | `SalaView.tsx`, `TableTile.tsx` | l'elenco per stanza; `roomTabs()` ordina stanze e tavoli e lo usa anche la testata |
 | `TableScreen.tsx` | la schermata del tavolo |
-| `OrdinaView.tsx`, `HandheldProductGrid.tsx`, `HandheldCart.tsx` | la presa comanda: menu e comanda sono due schermate sotto la stessa testata |
+| `OrdinaView.tsx`, `HandheldProductList.tsx`, `HandheldCart.tsx` | la presa comanda: menu e comanda sono due schermate sotto la stessa testata |
 | `order-attempt.ts` | il tentativo di ordine nuovo persistito per il replay |
 
 Montati così come sono, senza modifiche: `components/pos/AddonModal`, `FixedMenuPicker`,
 `AttachToMenuModal`, `ServiceRunPicker` (sono costruiti su `components/ui/modal`, che sotto i 768 px
 è un foglio dal basso e sopra una carta centrata), e le lib pure `cart-payload`, `cart-identity`,
-`fixed-menu`, `service-runs`, `kot`, `product-options`, `status-styles`, `append-attempt`, più
-`store/cart`. Le primitive di interfaccia (`Stepper`, `StatusBadge`, `SegmentedControl`,
+`fixed-menu`, `service-runs`, `kot`, `product-options`, `status-styles`, `append-attempt`,
+`image-utils` (il colore delle iniziali), più `store/cart`. Le primitive di interfaccia (`Stepper`, `StatusBadge`, `SegmentedControl`,
 `ActionBar`, `EmptyState`) stanno in `components/ui/` e sono le stesse del PC.
 
 Il layout della rotta dichiara `viewport-fit=cover` e un manifest suo
@@ -176,5 +207,6 @@ col PC; `npm run lint`, `npm run build`, `npm run build:frontend`,
 `npm run i18n:check`, `npm run test:rtl-kds-server-whatsapp` per il frontend (i file del palmare
 stanno nella lista dei file che devono usare solo utilità logiche). Lo spec Playwright
 `frontend/e2e/i18n-batch-5d.spec.ts` percorre login, sala, scheda tavolo e finestra aggiuntivi in
-inglese e in persiano; il fixture `tests/e2e-server.cjs` semina un piatto con aggiuntivi («E2E
+inglese e in persiano, e in inglese anche il `−` che toglie il piatto appena messo e la «x» che
+svuota la ricerca; il fixture `tests/e2e-server.cjs` semina un piatto con aggiuntivi («E2E
 Tea») perché il tocco su un piatto senza opzioni non apre più nessuna finestra.

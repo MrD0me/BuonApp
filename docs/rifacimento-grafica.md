@@ -75,8 +75,9 @@ Vedi [palmare.md](palmare.md) per il dettaglio. In breve:
 - lo stato è detto due volte, con una banda colorata e con una pillola scritta;
 - il badge arancione dice **quanti piatti** ci sono da mandare, non che ce n'è qualcuno;
 - il tavolo è una **pagina** con la freccia indietro, non un cassetto senza chiusura;
-- un piatto **senza aggiuntivi va in comanda con un tocco**; la matita sulla tessera apre nota e
-  quantità;
+- i piatti sono **righe** con la foto (o le iniziali), la matita e `−  n  +`, e la ricerca ha una
+  «x» che la svuota; un piatto **senza aggiuntivi va in comanda con un tocco**, e un tocco sbagliato
+  si toglie col `−` dalla stessa riga;
 - la comanda è una **barra fissa in basso** che dice quanti piatti e quanto, e si apre a schermo
   intero;
 - ha un manifest suo che parte dalla sala, e rispetta notch e indicatore di casa.

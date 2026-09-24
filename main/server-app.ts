@@ -135,6 +135,47 @@ async function forwardToMainApiImpl(req: Request, res: Response, targetPath: str
   }
 }
 
+async function forwardProductImage(req: Request, res: Response, targetPath: string) {
+  return trackHttpRequestWork(req, forwardProductImageImpl(req, res, targetPath));
+}
+
+/**
+ * A dish's photo, for the menu on the handheld (docs/palmare.md).
+ *
+ * The bytes pass through as bytes: the forward above reads the body as text,
+ * which would mangle an image. The ETag goes both ways, so a photo the phone
+ * already holds comes back as a 304 and not as the photo again. What may be
+ * served — webp, png or jpeg, never an SVG — is the main API's decision, made
+ * once, on the route this forwards to.
+ */
+async function forwardProductImageImpl(req: Request, res: Response, targetPath: string) {
+  const target = new URL(`/api${targetPath}`, `http://127.0.0.1:${getServerPort()}`);
+  try {
+    const upstream = await fetch(target, {
+      headers: req.get('If-None-Match') ? { 'If-None-Match': req.get('If-None-Match')! } : {},
+      signal: getHttpRequestSignal(req),
+    });
+    res.status(upstream.status);
+    for (const header of ['Content-Type', 'ETag', 'Cache-Control']) {
+      const value = upstream.headers.get(header);
+      if (value) res.setHeader(header, value);
+    }
+    if (upstream.status === 304) {
+      res.end();
+      return;
+    }
+    res.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch (error) {
+    if (getHttpRequestSignal(req)?.aborted) {
+      if (!res.headersSent) res.status(503).end();
+      else if (!res.writableEnded) res.destroy();
+      return;
+    }
+    console.error('[Server App] Product image forward failed:', error);
+    res.status(502).json({ error: 'Could not reach the local POS API' });
+  }
+}
+
 export function startServerApp(): Promise<void> {
   stopPromise = null;
   stopping = false;
@@ -249,6 +290,19 @@ export function startServerApp(): Promise<void> {
     const segment = (value: unknown) => encodeURIComponent(String(value));
     app.get('/api/categories', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/categories'));
     app.get('/api/products', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/products'));
+    // The one forwarded route that asks for no token: an <img> cannot send
+    // one. The main API leaves the same route open for the same reason
+    // (main/server.ts), and on every interface, so this shows a phone nothing
+    // the LAN could not already fetch from :3001; it only brings the photo to
+    // the page's own origin, the one its CSP lets images come from. Read
+    // only, and gone when the Server App is switched off. A dot segment is
+    // refused: the URL it is forwarded to would fold it away and land a
+    // request that carries no token on some other route.
+    app.get('/api/products/:id/image', (req, res) => {
+      if (!isServerAppEnabled()) return res.status(404).json({ error: 'Not found' });
+      if (req.params.id === '.' || req.params.id === '..') return res.status(404).json({ error: 'Not found' });
+      return forwardProductImage(req, res, `/products/${segment(req.params.id)}/image`);
+    });
     app.get('/api/tables', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/tables'));
     app.get('/api/rooms', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/rooms'));
     app.get('/api/settings', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/settings'));
