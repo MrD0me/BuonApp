@@ -108,6 +108,10 @@ body {
   --color-brand-light: #e8ebff;
   --color-brand-hover: #2538d4;
   --color-brand-ring: #3248FF80;
+  /* La fascia delle portate nel menu fisso: il blu del marchio al 26 % sul
+   * bianco, un passo più carico di brand-light (che è all'11 %, e sui piatti
+   * già contati sta a metà). È calcolata a mano: se cambia il blu, va rifatta. */
+  --color-brand-band: #cacfff;
   --color-success: #00cc61;
   --color-success-light: #dcfce7;
   --color-success-hover: #00b355;
