@@ -8,7 +8,7 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem } from '@/lib/types';
-import { pendingKotItems } from '@/lib/kot';
+import { pendingDishCount } from '@/lib/kot';
 import { compactOrderRows, menuAwareRowOrder } from '@/lib/fixed-menu';
 import { usePosSettingsStore } from '@/store/pos-settings';
 
@@ -111,8 +111,9 @@ export default function TableCheckoutModal({
 
   // Filter active items (not cancelled)
   const activeItems = (order.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
-  // Rows still waiting for a kitchen ticket — what the send button will carry.
-  const pendingKotRows = pendingKotItems(activeItems);
+  // The plates still waiting for a kitchen ticket — what the send button will
+  // carry, counted as the order panel and the floor count them.
+  const pendingPlates = pendingDishCount(activeItems);
 
   return (
     <>
@@ -192,7 +193,7 @@ export default function TableCheckoutModal({
 
           {/* Sending to the kitchen is its own step, separate from billing:
               it carries the rows that have never been on a ticket. */}
-          {kotPrintingEnabled && onSendToKitchen && pendingKotRows.length > 0 && (
+          {kotPrintingEnabled && onSendToKitchen && pendingPlates > 0 && (
             <Button
               onClick={handleSendToKitchen}
               disabled={sendingToKitchen}
@@ -200,7 +201,7 @@ export default function TableCheckoutModal({
               size="lg"
             >
               <ChefHat size={16} className="me-2" />
-              {sendingToKitchen ? t('kotSending') : t('sendToKitchen', { count: pendingKotRows.length })}
+              {sendingToKitchen ? t('kotSending') : t('sendToKitchen', { count: pendingPlates })}
             </Button>
           )}
 

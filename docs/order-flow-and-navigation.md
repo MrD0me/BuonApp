@@ -305,6 +305,8 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   - **Sul palmare** il selettore dell'uscita sotto la riga sposta tutta la riga.
   - **Il preconto** somma allo stesso modo, a parità di prezzo e di aggiuntivi (`compactBillRows`, e
     `printableBillRows` nel browser). Una riga stornata resta accanto alla sua riga negativa.
+  - **Il contatore** di «Invia in cucina (n)» e del badge «N da inviare» conta i piatti e non le
+    righe (`pendingDishCount`): due tiramisù battuti insieme sono 2, e prima risultavano 1.
 
 ## Fuori ambito
 

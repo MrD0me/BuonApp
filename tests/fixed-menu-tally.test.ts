@@ -19,6 +19,8 @@
  *  - the check folds identical rows into one line for the screen — a menu's
  *    portions, and a dish from the card added again later — and an action on
  *    it lands on one row, the last one added;
+ *  - the plates still to send are counted by quantity, the menu's own row
+ *    left out;
  *  - the cart keeps a menu line with its count, and a dish from the grid joins
  *    the plain count of that dish.
  *
@@ -41,6 +43,7 @@ const {
   openSlotsForProduct, compactOrderRows, selectionOfGroup, courseFillOf,
 } = require('../frontend/src/lib/fixed-menu');
 const { useCartStore } = require('../frontend/src/store/cart');
+const { pendingDishCount } = require('../frontend/src/lib/kot');
 
 const starters = { id: 'c-start', label: 'Antipasto', is_required: true, max_choices: 1, sort_order: 0, category_ids: ['cat-start'], surcharges: [], included_product_ids: [], excluded_product_ids: [] };
 const mains = {
@@ -259,6 +262,24 @@ function main() {
     linesOf(card(40, { status: 'voided' }), card(41, { status: 'voided' })),
     2,
     'a voided row keeps a line of its own, beside the negative line that cancels it',
+  );
+
+  // ── The plates still to send ───────────────────────────────────────────
+  // The number on "Send to kitchen (n)" and on the table's badge counts
+  // plates: two tiramisù ordered together are one row and two plates.
+  const toSend = [
+    card(50, { product_id: 'p-tiramisu', product_name: 'Tiramisù', quantity: 2, kot_batch: null }),
+    row(51, { product_id: 'p-menu', product_name: 'Menu completo', quantity: 3, menu_role: 'package', menu_course_id: null, kot_batch: null }),
+    row(52, { kot_batch: null }),
+    row(53, { kot_batch: null }),
+    card(54, { quantity: 4 }),
+    card(55, { kot_batch: null, status: 'voided' }),
+    card(56, { kot_batch: null, status: 'cancelled' }),
+  ];
+  assert.equal(
+    pendingDishCount(toSend),
+    4,
+    'two tiramisù are two plates, a menu\'s two dishes one each, and the menu\'s own row, the round already sent and the rows taken off none',
   );
 
   // ── The cart ───────────────────────────────────────────────────────────

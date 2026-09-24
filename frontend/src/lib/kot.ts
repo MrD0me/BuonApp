@@ -19,19 +19,23 @@ export function isPendingKot(item: Pick<OrderItem, 'kot_batch' | 'status'>): boo
   return item.kot_batch == null && !OFF_THE_CHECK.includes(String(item.status));
 }
 
-/** The rows a "Send to kitchen (n)" button is counting. */
+/** The rows a "Send to kitchen" round will carry; the plates in them are `pendingDishCount`. */
 export function pendingKotItems<T extends Pick<OrderItem, 'kot_batch' | 'status'>>(items: T[]): T[] {
   return items.filter(isPendingKot);
 }
 
 /**
  * How many plates are still waiting to go: the number on the "N to send"
- * badge of a table. Dishes, not the priced menu line — the package row is
- * stamped with the round too, but nobody cooks it and the floor is counting
- * plates.
+ * badge of a table and on the "Send to kitchen (n)" button. Plates, not rows:
+ * a dish from the card is one row carrying its quantity, so two tiramisù
+ * ordered together are one row and two plates — counting rows said one. Not
+ * the priced menu line either: the package row is stamped with the round too,
+ * but nobody cooks it, and its dishes are a row of one apiece.
  */
-export function pendingDishCount<T extends Pick<OrderItem, 'kot_batch' | 'status' | 'menu_role'>>(items: T[]): number {
-  return pendingKotItems(items).filter((item) => item.menu_role !== 'package').length;
+export function pendingDishCount<T extends Pick<OrderItem, 'kot_batch' | 'status' | 'menu_role' | 'quantity'>>(items: T[]): number {
+  return pendingKotItems(items)
+    .filter((item) => item.menu_role !== 'package')
+    .reduce((plates, item) => plates + (Number(item.quantity) || 1), 0);
 }
 
 /**
