@@ -5,7 +5,7 @@ import { ArrowLeft, ChevronRight, ClipboardList, Plus, Send, Users } from 'lucid
 import { useTranslations } from 'use-intl';
 import type { Order, OrderItem, Product, Table } from '@/lib/types';
 import {
-  compactMenuRows, courseFillOf, menuAwareRowOrder, menuGroupsOfOrder, selectionOfGroup, type CourseFill, type MenuGroupState,
+  compactOrderRows, courseFillOf, menuAwareRowOrder, menuGroupsOfOrder, selectionOfGroup, type CourseFill, type MenuGroupState,
 } from '@/lib/fixed-menu';
 import { serviceRunOf } from '@/lib/service-runs';
 import { isPendingKot, pendingDishCount } from '@/lib/kot';
@@ -41,7 +41,8 @@ interface Props {
   onBack: () => void;
   onAddItems: () => void;
   onChangeGuests: (count: number) => Promise<void>;
-  onChangeServiceRun: (itemId: number, run: number) => Promise<void>;
+  /** Every row of a line goes: the picker sits under the line, and a line folds the rows that read the same. */
+  onChangeServiceRun: (itemIds: number[], run: number) => Promise<void>;
   /** How many menus a menu line feeds. */
   onChangeMenuCount: (groupId: string, quantity: number) => Promise<void>;
   /** What the course holds afterwards; resolves false when the check refused it. */
@@ -76,6 +77,7 @@ export function TableScreen({
     () => menuAwareRowOrder((order?.items || []).filter((item) => !OFF_THE_CHECK.includes(String(item.status)))),
     [order],
   );
+  const lines = useMemo(() => compactOrderRows(activeItems), [activeItems]);
   const groups = useMemo(() => menuGroupsOfOrder(activeItems, products), [activeItems, products]);
   const groupById = useMemo(() => new Map(groups.map((group) => [group.group_id, group])), [groups]);
   const pendingCount = pendingDishCount(activeItems);
@@ -110,12 +112,13 @@ export function TableScreen({
   };
 
   /**
-   * One dish, or — inside a menu — every portion of it that reads the same,
-   * counted: "3× Lasagne". Every line says how many, one included: a plate on
-   * its own under a menu showed a blank where the count goes, and the floor
-   * was left to read that empty space as a one.
+   * One line: a dish, with every row of it that reads the same folded in and
+   * counted — "3× Lasagne" inside a menu, "3× Coca-Cola" ordered in two goes.
+   * Every line says how many, one included: a plate on its own under a menu
+   * showed a blank where the count goes, and the floor was left to read that
+   * empty space as a one. The run picker under a line moves the whole line.
    */
-  const renderDish = (item: OrderItem, insideMenu: boolean, count = Number(item.quantity) || 1) => {
+  const renderDish = (item: OrderItem, insideMenu: boolean, count = Number(item.quantity) || 1, rows: OrderItem[] = [item]) => {
     const status = statusOf(item);
     return (
       <div key={item.id} className={`flex flex-col gap-2 py-3 ${insideMenu ? '' : 'border-b border-border last:border-0'}`}>
@@ -139,7 +142,7 @@ export function TableScreen({
               value={serviceRunOf(item)}
               sent={item.kot_batch != null}
               disabled={busy}
-              onChange={(run) => { void onChangeServiceRun(item.id, run); }}
+              onChange={(run) => { void onChangeServiceRun(rows.map((row) => row.id), run); }}
             />
           </div>
         )}
@@ -147,7 +150,7 @@ export function TableScreen({
     );
   };
 
-  const renderDishes = (rows: OrderItem[]) => compactMenuRows(rows).map((line) => renderDish(line.item, true, line.quantity));
+  const renderDishes = (rows: OrderItem[]) => compactOrderRows(rows).map((line) => renderDish(line.item, true, line.quantity));
 
   const renderMenu = (packageItem: OrderItem) => {
     const group = groupById.get(String(packageItem.menu_group_id));
@@ -244,10 +247,10 @@ export function TableScreen({
               <span className="text-sm text-muted-foreground">#<Ltr>{order.order_number}</Ltr></span>
             </div>
             <div>
-              {activeItems.map((item) => {
-                if (item.menu_role === 'package') return renderMenu(item);
-                if (item.menu_role === 'course' && item.menu_group_id) return null;
-                return renderDish(item, false);
+              {lines.map((line) => {
+                if (line.item.menu_role === 'package') return renderMenu(line.item);
+                if (line.item.menu_role === 'course' && line.item.menu_group_id) return null;
+                return renderDish(line.item, false, line.quantity, line.rows);
               })}
             </div>
           </>

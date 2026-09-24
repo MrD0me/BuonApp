@@ -36,7 +36,9 @@ volta che la finestra del menu si apriva sopra, perché stavano sullo stesso liv
   riprezza da solo;
 - l'uscita di ogni piatto alla carta, spostabile con un tocco prima e dopo l'invio
   (`PATCH /orders/:id/items/:itemId/service-run`). Dentro un menu no: lì l'ordine delle uscite lo
-  fanno le portate, e un selettore sotto ogni piatto era una colonna di pulsanti che nessuno preme;
+  fanno le portate, e un selettore sotto ogni piatto era una colonna di pulsanti che nessuno preme.
+  I piatti alla carta uguali, anche se aggiunti in più volte, sono una riga sola («3× Coca-Cola»), e
+  il selettore sotto la riga la sposta tutta;
 - **«Secondo 0/8: da scegliere»**, un pulsante a tutta larghezza sulla portata di un menu già
   mandato che ha ancora posto, con il conteggio di quanti piatti ha su quanti ne tiene: apre la
   stessa finestra del PC ristretta a quella portata e scrive con

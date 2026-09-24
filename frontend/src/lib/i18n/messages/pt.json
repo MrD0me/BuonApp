@@ -336,7 +336,7 @@
     "menuCount": "Quantos menus",
     "menuCountFailed": "Não foi possível mudar quantos menus",
     "menuCountOverflow": "Uma etapa do menu já tem mais pratos: tire primeiro o que sobra.",
-    "portionOf": "uma de {count}",
+    "portionOf": "{part, plural, one {uma} other {#}} de {count}",
     "itemRestored": "Item restaurado",
     "itemStatusCancelled": "Cancelado",
     "itemStatusPending": "Pendente",

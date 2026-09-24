@@ -771,6 +771,51 @@ console.log('\n✅ Test 6e: The bill folds the portions of a menu, and leaves ca
   assert('the rows handed in are left as they were', menuBillOrder.items.length === 9 && menuBillOrder.items[1].quantity === 1);
 }
 
+console.log('\n✅ Test 6f: The bill folds a dish from the card ordered in more than one go');
+{
+  // Every "add" at the table writes rows of its own: two Coca-Cola, and a
+  // third asked for later, are two rows on the check and one line on paper.
+  const cola = (extra: Record<string, unknown>) => ({
+    product_id: 'p-cola', product_name: 'Coca-Cola', quantity: 1, unit_price: 2.5, subtotal: 2.5, total: 2.5,
+    status: 'pending', addons: [], ...extra,
+  });
+  const cardBillOrder = {
+    order_number: 'ORD-C', created_at: '2026-09-24 20:10:00', table: { name: '4' }, guest_count: 4,
+    items: [
+      cola({ id: 1, quantity: 2, subtotal: 5, total: 5 }),
+      { id: 2, product_id: 'p-lasagne', product_name: 'Lasagne', quantity: 1, unit_price: 10, subtotal: 10, total: 10, status: 'pending', addons: [] },
+      cola({ id: 3 }),
+      cola({ id: 4, special_instructions: 'senza ghiaccio' }),
+      cola({ id: 5, unit_price: 3, subtotal: 3, total: 3 }),
+      cola({ id: 6, status: 'voided' }),
+      {
+        id: 7, product_id: 'p-cola', product_name: 'Void: Coca-Cola', quantity: 1, unit_price: -2.5, subtotal: -2.5, total: -2.5,
+        status: 'void_adjustment', addons: [],
+      },
+    ],
+  };
+  const cardBill = { bill_number: 'B-C', subtotal: 23, total: 23, discount_amount: 0 };
+  for (const template of ['compact', 'classic']) {
+    const text = escPosToText(formatReceipt(
+      cardBillOrder, cardBill, { name: 'Trattoria', currency_symbol: 'E', country: 'IT' },
+      template, 48, false, false, 'full', [], false, 'it',
+    ));
+    const lines = text.split('\n');
+    const colas = lines.filter((line) => line.startsWith('Coca-Cola'));
+    const three = colas.filter((line) => /^Coca-Cola\s+3\b/.test(line));
+    assert(`[${template}] the Coca-Cola asked for later is on the line of the first two, which says three`, three.length === 1, colas.join(' | '));
+    assert(`[${template}] and costs what the three cost`, /7[.,]50/.test(three[0] ?? ''), three.join(' | '));
+    assert(
+      `[${template}] the one with a note, the one at another price and the voided one keep their own lines`,
+      colas.length === 4 && colas.filter((line) => /^Coca-Cola\s+1\b/.test(line)).length === 3,
+      colas.join(' | '),
+    );
+    assert(`[${template}] the note is still printed`, text.includes('senza ghiaccio'));
+    assert(`[${template}] and so is the negative line beside the voided one`, lines.some((line) => /^Void: Coca-Cola\s+1\b/.test(line)));
+  }
+  assert('the rows handed in are left as they were', cardBillOrder.items.length === 7 && cardBillOrder.items[0].quantity === 2);
+}
+
 console.log('\n✅ Test 7: Test page builder');
 {
   const buf80 = buildTestPage('80mm');
@@ -1136,6 +1181,50 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     );
     assert('[frontend html] a cancelled row never reaches the paper', !html.includes('Acqua'));
     assert('[frontend html] and the dishes of a menu carry no price of their own', !/Lasagne[\s\S]*?0[.,]00/.test(htmlRows[0]), htmlRows[0]);
+  }
+
+  // And folds a dish from the card ordered in more than one go, as the
+  // thermal path does: two Coca-Cola and a third asked for later are one line,
+  // the one with a note keeps its own.
+  {
+    const cola = (extra: Record<string, unknown>) => ({
+      product_id: 'p-cola', product_name: 'Coca-Cola', quantity: 1, unit_price: 2.5, subtotal: 2.5, total: 2.5, status: 'pending', ...extra,
+    });
+    const cardOrder = {
+      ...irOrder,
+      items: [
+        cola({ id: 1, quantity: 2, subtotal: 5, total: 5 }),
+        cola({ id: 2 }),
+        cola({ id: 3, special_instructions: 'senza ghiaccio' }),
+      ],
+    };
+    for (const [name, build] of [['classic', buildClassicReceiptBytes], ['compact', buildCompactReceiptBytes]] as const) {
+      const text = Buffer.from(build(
+        { id: 'b6', bill_number: 'INV-CARD-1', order: cardOrder, subtotal: 10, discount_amount: 0, total: 10 } as any,
+        frontendTenant as any,
+        { paperWidth: 80, useUnicode: false },
+        [],
+      )).toString('utf8');
+      const colas = text.split('\n').filter((line: string) => line.includes('Coca-Cola'));
+      assert(`[frontend ${name}] two Coca-Cola and a third added later are one line, the noted one another`, colas.length === 2, colas.join(' | '));
+      assert(
+        `[frontend ${name}] and that line says three`,
+        // Compact prints the count on its own small line under the name.
+        name === 'classic' ? colas.some((line: string) => /Coca-Cola\s+3\b/.test(line)) : text.includes('3 x '),
+        text,
+      );
+    }
+    const cardHtml = generateBillHtml(
+      { id: 'b7', bill_number: 'INV-CARD-2', order: cardOrder, subtotal: 10, discount_amount: 0, total: 10 } as any,
+      { ...frontendTenant, number_digits: 'latin' } as any,
+      { useUnicode: false },
+    );
+    const colaRows = cardHtml.split('<tr>').filter((row: string) => row.includes('Coca-Cola'));
+    assert(
+      '[frontend html] two Coca-Cola and a third added later are one row of three, the noted one another',
+      colaRows.length === 2 && colaRows.some((row: string) => />\s*3\s*</.test(row)),
+      colaRows.join(' | '),
+    );
   }
 
   // The frontend classic template also needs to keep the three-character IRR

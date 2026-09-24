@@ -3,7 +3,7 @@
 import { ChevronRight, Plus } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { OrderItem } from '@/lib/types';
-import { compactMenuRows, type MenuGroupState } from '@/lib/fixed-menu';
+import { compactOrderRows, type MenuGroupState } from '@/lib/fixed-menu';
 import { serviceRunOf } from '@/lib/service-runs';
 import { isPendingKot } from '@/lib/kot';
 import { ITEM_STATUS_TONE, type Tone } from '@/lib/status-styles';
@@ -22,8 +22,8 @@ interface Props {
   canFillCourses: boolean;
   kotEnabled: boolean;
   awaitsPrice: (item: OrderItem) => boolean;
-  /** `of` is how many portions the tapped line folds: the sheet acts on one of them. */
-  onLineTap: (item: OrderItem, of: number) => void;
+  /** The row a tap acts on: on a folded line, the last one added (the sheet says so). */
+  onLineTap: (item: OrderItem) => void;
   onFillCourse: (group: MenuGroupState, courseId: string) => void;
 }
 
@@ -35,9 +35,10 @@ interface Props {
  * void — are gone; a touch monitor could not hit them and a reader could
  * not tell them apart.
  *
- * The portions of a menu that read the same are one line, "3× Lasagne": the
- * check keeps a row per portion, the floor reads a count. A tap on that line
- * acts on one portion of it.
+ * The rows that read the same are one line, "3× Lasagne" under a menu and
+ * "3× Coca-Cola" ordered in two goes: the check keeps a row per portion and
+ * per addition, the floor reads a count. A tap on that line acts on one row
+ * of it, the last one added.
  */
 export function OrderLines({
   items, menuGroups, canAct, canFillCourses, kotEnabled, awaitsPrice, onLineTap, onFillCourse,
@@ -59,7 +60,7 @@ export function OrderLines({
     return { tone, label };
   };
 
-  const lines = compactMenuRows(items);
+  const lines = compactOrderRows(items);
   // The open courses go under the menu they belong to, after its last line —
   // the rows are already grouped by menuAwareRowOrder, and a folded line sits
   // where its first portion was.
@@ -84,7 +85,7 @@ export function OrderLines({
           <div key={line.rows[0].id} className="border-b border-border last:border-0">
             <Row
               type={canAct ? 'button' : undefined}
-              onClick={canAct ? () => onLineTap(item, line.quantity) : undefined}
+              onClick={canAct ? () => onLineTap(item) : undefined}
               className={`flex min-h-touch-lg w-full items-center gap-3 rounded-xl px-2 py-2 text-start ${canAct ? 'transition active:bg-muted' : ''} ${isMenuCourse ? 'ps-6' : ''}`}
             >
               {/* Every line says how many, one included: a single plate of a
@@ -117,9 +118,10 @@ export function OrderLines({
               )}
               {!isPackage && <StatusBadge tone={status.tone} size="sm">{status.label}</StatusBadge>}
               {/* A dish inside a menu is paid for by the package: it shows a
-                  surcharge or nothing, never a bare 0,00. */}
+                  surcharge or nothing, never a bare 0,00. Any other line costs
+                  what all the rows it folds cost. */}
               <span className="w-20 shrink-0 text-end text-base font-semibold text-foreground">
-                <Ltr>{isMenuCourse ? (line.total > 0 ? `+${fmt(line.total)}` : '') : fmt(Number(item.total))}</Ltr>
+                <Ltr>{isMenuCourse ? (line.total > 0 ? `+${fmt(line.total)}` : '') : fmt(line.total)}</Ltr>
               </span>
               {canAct && <ChevronRight size={18} className="rtl-flip shrink-0 text-muted-foreground/60" />}
             </Row>

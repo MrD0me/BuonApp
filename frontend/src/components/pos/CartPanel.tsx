@@ -16,7 +16,7 @@ import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem, Category, Product } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import { cartLineTotal, menuLineDishes } from '@/lib/fixed-menu';
+import { cartLineTotal, compactOrderRows, menuAwareRowOrder, menuLineDishes } from '@/lib/fixed-menu';
 import { serviceRunOfCartLine } from '@/lib/service-runs';
 import { Ltr } from '@/components/layout/Ltr';
 import ServiceRunPicker from './ServiceRunPicker';
@@ -75,6 +75,13 @@ export default function CartPanel({ tables, products, categories, submitting, on
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
   const showTable = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
   const tableName = cart.tableId ? tables.find((table) => table.id === cart.tableId)?.name || cart.tableId : null;
+  // What the order already holds, read the way the table's own screens read
+  // it: a menu's dishes under their menu, and rows that read the same as one
+  // line — two Coca-Cola and a third added later are "3× Coca-Cola".
+  const alreadyOrdered = useMemo(
+    () => compactOrderRows(menuAwareRowOrder((existingOrder?.items || []).filter((item: OrderItem) => item.status !== 'cancelled'))),
+    [existingOrder],
+  );
 
   const handleHold = async () => {
     if (!cart.tableId) {
@@ -176,14 +183,16 @@ export default function CartPanel({ tables, products, categories, submitting, on
       {/* Lines */}
       <div className="min-h-0 flex-1 overflow-y-auto px-4">
         {/* Previously ordered items (add-items mode) */}
-        {existingOrder && existingOrder.items && existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').length > 0 && (
+        {alreadyOrdered.length > 0 && (
           <div className="border-b border-dashed border-border py-3">
             <p className="mb-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase">{t('alreadyOrdered')}</p>
             <div className="flex flex-col gap-1">
-              {existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').map((item: OrderItem) => (
-                <div key={item.id} className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span><Ltr>{item.quantity}×</Ltr> {item.product_name}</span>
-                  <Ltr>{fmt(Number(item.total))}</Ltr>
+              {alreadyOrdered.map(({ item, rows, quantity, total }) => (
+                <div key={rows[0].id} className={`flex items-center justify-between text-sm text-muted-foreground ${item.menu_role === 'course' ? 'ps-4' : ''}`}>
+                  <span><Ltr>{quantity}×</Ltr> {item.product_name}</span>
+                  {/* A dish inside a menu is paid for by the package: it shows
+                      a surcharge or nothing, as on every other screen. */}
+                  <Ltr>{item.menu_role === 'course' ? (total > 0 ? `+${fmt(total)}` : '') : fmt(total)}</Ltr>
                 </div>
               ))}
             </div>

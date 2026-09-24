@@ -312,15 +312,23 @@ export function ServerAppShell() {
     }
   };
 
-  const changeServiceRun = async (itemId: number, run: number) => {
+  /**
+   * Moves a line of the table to another wave. A line folds every row of a
+   * dish that reads the same — two Coca-Cola and a third added later — and the
+   * picker sits under the line, so all of them move: a call per row, then one
+   * refresh, which also shows a line left half moved by a call that failed.
+   */
+  const changeServiceRun = async (itemIds: number[], run: number) => {
     if (!api || !selectedOrder) return;
     setBusy(true);
     try {
-      await api.patch(`/api/orders/${selectedOrder.id}/items/${itemId}/service-run`, { service_run: run });
-      await data.refreshFloor();
+      for (const itemId of itemIds) {
+        await api.patch(`/api/orders/${selectedOrder.id}/items/${itemId}/service-run`, { service_run: run });
+      }
     } catch {
       toast.error(tOrders('serviceRunFailed'));
     } finally {
+      await data.refreshFloor().catch(() => {});
       setBusy(false);
     }
   };

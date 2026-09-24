@@ -288,6 +288,23 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   era già un pulsante che riempiva l'importo da solo, solo che sembrava un'etichetta incollata a una
   casella — l'utente ha scritto a mano importi che gli venivano riempiti da un tocco. Ora si vede
   che è un pulsante; la casella resta per il resto in contanti e per i pagamenti misti.
+- **Gli articoli uguali aggiunti dopo sono una riga sola**, deciso con l'utente il 2026-09-24. Ogni
+  «Aggiungi» scrive righe nuove, e i riepiloghi del tavolo ne disegnavano una per riga: due
+  Coca-Cola e poi una terza erano «2×» e «1×». Le righe restano quelle, perché ognuna ha il suo giro
+  di comanda, la sua uscita, il suo stato e il suo prezzo: una riga già mandata che si prendesse la
+  quantità nuova la farebbe mancare in cucina. Si mostrano sommate, con la regola con cui la comanda
+  le fondeva già (`compactKotItems`): stesso piatto, stessi aggiuntivi in qualunque ordine, stessa
+  nota senza badare a spazi e maiuscole.
+  - **A schermo** (`compactOrderRows`: pannello del tavolo, schermata del palmare, e in Ordina la
+    finestra del tavolo e «Già ordinato») servono anche lo stesso prezzo, la stessa uscita e lo
+    stesso stato in cucina. Un'aggiunta manda la comanda da sola, quindi le righe nuove si uniscono
+    subito alle vecchie. Restano a parte solo se qualcosa è davvero diverso: un invio non riuscito,
+    o un piatto che il KDS dà già in preparazione.
+  - **Al PC** la scheda di una riga sommata agisce sull'ultima aggiunta e lo dice («1× Coca-Cola ·
+    una di 3»).
+  - **Sul palmare** il selettore dell'uscita sotto la riga sposta tutta la riga.
+  - **Il preconto** somma allo stesso modo, a parità di prezzo e di aggiuntivi (`compactBillRows`, e
+    `printableBillRows` nel browser). Una riga stornata resta accanto alla sua riga negativa.
 
 ## Fuori ambito
 

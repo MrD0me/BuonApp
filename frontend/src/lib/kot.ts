@@ -33,3 +33,32 @@ export function pendingKotItems<T extends Pick<OrderItem, 'kot_batch' | 'status'
 export function pendingDishCount<T extends Pick<OrderItem, 'kot_batch' | 'status' | 'menu_role'>>(items: T[]): number {
   return pendingKotItems(items).filter((item) => item.menu_role !== 'package').length;
 }
+
+/**
+ * What makes two rows the same dish to a cook: the product and its name, the
+ * add-ons (in any order they were ticked), the note, and the variant and
+ * modifier selections. The note is compared trimmed and case-folded, so the
+ * same instruction typed on the handheld and on the till counts once, and a
+ * row carrying a note only ever matches one carrying that very note.
+ *
+ * It matches `kotItemIdentity` in `main/printers/thermal.ts`, which folds the
+ * kitchen ticket. The table screens and the printed bill fold on it too, so
+ * the three never disagree about what "the same" is. When that changes, this
+ * changes.
+ */
+export function dishIdentity(
+  item: Pick<OrderItem, 'product_id' | 'product_name' | 'special_instructions' | 'addons' | 'variant_selection' | 'modifier_selection'>,
+): string {
+  const addons = (item.addons || [])
+    .filter((addon) => addon?.name)
+    .map((addon) => JSON.stringify([String(addon.name), Number(addon.quantity) || 1]))
+    .sort();
+  return JSON.stringify([
+    item.product_id ?? null,
+    String(item.product_name ?? ''),
+    String(item.special_instructions ?? '').trim().toLowerCase(),
+    addons,
+    item.variant_selection ?? null,
+    item.modifier_selection ?? null,
+  ]);
+}

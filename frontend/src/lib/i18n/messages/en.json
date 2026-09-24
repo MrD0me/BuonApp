@@ -336,7 +336,7 @@
     "menuCount": "How many menus",
     "menuCountFailed": "Could not change how many menus",
     "menuCountOverflow": "A course already holds more dishes than that: take the extra one off first.",
-    "portionOf": "one of {count}",
+    "portionOf": "{part, plural, one {one} other {#}} of {count}",
     "itemRestored": "Item restored",
     "itemStatusCancelled": "Cancelled",
     "itemStatusPending": "Pending",

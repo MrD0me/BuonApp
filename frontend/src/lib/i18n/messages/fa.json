@@ -336,7 +336,7 @@
     "menuCount": "تعداد منو",
     "menuCountFailed": "تغییر تعداد منوها ممکن نشد",
     "menuCountOverflow": "یکی از بخش‌های منو غذای بیشتری دارد: اول غذای اضافه را بردارید.",
-    "portionOf": "یکی از {count}",
+    "portionOf": "{part, plural, one {یکی} other {#}} از {count}",
     "itemRestored": "کالا بازگردانده شد",
     "itemStatusCancelled": "لغوشده",
     "itemStatusPending": "در انتظار",
