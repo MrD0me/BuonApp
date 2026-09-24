@@ -148,6 +148,19 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   // A dish with nothing to choose goes straight onto the ticket.
   await page.getByRole('button', { name: 'E2E Coffee', exact: false }).first().click();
   await expect(page.getByRole('button', { name: /Ticket/ })).toContainText('1');
+  // A plate tapped by mistake comes off from its own row, and the − goes dark
+  // once there is nothing left to take off.
+  const removeCoffee = page.getByRole('button', { name: 'Remove one E2E Coffee' });
+  await expect(removeCoffee).toBeEnabled();
+  await removeCoffee.click();
+  await expect(removeCoffee).toBeDisabled();
+  // The search empties in one tap and keeps the focus for the next dish.
+  const search = page.getByPlaceholder('Search menu');
+  await search.fill('Tea');
+  await page.getByRole('button', { name: 'Clear search' }).click();
+  await expect(search).toHaveValue('');
+  await expect(search).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Clear search' })).toHaveCount(0);
   // A dish with add-ons opens its options first.
   await page.getByRole('button', { name: 'E2E Tea', exact: false }).first().click();
   await expect(page.getByText('Special Instructions')).toBeVisible();

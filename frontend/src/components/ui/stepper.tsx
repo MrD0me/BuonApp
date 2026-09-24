@@ -29,11 +29,13 @@ interface StepperProps {
   increaseLabel: string
   disabled?: boolean
   className?: string
+  /** For the number: a list of steppers can quiet the ones still at nought. */
+  valueClassName?: string
 }
 
 function Stepper({
   value, onChange, min = 0, max = Number.MAX_SAFE_INTEGER, size = "md",
-  decreaseLabel, increaseLabel, disabled = false, className,
+  decreaseLabel, increaseLabel, disabled = false, className, valueClassName,
 }: StepperProps) {
   const s = SIZES[size]
   const button = cn(
@@ -51,7 +53,7 @@ function Stepper({
       >
         <Minus className={s.icon} />
       </button>
-      <Ltr className={cn("text-foreground text-center font-bold tabular-nums", s.value)}>{value}</Ltr>
+      <Ltr className={cn("text-foreground text-center font-bold tabular-nums", s.value, valueClassName)}>{value}</Ltr>
       <button
         type="button"
         aria-label={increaseLabel}
