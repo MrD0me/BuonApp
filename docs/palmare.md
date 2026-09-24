@@ -70,11 +70,14 @@ Il tocco sulla riga, e il `+`, fanno quello che fa il tocco sul PC:
 niente da decidere, e una finestra per ogni piatto era un tocco in più tutta la sera. La matita apre
 comunque nota e quantità.
 
-Il numero fra `−` e `+` conta il piatto ovunque sia in comanda, anche dentro i menu. Il `−` serve a
-togliere un tocco sbagliato dalla riga stessa, senza aprire la comanda e tornare indietro. Toglie un
-piatto dalla riga che il `+` riempie, quella semplice senza note né aggiunte; se non c'è, dall'ultima
-riga di quel piatto. Un piatto scelto dentro un menu non lo tocca: si toglie nella finestra del
-menu. Quando non resta niente che possa togliere, il `−` si spegne.
+Il numero fra `−` e `+` conta i piatti ordinati da soli, come la griglia del PC. Un piatto scelto
+dentro un menu fisso appartiene al menu, e si vede in comanda sotto di lui. Fino al 2026-09-24
+contava anche lui: chiusa la finestra del menu, la riga di ogni suo piatto risultava selezionata,
+con un `−` che non poteva toglierlo. La riga del menu conta i menu, e il suo `−` resta spento: un
+menu si toglie dalla comanda. Il `−` serve a togliere un tocco sbagliato dalla riga stessa, senza
+aprire la comanda e tornare indietro. Toglie un piatto dalla riga che il `+` riempie, quella
+semplice senza note né aggiunte; se non c'è, dall'ultima riga di quel piatto. Quando non resta
+niente che possa togliere, il `−` si spegne.
 
 La comanda è una barra fissa in basso che dice quanti piatti e quanto, e un tocco la apre a schermo
 intero: righe da 48 px con il cestino, lo stepper e un pulsante con l'uscita corrente («2ª uscita»)
