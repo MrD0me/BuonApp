@@ -60,6 +60,11 @@ export interface PosSettingsState {
   // bookings carry their own name and phone, so they are unaffected. Synced
   // from the backend on auth load (see Sidebar.tsx).
   customersEnabled: boolean;
+  // Whether the Server App (the waiters' handhelds) is switched on. Off means
+  // no Palmari entry in the sidebar: there is no page for a phone to open.
+  // Synced from the backend on auth load (see Sidebar.tsx) and updated by the
+  // settings page after a toggle.
+  serverAppEnabled: boolean;
   // Whether the WhatsApp integration is enabled on this tenant. Synced from
   // the backend on auth load so the sidebar can hide the nav entry when the
   // feature is off, and updated by the WhatsApp page after the user toggles.
@@ -95,6 +100,7 @@ export interface PosSettingsState {
   setKdsEnabled: (v: boolean) => void;
   setKotPrintingEnabled: (v: boolean) => void;
   setCustomersEnabled: (v: boolean) => void;
+  setServerAppEnabled: (v: boolean) => void;
   setWhatsappEnabled: (v: boolean) => void;
 }
 
@@ -134,6 +140,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       kdsEnabled: true,
       kotPrintingEnabled: true,
       customersEnabled: true,
+      serverAppEnabled: true,
       // Default false so the sidebar hides the WhatsApp nav entry until the
       // tenant actually enables the integration. Synced from /api/whatsapp/status
       // on auth load (see Sidebar.tsx) and updated by the WhatsApp page after
@@ -170,6 +177,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setKdsEnabled: (v) => set({ kdsEnabled: v }),
       setKotPrintingEnabled: (v) => set({ kotPrintingEnabled: v }),
       setCustomersEnabled: (v) => set({ customersEnabled: v }),
+      setServerAppEnabled: (v) => set({ serverAppEnabled: v }),
       setWhatsappEnabled: (v: boolean) => set({ whatsappEnabled: v }),
     }),
     {
