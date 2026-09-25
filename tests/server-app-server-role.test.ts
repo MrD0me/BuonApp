@@ -252,6 +252,21 @@ async function main() {
     } finally {
       upsertSettings({ server_app_enabled: 'true' });
     }
+
+    // Signing out has to outlast a restart of the PC. The phone forgets its
+    // token, but a copy of it (the handheld speaks plain HTTP on the Wi-Fi)
+    // must not come back to life when the process loses what it held in memory.
+    const token = serverLogin.body.access_token;
+    const signOut = await postJson(baseUrl, '/api/auth/logout', {}, token);
+    assert.equal(signOut.status, 200, 'server can sign out of the Server App');
+    assert.equal((await getJson(baseUrl, '/api/auth/me', token)).status, 401, 'the token is refused once signed out');
+    const { clearInMemoryRevokedTokens } = await import('../main/middleware/security');
+    clearInMemoryRevokedTokens();
+    assert.equal(
+      (await getJson(baseUrl, '/api/auth/me', token)).status,
+      401,
+      'and still refused after a restart, when only the database remembers the sign-out',
+    );
   } finally {
     await stopServerApp();
     await new Promise<void>((resolve) => mainApi.close(() => resolve()));

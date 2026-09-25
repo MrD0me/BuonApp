@@ -277,7 +277,17 @@ export function startServerApp(): Promise<void> {
 
     app.post('/api/auth/logout', requireServerAppAuth, (req: Request, res: Response) => {
       const token = req.headers.authorization?.split(' ')[1];
-      if (token) revokeToken(token);
+      if (token) {
+        // With its expiry the revocation is written to the database, as on the
+        // main API and the KDS; without one it lived only in this process, and
+        // a restart of the PC brought the signed-out token back to life.
+        try {
+          const decoded = jwt.verify(token, getJWTSecret()) as { exp?: number };
+          revokeToken(token, typeof decoded.exp === 'number' ? decoded.exp * 1000 : undefined);
+        } catch {
+          revokeToken(token);
+        }
+      }
       res.json({ success: true });
     });
 
