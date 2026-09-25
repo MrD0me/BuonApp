@@ -1,6 +1,7 @@
 import type { CartItem, FixedMenuCourse, FixedMenuSelection, OrderItem, Product } from './types';
-import { isPendingKot } from './kot';
+import { dishIdentity, isPendingKot } from './kot';
 import { serviceRunOf } from './service-runs';
+import { roundMoney } from './utils';
 
 /**
  * Client-side helpers for the fixed menu (docs/coperto-e-menu-fisso.md).
@@ -446,12 +447,12 @@ export function courseFillOf(selection: FixedMenuSelection, courseId: string): C
     }));
 }
 
-/** One line of a check as the screen draws it: portions that read the same, folded. */
+/** One line of a check as the screen draws it: rows that read the same, folded. */
 export interface OrderRowLine {
   /**
-   * The row a tap on the line acts on: the newest of the portions it folds.
-   * They share dish, note, run and state, so any one of them would do, and
-   * the newest is the likeliest to still be waiting.
+   * The row a tap on the line acts on: the newest of the rows it folds — the
+   * last one added. They share dish, note, price, run and state, so any one of
+   * them would do, and the newest is the likeliest to still be waiting.
    */
   item: OrderItem;
   /** Every row the line folds, oldest first. */
@@ -460,42 +461,67 @@ export interface OrderRowLine {
   total: number;
 }
 
-function sameMenuPortion(left: OrderItem, right: OrderItem): boolean {
-  return left.menu_role === 'course'
-    && right.menu_role === 'course'
-    && Boolean(left.menu_group_id)
-    && left.menu_group_id === right.menu_group_id
-    && (left.menu_course_id ?? null) === (right.menu_course_id ?? null)
-    && left.product_id === right.product_id
-    && Number(left.unit_price) === Number(right.unit_price)
-    && (left.special_instructions || '').trim() === (right.special_instructions || '').trim()
-    && serviceRunOf(left) === serviceRunOf(right)
-    && left.status === right.status
-    && isPendingKot(left) === isPendingKot(right);
+/** A row of an off-menu product that nobody has priced yet: it says so, so a priced one is another line. */
+function awaitingPrice(row: OrderItem): boolean {
+  return Boolean(row.price_required) && !row.price_confirmed;
 }
 
 /**
- * Folds the portions of a menu that read the same — dish, note, run and state
- * — into one line, for the screen. Nothing else is folded.
+ * Which line a row folds into, or null for a row that is always a line of
+ * its own.
  *
- * Every portion is a row of its own on the check, so the kitchen's progress,
- * the run and the void work dish by dish. The floor reads "3× Lasagne". An
- * action on a folded line acts on one portion of it (`item`), which is how one
- * lasagna of three comes off the check while the other two stay.
+ * Two rows fold when the kitchen ticket would print them as one dish
+ * (`dishIdentity`) and the screen has nothing to tell apart either: the same
+ * price, the same run, the same state in the kitchen — "to send" included —
+ * and, off the menu, the same wait for a price. A dish added again later
+ * reads "3× Coca-Cola" once its round has gone like the first; while one
+ * batch is still to send, or the kitchen has one in hand, they are two lines
+ * because they are two different things.
+ *
+ * A menu's own row never folds, a dish of a menu folds only with the portions
+ * of that menu and course, and a voided row is left beside the negative line
+ * that cancels it: that pair is how a void is meant to show.
  */
-export function compactMenuRows(rows: OrderItem[]): OrderRowLine[] {
+function lineKey(row: OrderItem): string | null {
+  const state = [serviceRunOf(row), row.status, isPendingKot(row)];
+  if (row.menu_role === 'course') {
+    return row.menu_group_id
+      ? JSON.stringify(['menu', row.menu_group_id, row.menu_course_id ?? null, dishIdentity(row), Number(row.unit_price) || 0, ...state])
+      : null;
+  }
+  if (row.menu_role || ['voided', 'void_adjustment'].includes(String(row.status))) return null;
+  const addonPrices = (row.addons || [])
+    .filter((addon) => addon?.name)
+    .map((addon) => JSON.stringify([String(addon.name), Number(addon.quantity) || 1, Number(addon.price) || 0]))
+    .sort();
+  return JSON.stringify(['card', dishIdentity(row), Number(row.unit_price) || 0, addonPrices, awaitingPrice(row), ...state]);
+}
+
+/**
+ * Folds the rows that read the same into one line, for the screen.
+ *
+ * Every portion of a menu is a row of its own on the check, and every "add"
+ * writes rows of its own, so the kitchen's progress, the run and the void work
+ * row by row. The floor reads "3× Lasagne" and "3× Coca-Cola": the line sits
+ * where its first row was, and counts and costs what all of them do. An action
+ * on a folded line acts on one row of it (`item`), which is how one lasagna of
+ * three, or the last Coca-Cola added, comes off the check while the rest stay.
+ */
+export function compactOrderRows(rows: OrderItem[]): OrderRowLine[] {
   const lines: OrderRowLine[] = [];
+  const lineOf = new Map<string, OrderRowLine>();
   for (const row of rows) {
-    const same = row.menu_role === 'course'
-      ? lines.find((line) => sameMenuPortion(line.rows[0], row))
-      : undefined;
+    const key = lineKey(row);
+    const same = key === null ? undefined : lineOf.get(key);
     if (!same) {
-      lines.push({ item: row, rows: [row], quantity: Number(row.quantity) || 0, total: Number(row.total) || 0 });
+      const line = { item: row, rows: [row], quantity: Number(row.quantity) || 0, total: Number(row.total) || 0 };
+      lines.push(line);
+      if (key !== null) lineOf.set(key, line);
       continue;
     }
     same.rows.push(row);
     same.quantity += Number(row.quantity) || 0;
-    same.total += Number(row.total) || 0;
+    same.total = roundMoney(same.total + (Number(row.total) || 0));
     if (row.id > same.item.id) same.item = row;
   }
   return lines;

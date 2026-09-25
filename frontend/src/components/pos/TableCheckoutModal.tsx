@@ -8,8 +8,8 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem } from '@/lib/types';
-import { pendingKotItems } from '@/lib/kot';
-import { compactMenuRows, menuAwareRowOrder } from '@/lib/fixed-menu';
+import { pendingDishCount } from '@/lib/kot';
+import { compactOrderRows, menuAwareRowOrder } from '@/lib/fixed-menu';
 import { usePosSettingsStore } from '@/store/pos-settings';
 
 interface Props {
@@ -33,12 +33,6 @@ export default function TableCheckoutModal({
 }: Props) {
   const t = useTranslations('pos');
   const fmt = useFormatCurrency();
-  const formatItemTotal = (value: unknown, fallback: unknown) => {
-    const total = Number(value);
-    if (Number.isFinite(total)) return fmt(total);
-    const subtotal = Number(fallback);
-    return fmt(Number.isFinite(subtotal) ? subtotal : 0);
-  };
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [addingItems, setAddingItems] = useState(false);
@@ -117,8 +111,9 @@ export default function TableCheckoutModal({
 
   // Filter active items (not cancelled)
   const activeItems = (order.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
-  // Rows still waiting for a kitchen ticket — what the send button will carry.
-  const pendingKotRows = pendingKotItems(activeItems);
+  // The plates still waiting for a kitchen ticket — what the send button will
+  // carry, counted as the order panel and the floor count them.
+  const pendingPlates = pendingDishCount(activeItems);
 
   return (
     <>
@@ -148,9 +143,10 @@ export default function TableCheckoutModal({
           <div className="mb-3">
             <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">{t('previousItems')}</p>
             <div className="space-y-1">
-              {/* A menu's portions that read the same are one line, "3x Lasagne",
-                  under the menu that pays for them. */}
-              {compactMenuRows(menuAwareRowOrder(activeItems)).map(({ item, rows, quantity, total }) => (
+              {/* Rows that read the same are one line: a menu's portions,
+                  "3x Lasagne" under the menu that pays for them, and a dish
+                  added again later, "3x Coca-Cola". */}
+              {compactOrderRows(menuAwareRowOrder(activeItems)).map(({ item, rows, quantity, total }) => (
                 <div key={rows[0].id} className={`flex justify-between items-start py-1.5 px-2 bg-gray-50 rounded-lg ${item.menu_role === 'course' ? 'ms-4' : ''}`}>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-gray-700 font-medium">
@@ -170,7 +166,7 @@ export default function TableCheckoutModal({
                   <span className="text-xs text-gray-600 ms-2 font-medium">
                     {item.menu_role === 'course'
                       ? (total > 0 ? `+${fmt(total)}` : '')
-                      : formatItemTotal(item.total, item.subtotal)}
+                      : fmt(total)}
                   </span>
                 </div>
               ))}
@@ -197,7 +193,7 @@ export default function TableCheckoutModal({
 
           {/* Sending to the kitchen is its own step, separate from billing:
               it carries the rows that have never been on a ticket. */}
-          {kotPrintingEnabled && onSendToKitchen && pendingKotRows.length > 0 && (
+          {kotPrintingEnabled && onSendToKitchen && pendingPlates > 0 && (
             <Button
               onClick={handleSendToKitchen}
               disabled={sendingToKitchen}
@@ -205,7 +201,7 @@ export default function TableCheckoutModal({
               size="lg"
             >
               <ChefHat size={16} className="me-2" />
-              {sendingToKitchen ? t('kotSending') : t('sendToKitchen', { count: pendingKotRows.length })}
+              {sendingToKitchen ? t('kotSending') : t('sendToKitchen', { count: pendingPlates })}
             </Button>
           )}
 

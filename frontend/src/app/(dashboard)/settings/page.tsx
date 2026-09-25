@@ -28,6 +28,8 @@ import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
+import { ServerAppAccess } from '@/components/settings/ServerAppAccess';
+import { WHATSAPP_AVAILABLE } from '@/lib/features';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
@@ -321,7 +323,10 @@ export default function SettingsPage() {
   const [tableInfo, setTableInfo] = useState<{ name: string; rows: number }[]>([]);
 
   const searchParams = useSearchParams();
-  const requestedTab = searchParams?.get('tab') || 'store';
+  const tabParam = searchParams?.get('tab') || 'store';
+  // WhatsApp is switched off (lib/features.ts): an old link to its tab opens
+  // the store details rather than a page with nothing on it.
+  const requestedTab = tabParam === 'whatsapp' && !WHATSAPP_AVAILABLE ? 'store' : tabParam;
   // ── DB tools: master PIN, health check, initialize ──────────────────────
   // activeTab/healthCheckOpen/initializeDbOpen/pinGate read their initial value from the
   // ?tab=/?action= deep-link params directly. activeTab also stays synchronized below when
@@ -663,25 +668,6 @@ export default function SettingsPage() {
     }).catch(() => {
       toast.error(t('kdsInfoFetchFailed'));
     }).finally(() => setKdsInfoLoading(false));
-  };
-
-  // ── Server App pairing (tableside ordering) ───────────────────────────────
-  const [serverAppInfo, setServerAppInfo] = useState<{
-    mdns_url: string;
-    ip_url: string;
-    qr_url: string;
-    qr_data_url: string | null;
-    ips_data?: { ip: string; url: string; qr_data: string | null }[];
-  } | null>(null);
-  const [serverAppInfoLoading, setServerAppInfoLoading] = useState(false);
-
-  const fetchServerAppInfo = () => {
-    setServerAppInfoLoading(true);
-    api.get('/server-app-info').then((res) => {
-      setServerAppInfo(res.data);
-    }).catch(() => {
-      toast.error(t('serverAppInfoFetchFailed'));
-    }).finally(() => setServerAppInfoLoading(false));
   };
 
   // ── POS pairing (add a cashier device) ────────────────────────────────────
@@ -1325,7 +1311,9 @@ export default function SettingsPage() {
       });
 
     api.get('/settings/server_app_enabled').then((res) => {
-      setServerAppEnabledSetting(res.data.setting?.value !== 'false');
+      const enabled = res.data.setting?.value !== 'false';
+      setServerAppEnabledSetting(enabled);
+      posSettings.setServerAppEnabled(enabled);
     }).catch(() => {});
 
     api.get('/settings/customers_enabled').then((res) => {
@@ -1610,15 +1598,17 @@ export default function SettingsPage() {
   const saveServerAppEnabled = async (enabled: boolean) => {
     const previous = serverAppEnabledSetting;
     setServerAppEnabledSetting(enabled);
+    // The sidebar's Palmari entry follows the switch without a reload.
+    posSettings.setServerAppEnabled(enabled);
     setSavingServerAppEnabled(true);
     try {
       await api.put('/settings/server_app_enabled', { value: enabled ? 'true' : 'false' });
-      if (!enabled) setServerAppInfo(null);
       toast.success(enabled
         ? t('serverAppEnabledOn')
         : t('serverAppEnabledOff'));
     } catch {
       setServerAppEnabledSetting(previous);
+      posSettings.setServerAppEnabled(previous);
       toast.error(t('saveFailed'));
     } finally {
       setSavingServerAppEnabled(false);
@@ -1879,8 +1869,11 @@ export default function SettingsPage() {
             <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tablesideOrdering')} value="server-app" active={activeTab} onClick={handleSettingsTabChange} />
             {/* WhatsApp opt-in lives under Operations because the receive-bill
-                workflow is what the cashier touches every time a customer pays. */}
-            <SettingsNavItem label={t('tabWhatsapp')} value="whatsapp" active={activeTab} onClick={handleSettingsTabChange} />
+                workflow is what the cashier touches every time a customer pays.
+                Switched off for now (lib/features.ts). */}
+            {WHATSAPP_AVAILABLE && (
+              <SettingsNavItem label={t('tabWhatsapp')} value="whatsapp" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
@@ -2841,92 +2834,9 @@ export default function SettingsPage() {
                   {t('serverAppPairingHint')}
                 </p>
 
-                {serverAppInfoLoading && (
-                  <div className="flex items-center justify-center py-10">
-                    <div className="w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-
-                {serverAppInfo && !serverAppInfoLoading && (
-                  <div className="flex flex-col gap-6 w-full">
-                    {serverAppInfo.ips_data && serverAppInfo.ips_data.length > 0 ? (
-                      <>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
-                          {serverAppInfo.ips_data.map((ipInfo: { ip: string; url: string; qr_data: string | null }, idx: number) => (
-                            <div key={idx} className="flex flex-col items-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                                {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}
-                              </p>
-                              {ipInfo.qr_data ? (
-                                <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-white p-2 border border-gray-100" />
-                              ) : (
-                                <div className="w-40 h-40 bg-gray-100 rounded-lg flex items-center justify-center mb-3">
-                                  <QrCode size={40} className="text-gray-400" />
-                                </div>
-                              )}
-                              <Ltr as="a" href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
-                                {ipInfo.url}
-                              </Ltr>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
-                          <Ltr as="a" href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
-                            {serverAppInfo.mdns_url}
-                          </Ltr>
-                          <p className="text-xs text-blue-600 mt-2">{t('appleDevicesHint')}</p>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex flex-col sm:flex-row gap-6 items-start">
-                        <div className="shrink-0">
-                          {serverAppInfo.qr_data_url ? (
-                            <img src={serverAppInfo.qr_data_url} alt={t('serverAppQrAlt')} className="w-48 h-48 rounded-xl border border-gray-200" />
-                          ) : (
-                            <div className="w-48 h-48 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400">
-                              <QrCode size={48} />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1 space-y-4">
-                          <div>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('directIp')}</p>
-                            <Ltr as="a" href={serverAppInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
-                              {serverAppInfo.ip_url}
-                            </Ltr>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('mdnsAlwaysStable')}</p>
-                            <Ltr as="a" href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
-                              {serverAppInfo.mdns_url}
-                            </Ltr>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex justify-end border-t border-gray-200 pt-4">
-                      <button onClick={fetchServerAppInfo} disabled={serverAppInfoLoading}
-                        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800">
-                        <RefreshCw size={14} className={serverAppInfoLoading ? 'animate-spin' : ''} />
-                        {t('refreshUrls')}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {!serverAppInfo && !serverAppInfoLoading && (
-                  <>
-                    <p className="text-sm text-gray-500 mb-3">
-                      {t('serverAppLoadHint')}
-                    </p>
-                    <button onClick={fetchServerAppInfo}
-                      className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
-                      {t('loadServerAppInfo')}
-                    </button>
-                  </>
-                )}
+                {/* Mounted once the switch is saved: the addresses are asked for
+                    as it appears, and asked too early they would answer 404. */}
+                {!savingServerAppEnabled && <ServerAppAccess />}
               </div>
             )}
           </div>
@@ -3477,19 +3387,22 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Share2 size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('whatsappSharing')}</h2>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">{t('enableWhatsappShare')}</p>
-                  <p className="text-sm text-gray-500">{t('enableWhatsappShareHint')}</p>
+            {/* WhatsApp is switched off (lib/features.ts). */}
+            {WHATSAPP_AVAILABLE && (
+              <div className="bg-white rounded-xl border border-gray-100 p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Share2 size={20} className="text-gray-500" />
+                  <h2 className="font-semibold text-gray-900">{t('whatsappSharing')}</h2>
                 </div>
-                <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }))} />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">{t('enableWhatsappShare')}</p>
+                    <p className="text-sm text-gray-500">{t('enableWhatsappShareHint')}</p>
+                  </div>
+                  <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }))} />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
             <div className="space-y-6">
@@ -3938,24 +3851,27 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* Integrations tab — cloud + OrderFlow + More Apps */}
-        <TabsContent value="whatsapp">
-          <div className="pb-6 max-w-3xl space-y-6">
-            {!whatsappEnabled ? (
-              <WhatsAppEnableCard />
-            ) : (
-              <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-semibold text-gray-900">{tWhatsappSettings('enabled')}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{tWhatsappSettings('enabledHint')}</p>
+        {/* Integrations tab — cloud + OrderFlow + More Apps. WhatsApp is
+            switched off (lib/features.ts). */}
+        {WHATSAPP_AVAILABLE && (
+          <TabsContent value="whatsapp">
+            <div className="pb-6 max-w-3xl space-y-6">
+              {!whatsappEnabled ? (
+                <WhatsAppEnableCard />
+              ) : (
+                <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-semibold text-gray-900">{tWhatsappSettings('enabled')}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{tWhatsappSettings('enabledHint')}</p>
+                  </div>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/whatsapp">{tWhatsappSettings('openConnection')}</Link>
+                  </Button>
                 </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/whatsapp">{tWhatsappSettings('openConnection')}</Link>
-                </Button>
-              </div>
-            )}
-          </div>
-        </TabsContent>
+              )}
+            </div>
+          </TabsContent>
+        )}
 
         {/* About tab */}
         {/* Software Updates tab */}

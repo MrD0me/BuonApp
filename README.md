@@ -19,7 +19,7 @@
   <img src="docs/images/buonapp-pos.webp" alt="BuonApp POS screen showing product selection and an active dine-in order" width="100%">
 </p>
 
-BuonApp runs on the restaurant's own computer. Orders, tables, bills, and backups live in a local SQLite database, so the till, the floor map, and the kitchen printers keep working when the internet does not. There is no account to create, no vendor server to phone home to, and no usage telemetry. The only features that reach the network are the ones the owner switches on — Google Drive backup and WhatsApp bill delivery — plus the update check against this repository's own releases.
+BuonApp runs on the restaurant's own computer. Orders, tables, bills, and backups live in a local SQLite database, so the till, the floor map, and the kitchen printers keep working when the internet does not. There is no account to create, no vendor server to phone home to, and no usage telemetry. The only feature that reaches the network is one the owner switches on — Google Drive backup — plus the update check against this repository's own releases. WhatsApp bill delivery is still in the code, but switched off.
 
 > BuonApp began as a fork of [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe) and has diverged since: the cloud bridge and the telemetry are gone, the dining room is modelled as a map with service days and reservations, and kitchen tickets print by round. See the [changelog](CHANGELOG.md) for what changed and why.
 
@@ -72,7 +72,7 @@ Order entry, billing, table management, kitchen tickets, and printing never depe
 - **No vendor channel:** The cloud bridge that used to register the installation with a vendor dashboard, and the anonymous telemetry that ran beside it, were removed in 4.0.0 — service, outbox tables, settings, and stored credentials alike. Migration v80 clears them from existing databases, and restoring an old backup does not bring them back.
 - **Data location:** The SQLite database and local backups live in the operating-system user-data directory, separate from the installed binaries, and survive in-place updates. Take a manual backup anyway before reinstalling or moving to another machine.
 - **Upgrading from Flo Cafe:** On first launch BuonApp copies an existing `flo-desktop` user-data directory into its own, so an install that predates the rename keeps its database, backups, Google Drive token, Master PIN, and WhatsApp session. The old directory is copied, not moved, so rolling back to an older build still finds its data.
-- **Optional network features:** Google Drive backup and WhatsApp bill delivery reach the network only once the owner configures and enables them, and fail gracefully when offline.
+- **Optional network features:** Google Drive backup reaches the network only once the owner configures and enables it, and fails gracefully when offline. WhatsApp bill delivery is still in the code but switched off (`WHATSAPP_AVAILABLE` in `main/features.ts` and `frontend/src/lib/features.ts`): no screen offers it and its service never starts.
 - **On the LAN:** The POS advertises itself over mDNS as `buonapp.local` — the till on `:3001`, the kitchen display on `:3002`, and the handheld Server App on `:3003`.
 
 ## Languages

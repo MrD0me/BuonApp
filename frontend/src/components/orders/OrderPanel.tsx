@@ -24,11 +24,12 @@ import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
+import { WHATSAPP_AVAILABLE } from '@/lib/features';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useSendKot } from '@/hooks/useSendKot';
 import { pendingDishCount, pendingKotItems } from '@/lib/kot';
 import {
-  courseFillOf, menuAwareRowOrder, menuGroupsOfOrder, selectionOfGroup, type CourseFillEntry, type MenuGroupState,
+  compactOrderRows, courseFillOf, menuAwareRowOrder, menuGroupsOfOrder, selectionOfGroup, type CourseFillEntry, type MenuGroupState,
 } from '@/lib/fixed-menu';
 import { useCatalogStore } from '@/store/catalog';
 import { ORDER_STATUS_TONE, PAYMENT_STATUS_TONE, TONE_STYLES } from '@/lib/status-styles';
@@ -200,8 +201,6 @@ export function OrderPanel({
   const [rowEdit, setRowEdit] = useState<RowEdit | null>(null);
   // The row whose action sheet is open, by id so a refetch never leaves it stale.
   const [lineSheetId, setLineSheetId] = useState<number | null>(null);
-  // How many portions the tapped line folded: the sheet acts on one of them, and says so.
-  const [lineSheetOf, setLineSheetOf] = useState(1);
   const [savingRow, setSavingRow] = useState(false);
 
 
@@ -825,6 +824,11 @@ export function OrderPanel({
   // The row the sheet is open on, read fresh from the order so a refetch
   // underneath it (a run moved, a price saved) is what the sheet shows.
   const sheetItem = lineSheetId != null ? (order.items || []).find((row) => row.id === lineSheetId) ?? null : null;
+  // And the line it was tapped on, read just as fresh: the sheet acts on that
+  // one row and says how many the line holds, "una di 3".
+  const sheetLine = sheetItem
+    ? compactOrderRows(activeItems).find((line) => line.rows.some((row) => row.id === sheetItem.id))
+    : undefined;
   const sheetSwappable = sheetItem && sheetItem.menu_role === 'course' && sheetItem.menu_course_id && sheetItem.status === 'pending' && !paid
     ? menuGroups.find((entry) => entry.group_id === sheetItem.menu_group_id)
     : undefined;
@@ -845,7 +849,8 @@ export function OrderPanel({
             timeSince={getTimeSince(order.created_at)}
             actions={(
               <>
-                {paid && order.customer?.phone && (
+                {/* WhatsApp is switched off (lib/features.ts). */}
+                {WHATSAPP_AVAILABLE && paid && order.customer?.phone && (
                   <Button
                     type="button"
                     variant="outline"
@@ -964,7 +969,7 @@ export function OrderPanel({
               canFillCourses={!paid && orderOpen}
               kotEnabled={kotPrintingEnabled}
               awaitsPrice={awaitsPrice}
-              onLineTap={(item, of) => { setLineSheetId(item.id); setLineSheetOf(of); }}
+              onLineTap={(item) => setLineSheetId(item.id)}
               onFillCourse={(group, courseId) => setMenuFill({ group, courseId })}
             />
 
@@ -1109,7 +1114,7 @@ export function OrderPanel({
       {sheetItem && (
         <LineActionSheet
           item={sheetItem}
-          portionOf={sheetItem.menu_role === 'course' ? lineSheetOf : 1}
+          portionOf={sheetLine?.quantity}
           menuCount={sheetItem.menu_role === 'package' && sheetItem.menu_group_id && !paid && orderOpen
             ? {
               value: Math.max(1, Number(sheetItem.quantity) || 1),

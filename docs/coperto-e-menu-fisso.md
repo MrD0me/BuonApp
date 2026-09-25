@@ -384,8 +384,9 @@ mangino alla carta.
 - **i piatti restano una riga per porzione**, come prima. Stato in cucina, uscita, nota e annullo col
   PIN continuano a lavorare piatto per piatto, e il riempimento abbina ancora uno a uno. «Lasagne 3»
   è solo come si mostrano: la comanda le fondeva già (`compactKotItems`, dalla bba2981), il
-  preconto le fonde ora (`compactMenuCourseRows`, e `printableBillRows` nel browser), e le schermate
-  del tavolo pure (`compactMenuRows`);
+  preconto le fonde ora (`compactBillRows`, e `printableBillRows` nel browser), e le schermate
+  del tavolo pure (`compactOrderRows`). Dal 2026-09-24 le stesse funzioni sommano anche i piatti
+  alla carta aggiunti in più volte (vedi [order-flow-and-navigation.md](order-flow-and-navigation.md));
 - **una portata tiene al massimo `max_choices × N` piatti.** Mancare non ferma niente, il secondo si
   decide dopo; troppi sì, perché il nono primo su otto menu si ordina alla carta. «Prevista» vuol
   dire: segnala finché i piatti sono meno di N;

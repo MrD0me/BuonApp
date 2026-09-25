@@ -311,7 +311,7 @@ export default function FixedMenuPicker({
           <p className="px-4 py-3 text-sm text-muted-foreground">{t('menuHasNoCourses')}</p>
         )}
 
-        {courses.map((course) => {
+        {courses.map((course, index) => {
           const count = countOfCourse(course.id);
           const capacity = capacityOf(course.max_choices);
           const tooMany = count > capacity;
@@ -325,13 +325,28 @@ export default function FixedMenuPicker({
                   : null;
 
           return (
-            <section key={course.id} aria-label={course.label}>
+            <section
+              key={course.id}
+              aria-label={course.label}
+              className={index > 0 ? 'border-t border-muted-foreground/40' : undefined}
+            >
               {/* The course stays in sight while its dishes scroll under it:
                   twelve primi is a long list to come out of no longer knowing
-                  how many are still to be chosen. */}
-              <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background px-4 py-1.5">
+                  how many are still to be chosen.
+
+                  And it reads as a course, not as one more dish: a band of
+                  blue a step stronger than the tint of a counted dish, closed
+                  by the same darker line as the row that asks how many menus.
+                  White like the dishes and shorter than one of them, it was
+                  the counted dishes the eye found first, and the last dish of
+                  one course ran into the next with nothing between them. The
+                  first course draws no line above: the one under the how-many
+                  row, or under the title, is already there, and two together
+                  read as one thick one. The state is semibold to hold up on
+                  the blue. */}
+              <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-muted-foreground/40 bg-brand-band px-4 py-1.5">
                 <h3 className="min-w-0 truncate text-sm font-bold text-foreground">{course.label}</h3>
-                <span className="flex shrink-0 items-center gap-2 text-xs">
+                <span className="flex shrink-0 items-center gap-2 text-xs font-semibold">
                   {state && <span className={state.tone}>{state.label}</span>}
                   {(menus !== null || count > 0) && (
                     <span className={`font-semibold ${tooMany ? 'text-destructive' : count > 0 ? 'text-brand' : 'text-muted-foreground'}`}>
@@ -359,7 +374,7 @@ export default function FixedMenuPicker({
                 return (
                   <div
                     key={dish.id}
-                    className={`border-b border-border last:border-0 ${dishCount > 0 ? 'bg-brand-light' : ''}`}
+                    className={`border-b border-border last:border-0 ${dishCount > 0 ? 'bg-brand-light/50' : ''}`}
                   >
                     <div className="flex items-center gap-2 ps-8 pe-2">
                       {/* The whole name is the plus: the floor counts by tapping the dish. */}

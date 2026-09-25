@@ -13,9 +13,10 @@ import { Ltr } from '@/components/layout/Ltr';
 interface Props {
   item: OrderItem;
   /**
-   * How many portions the tapped line folds. Above one, every action here is
-   * for one of them — the title says so — so taking one off a line of three
-   * leaves two.
+   * How many the tapped line holds. More than this row holds, and every
+   * action here is for this row alone — the title says so, "una di 3" or
+   * "2 di 3" — so taking the last one added off a line of three leaves the
+   * others where they are.
    */
   portionOf?: number;
   /** Set on a menu's own row while it can still change: how many menus it feeds. */
@@ -50,13 +51,14 @@ export function LineActionSheet({
   const fmt = useFormatCurrency();
   const run = serviceRunOf(item);
   const sent = item.kot_batch != null;
+  const part = Number(item.quantity) || 1;
 
   return (
     <Modal open onOpenChange={(open) => { if (!open) onClose(); }} size="sm">
       <ModalHeader closeLabel={tCommon('close')}>
         <ModalTitle>
           <Ltr>{item.quantity}×</Ltr> {item.product_name}
-          {portionOf > 1 && <span className="text-base font-normal text-muted-foreground"> · {tOrders('portionOf', { count: portionOf })}</span>}
+          {portionOf > part && <span className="text-base font-normal text-muted-foreground"> · {tOrders('portionOf', { part, count: portionOf })}</span>}
         </ModalTitle>
         <ModalDescription>
           {item.special_instructions ? `${item.special_instructions} · ` : ''}

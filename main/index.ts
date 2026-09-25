@@ -11,6 +11,7 @@ import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } f
 import { initPrinter } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
 import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
+import { WHATSAPP_AVAILABLE } from './features';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
@@ -702,8 +703,12 @@ async function initialize(): Promise<void> {
     await startServerApp();
     if (isShutdownRequested()) return;
 
-    console.log('[BuonApp] Initializing WhatsApp service...');
-    initWhatsAppFromDb();
+    // Switched off (main/features.ts): the service is never started, and its
+    // shutdown step below finds nothing to stop.
+    if (WHATSAPP_AVAILABLE) {
+      console.log('[BuonApp] Initializing WhatsApp service...');
+      initWhatsAppFromDb();
+    }
 
     console.log('[BuonApp] Starting mDNS advertisement...');
     startMdns();

@@ -16,8 +16,11 @@
  *    with the note on it and without the wave, which the window never asks for;
  *  - the grid's "inside the menu?" offers a course only while it has room, and
  *    names a line by its count;
- *  - the check folds identical portions into one line for the screen, and an
- *    action on it lands on one portion;
+ *  - the check folds identical rows into one line for the screen — a menu's
+ *    portions, and a dish from the card added again later — and an action on
+ *    it lands on one row, the last one added;
+ *  - the plates still to send are counted by quantity, the menu's own row
+ *    left out;
  *  - the cart keeps a menu line with its count, and a dish from the grid joins
  *    the plain count of that dish.
  *
@@ -37,9 +40,10 @@ Module._resolveFilename = function (request: string, parent: unknown, isMain: bo
 const {
   portionsOf, courseCount, courseCapacity, selectionSurcharge, cartLineTotal, selectionIsValid,
   missingRequiredCourses, tallySelection, menuGroupsOfOrder, menuLinesOfCart, menuLinesOfOrder,
-  openSlotsForProduct, compactMenuRows, selectionOfGroup, courseFillOf,
+  openSlotsForProduct, compactOrderRows, selectionOfGroup, courseFillOf,
 } = require('../frontend/src/lib/fixed-menu');
 const { useCartStore } = require('../frontend/src/store/cart');
+const { pendingDishCount } = require('../frontend/src/lib/kot');
 
 const starters = { id: 'c-start', label: 'Antipasto', is_required: true, max_choices: 1, sort_order: 0, category_ids: ['cat-start'], surcharges: [], included_product_ids: [], excluded_product_ids: [] };
 const mains = {
@@ -177,7 +181,7 @@ function main() {
   );
 
   // ── The check, as the screen draws it ──────────────────────────────────
-  const lines = compactMenuRows([
+  const lines = compactOrderRows([
     checkRows[0],
     row(11, {}),
     row(12, {}),
@@ -190,13 +194,93 @@ function main() {
     { ...row(20, {}), menu_group_id: null, menu_role: null, menu_course_id: null, unit_price: 10, total: 10 },
     { ...row(21, {}), menu_group_id: null, menu_role: null, menu_course_id: null, unit_price: 10, total: 10 },
   ]);
-  assert.equal(lines.length, 9, 'identical portions of the menu fold; nothing else does');
+  assert.equal(lines.length, 8, 'identical portions of the menu fold, and so do identical dishes from the card');
   assert.equal(lines[1].quantity, 2, 'the two plain lasagne are one line of two');
   assert.equal(lines[1].item.id, 12, 'and a tap on it acts on the newer of the two');
   assert.deepEqual(lines[1].rows.map((entry: any) => entry.id), [11, 12], 'while the line keeps every row it folds');
   assert.equal(lines[6].quantity, 2, 'two steaks fold too');
   assert.equal(lines[6].total, 6, 'with their surcharges summed');
-  assert.equal(lines[7].quantity + lines[8].quantity, 2, 'two lasagne ordered from the card stay two lines, as they were');
+  assert.equal(lines[7].quantity, 2, 'two lasagne ordered from the card are one line of two');
+  assert.deepEqual(lines[7].rows.map((entry: any) => entry.id), [20, 21], 'which never takes in the lasagne of the menu');
+
+  // ── Dishes from the card, as the screen draws them ─────────────────────
+  // Every "add" at the table writes rows of its own. Two Coca-Cola and a third
+  // asked for later are "3× Coca-Cola" once the second round has gone like the
+  // first: the rule the kitchen ticket folds on, plus what the screen shows —
+  // price, run and state.
+  const card = (id: number, extra: Record<string, unknown> = {}) => ({
+    ...row(id, {}), menu_group_id: null, menu_role: null, menu_course_id: null,
+    product_id: 'p-cola', product_name: 'Coca-Cola', unit_price: 2.5, subtotal: 2.5, total: 2.5, service_run: 1,
+    ...extra,
+  });
+  const drinks = compactOrderRows([
+    card(30, { quantity: 2, subtotal: 5, total: 5 }),
+    card(31, { product_id: 'p-lasagne', product_name: 'Lasagne', unit_price: 10, subtotal: 10, total: 10 }),
+    card(32, { kot_batch: 2 }),
+  ]);
+  assert.equal(drinks.length, 2, 'the Coca-Cola asked for later joins the two already on the table');
+  assert.equal(drinks[0].quantity, 3, 'on one line of three');
+  assert.equal(drinks[0].total, 7.5, 'that costs what the three cost');
+  assert.deepEqual(drinks[0].rows.map((entry: any) => entry.id), [30, 32], 'where the first two were, keeping every row');
+  assert.equal(drinks[0].item.id, 32, 'and a tap on it acts on the last one added');
+  assert.equal(drinks[1].item.product_name, 'Lasagne', 'the lasagne ordered in between keeps its place');
+
+  const linesOf = (...rows: any[]) => compactOrderRows(rows).length;
+  assert.equal(linesOf(card(40), card(41, { special_instructions: 'senza ghiaccio' })), 2, 'a note makes another line');
+  assert.equal(
+    linesOf(card(40, { special_instructions: 'Senza ghiaccio' }), card(41, { special_instructions: ' senza ghiaccio ' })),
+    1,
+    'the same note, however it was typed, is one line, as on the ticket',
+  );
+  assert.equal(
+    linesOf(
+      card(40, { addons: [{ name: 'Ghiaccio', price: 0 }, { name: 'Limone', price: 0.5 }] }),
+      card(41, { addons: [{ name: 'Limone', price: 0.5 }, { name: 'Ghiaccio', price: 0 }] }),
+    ),
+    1,
+    'the same add-ons ticked in another order are one line',
+  );
+  assert.equal(linesOf(card(40), card(41, { addons: [{ name: 'Limone', price: 0.5 }] })), 2, 'an add-on makes another line');
+  assert.equal(
+    linesOf(card(40, { addons: [{ name: 'Limone', price: 0.5 }] }), card(41, { addons: [{ name: 'Limone', price: 0.8 }] })),
+    2,
+    'and so does the same add-on at another price',
+  );
+  assert.equal(linesOf(card(40), card(41, { unit_price: 3, subtotal: 3, total: 3 })), 2, 'a row priced differently is another line');
+  assert.equal(linesOf(card(40), card(41, { service_run: 2 })), 2, 'so is one going out in another wave');
+  assert.equal(linesOf(card(40), card(41, { kot_batch: null })), 2, 'and one still to send, beside the ones already gone');
+  assert.equal(linesOf(card(40), card(41, { status: 'preparing' })), 2, 'or one the kitchen has in hand');
+  assert.equal(
+    linesOf(
+      card(40, { product_id: 'p-generico', product_name: 'Generico', price_required: 1, price_confirmed: 1 }),
+      card(41, { product_id: 'p-generico', product_name: 'Generico', price_required: 1, price_confirmed: 0 }),
+    ),
+    2,
+    'a row still waiting for its price is not one already priced',
+  );
+  assert.equal(
+    linesOf(card(40, { status: 'voided' }), card(41, { status: 'voided' })),
+    2,
+    'a voided row keeps a line of its own, beside the negative line that cancels it',
+  );
+
+  // ── The plates still to send ───────────────────────────────────────────
+  // The number on "Send to kitchen (n)" and on the table's badge counts
+  // plates: two tiramisù ordered together are one row and two plates.
+  const toSend = [
+    card(50, { product_id: 'p-tiramisu', product_name: 'Tiramisù', quantity: 2, kot_batch: null }),
+    row(51, { product_id: 'p-menu', product_name: 'Menu completo', quantity: 3, menu_role: 'package', menu_course_id: null, kot_batch: null }),
+    row(52, { kot_batch: null }),
+    row(53, { kot_batch: null }),
+    card(54, { quantity: 4 }),
+    card(55, { kot_batch: null, status: 'voided' }),
+    card(56, { kot_batch: null, status: 'cancelled' }),
+  ];
+  assert.equal(
+    pendingDishCount(toSend),
+    4,
+    'two tiramisù are two plates, a menu\'s two dishes one each, and the menu\'s own row, the round already sent and the rows taken off none',
+  );
 
   // ── The cart ───────────────────────────────────────────────────────────
   const cart = useCartStore.getState();

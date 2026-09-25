@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -11,6 +11,7 @@ import {
   Grid3X3,
   Users,
   Settings,
+  Smartphone,
   LogOut,
   UserCircle,
   type LucideIcon,
@@ -20,8 +21,11 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
+import { WHATSAPP_AVAILABLE } from '@/lib/features';
 import { useConfirm } from '@/hooks/use-confirm';
 import { ORDER_TYPES_SETTING_KEY, parseOrderTypes } from '@/lib/order-types';
+import { ServerAppAccess } from '@/components/settings/ServerAppAccess';
+import { Modal, ModalBody, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import {
   Sidebar,
   SidebarContent,
@@ -53,7 +57,8 @@ interface NavItem {
  * up, what is open right now, what I sell, what I took. Everything that is
  * configuration rather than work lives behind Settings at the bottom — the
  * bar used to carry eleven entries, one of which (KDS) opened a settings tab
- * rather than the kitchen screen it named.
+ * rather than the kitchen screen it named. Above Settings sits the one entry
+ * that is neither: Palmari, the window with the code a waiter's phone scans.
  *
  * Rows are 48 px: the cash desk is a touch monitor. The toggle that collapses
  * the bar is not a row of its own any more — it sits in every page's header,
@@ -70,18 +75,27 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/customers', labelKey: 'customers', icon: Users, roles: ['owner', 'manager'], businessTypes: null },
 ];
 
-const ROW = 'text-[15px] [&>svg]:size-5';
+/**
+ * Collapsed to icons, a row is the `lg` size's 32 px square, which drops its
+ * padding (`p-0!`) so the brand's initial can fill it. A 20 px icon and the
+ * 8 px gap left 4 px of the label showing — half of its first letter beside
+ * every icon — and the icon sat off to one side. So, collapsed, the label is
+ * there for screen readers only, the icon is centred, and the tooltip says
+ * the name.
+ */
+const ROW = 'text-[15px] [&>svg]:size-5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:[&>span]:sr-only';
 
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, currentTenant, logout } = useAuthStore();
   // The flags are still read here for the whole app: other screens act on
-  // them even though the bar itself only filters on two.
-  const { tablesRequired, customersEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes } = usePosSettingsStore();
+  // them even though the bar itself only filters on three.
+  const { tablesRequired, customersEnabled, serverAppEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setServerAppEnabled, setOrderTypes } = usePosSettingsStore();
   const { isMobile, setOpenMobile } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
   const { confirm, ConfirmDialog } = useConfirm();
+  const [handheldsOpen, setHandheldsOpen] = useState(false);
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
 
   const role = currentTenant?.role || 'cashier';
@@ -108,6 +122,9 @@ export default function AppSidebar() {
     api.get('/settings/customers_enabled')
       .then((res) => setCustomersEnabled(res.data.setting?.value !== 'false'))
       .catch(() => { });
+    api.get('/settings/server_app_enabled')
+      .then((res) => setServerAppEnabled(res.data.setting?.value !== 'false'))
+      .catch(() => { });
     // Which order types the POS may offer. Read here, like the other
     // business-level flags, so every screen that renders after login already
     // knows what this tenant takes.
@@ -117,90 +134,121 @@ export default function AppSidebar() {
     // Sync the WhatsApp enabled flag from the backend so the sidebar shows
     // the nav entry only when the integration is actually enabled on this
     // tenant. The WhatsApp page also writes the store on enable/disable so
-    // the sidebar updates without a refetch when the user toggles.
-    api.get('/whatsapp/status')
-      .then((res) => setWhatsappEnabled(!!res.data?.enabled))
-      .catch(() => { });
-  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setOrderTypes]);
+    // the sidebar updates without a refetch when the user toggles. Switched
+    // off (lib/features.ts), there is nothing to ask.
+    if (WHATSAPP_AVAILABLE) {
+      api.get('/whatsapp/status')
+        .then((res) => setWhatsappEnabled(!!res.data?.enabled))
+        .catch(() => { });
+    }
+  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled, setCustomersEnabled, setServerAppEnabled, setOrderTypes]);
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link href={homeHref}>
-                <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-semibold">
-                  {(currentTenant?.business_name || tCommon('brandName')).charAt(0).toUpperCase()}
-                </div>
-                <div className="flex flex-col gap-0.5 min-w-0 leading-none">
-                  <span className="font-semibold truncate">{currentTenant?.business_name || tCommon('brandName')}</span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-1">
-              {navItems.map((item) => {
-                const [hrefPath, hrefQuery] = item.href.split('?');
-                const isActive = !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild size="lg" isActive={isActive} tooltip={t(item.labelKey)} className={ROW}>
-                      <Link href={item.href} onClick={closeMobile}>
-                        <item.icon className="shrink-0" />
-                        <span className="font-semibold">{t(item.labelKey)}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-
-      <SidebarFooter>
-        <SidebarMenu className="gap-1">
-          {(role === 'owner' || role === 'manager') && (
+    <>
+      <Sidebar collapsible="icon">
+        <SidebarHeader>
+          <SidebarMenu>
             <SidebarMenuItem>
-              {/* Configuration sits with logging out, not among the places
-                  people work: staff, the kitchen display and WhatsApp all live
-                  inside it. */}
-              <SidebarMenuButton asChild size="lg" isActive={pathname?.startsWith('/settings')} tooltip={t('settings')} className={ROW}>
-                <Link href="/settings" onClick={closeMobile}>
-                  <Settings className="shrink-0" />
-                  <span className="font-semibold">{t('settings')}</span>
+              <SidebarMenuButton size="lg" asChild>
+                <Link href={homeHref}>
+                  <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-semibold">
+                    {(currentTenant?.business_name || tCommon('brandName')).charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex flex-col gap-0.5 min-w-0 leading-none">
+                    <span className="font-semibold truncate">{currentTenant?.business_name || tCommon('brandName')}</span>
+                  </div>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
-          )}
-          <SidebarMenuItem>
-            {/* Identity label, not a button — nothing to click through to, so it
-                deliberately skips SidebarMenuButton's interactive/hover styling. */}
-            <div
-              title={user?.name || user?.email || t('user')}
-              className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-5 [&>svg]:shrink-0"
-            >
-              <UserCircle />
-              <span className="truncate">{user?.name || user?.email || t('user')}</span>
-            </div>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" onClick={async () => { if (await confirm(t('confirmLogout'))) logout(); }} tooltip={t('logoutTooltip')} className={ROW}>
-              <LogOut />
-              <span className="font-semibold">{t('logout')}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
-      <SidebarRail />
-      {ConfirmDialog}
-    </Sidebar>
+          </SidebarMenu>
+        </SidebarHeader>
+
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu className="gap-1">
+                {navItems.map((item) => {
+                  const [hrefPath, hrefQuery] = item.href.split('?');
+                  const isActive = !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild size="lg" isActive={isActive} tooltip={t(item.labelKey)} className={ROW}>
+                        <Link href={item.href} onClick={closeMobile}>
+                          <item.icon className="shrink-0" />
+                          <span className="font-semibold">{t(item.labelKey)}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+
+        <SidebarFooter>
+          <SidebarMenu className="gap-1">
+            {serverAppEnabled && ['owner', 'manager', 'cashier'].includes(role) && (
+              <SidebarMenuItem>
+                {/* Not a page: a window over whatever screen is open, so an
+                    order half taken in Ordina is still there when it closes.
+                    The cashier gets it too — the code is only an address, and
+                    getting in still takes the waiter's own password. Hidden
+                    while the Server App is switched off: there is nothing for a
+                    phone to open. */}
+                <SidebarMenuButton size="lg" onClick={() => { closeMobile(); setHandheldsOpen(true); }} tooltip={t('handhelds')} className={ROW}>
+                  <Smartphone className="shrink-0" />
+                  <span className="font-semibold">{t('handhelds')}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+            {(role === 'owner' || role === 'manager') && (
+              <SidebarMenuItem>
+                {/* Configuration sits with logging out, not among the places
+                    people work: staff, the kitchen display and WhatsApp all live
+                    inside it. */}
+                <SidebarMenuButton asChild size="lg" isActive={pathname?.startsWith('/settings')} tooltip={t('settings')} className={ROW}>
+                  <Link href="/settings" onClick={closeMobile}>
+                    <Settings className="shrink-0" />
+                    <span className="font-semibold">{t('settings')}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+            <SidebarMenuItem>
+              {/* Identity label, not a button — nothing to click through to, so it
+                  deliberately skips SidebarMenuButton's interactive/hover styling.
+                  Collapsed, it centres its icon like the rows above (ROW). */}
+              <div
+                title={user?.name || user?.email || t('user')}
+                className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:[&>span]:sr-only [&>span:last-child]:truncate [&>svg]:size-5 [&>svg]:shrink-0"
+              >
+                <UserCircle />
+                <span className="truncate">{user?.name || user?.email || t('user')}</span>
+              </div>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" onClick={async () => { if (await confirm(t('confirmLogout'))) logout(); }} tooltip={t('logoutTooltip')} className={ROW}>
+                <LogOut />
+                <span className="font-semibold">{t('logout')}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+        <SidebarRail />
+        {ConfirmDialog}
+      </Sidebar>
+      {/* Outside the sidebar: on a narrow window the bar is a sheet that
+          closes on the tap, and would take a window inside it along. */}
+      <Modal open={handheldsOpen} onOpenChange={setHandheldsOpen}>
+        <ModalHeader closeLabel={tCommon('close')}>
+          <ModalTitle>{t('handhelds')}</ModalTitle>
+          <ModalDescription>{t('handheldsHint')}</ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          <ServerAppAccess />
+        </ModalBody>
+      </Modal>
+    </>
   );
 }

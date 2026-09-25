@@ -5,7 +5,6 @@ import { Pencil, Search, X } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
-import { portionsOf } from '@/lib/fixed-menu';
 import { nameToColor } from '@/lib/image-utils';
 import { parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -42,9 +41,12 @@ interface Props {
  * the shell decides, or straight into the cart when there is nothing to
  * decide. The − is there so that a plate tapped by mistake comes off where it
  * went on, without a trip to the ticket and back. The number between them
- * counts the dish wherever it is on the ticket, menus included; the − only
- * reaches the dish's own lines (a plate inside a menu comes off in the menu's
- * window), so it goes dark when those are empty.
+ * counts the plates of the dish ordered on their own, as the till's grid does:
+ * a dish chosen inside a fixed menu belongs to the menu, and shows on the
+ * ticket under it. Counting those here lit the row of every dish of a menu
+ * the moment its window closed, with a − that could not take them off. A
+ * menu's own row counts its menus, and its − stays dark: a menu comes off
+ * the ticket.
  *
  * The photo comes through the Server App, whose image route is open like the
  * main API's own: an <img> cannot carry the token. A dish without one shows
@@ -65,18 +67,15 @@ export function HandheldProductList({
   const cartItems = useCartStore((state) => state.items);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // How many of each dish are on the ticket, menus counted by the dishes
-  // chosen inside them; and how many of those the − can take off, which are
-  // the dish's own lines.
+  // How many of each product the ticket's lines carry — a menu line counts
+  // its menus, not the dishes chosen inside it — and how many of those the −
+  // can take off, which are the lines that are not a menu.
   const { inCart, removable } = useMemo(() => {
     const counts = new Map<string, number>();
     const own = new Map<string, number>();
     for (const item of cartItems) {
       counts.set(item.product.id, (counts.get(item.product.id) || 0) + item.quantity);
       if (!item.menu_selection) own.set(item.product.id, (own.get(item.product.id) || 0) + item.quantity);
-      for (const choice of item.menu_selection || []) {
-        counts.set(choice.product_id, (counts.get(choice.product_id) || 0) + portionsOf(choice));
-      }
     }
     return { inCart: counts, removable: own };
   }, [cartItems]);
@@ -180,10 +179,9 @@ export function HandheldProductList({
                 <Pencil size={18} />
               </button>
               {/* + is the tap on the dish, which may open a window rather than
-                  add a plate; − takes one off, and goes dark (its floor is the
-                  count) when none of the plates counted is the dish's own. A
-                  nought is quiet, so the dishes on the ticket stand out down
-                  the list. */}
+                  add a plate; − takes one off, and goes dark at nought, or on a
+                  menu's row, whose floor is its count. A nought is quiet, so
+                  the dishes on the ticket stand out down the list. */}
               <Stepper
                 size="md"
                 value={count}

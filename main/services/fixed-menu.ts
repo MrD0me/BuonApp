@@ -25,7 +25,7 @@
  * says which of the eight had which, so the check does not invent it either.
  * Every portion is still a row of its own: the kitchen's progress, the run,
  * the note and the void work per dish, and the paper folds identical portions
- * into one line (compactKotItems, compactMenuCourseRows).
+ * into one line (compactKotItems, compactBillRows).
  */
 
 import { getDatabase, now } from '../db';

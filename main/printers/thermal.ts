@@ -832,33 +832,27 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
  * the guest would have read the three. A voided row stays, beside the negative
  * line that cancels it: that pair is how a void is meant to show.
  *
- * Then the portions of a menu line fold together (compactMenuCourseRows).
+ * Then the rows that read the same fold together (compactBillRows).
  */
 function printableBillRows(items: any[] | undefined): any[] {
-  return compactMenuCourseRows((items ?? []).filter((item) => item?.status !== 'cancelled'));
+  return compactBillRows((items ?? []).filter((item) => item?.status !== 'cancelled'));
 }
 
 /**
- * Folds the portions of a menu line that read the same into one row.
+ * Which printed line a row of the bill joins, or null for a row that is
+ * printed on its own: a menu's own row, and a voided row from the card with
+ * the negative line beside it — that pair is how a void is meant to show.
  *
- * A line of eight menus writes a row per portion — the kitchen's progress, the
- * run and the void work dish by dish — so three lasagne are three rows. The
- * guest reading the bill wants "Lasagne 3" under the menu, not the same name
- * three times. Same menu line, dish, name, unit price (the surcharge) and
- * note fold together with quantity and money summed; a voided portion stays
- * apart, and nothing outside a menu is touched. The rows themselves stay as
- * they are: only the paper is compacted, as compactKotItems does for the
- * kitchen.
+ * - The portions of one menu line join by dish, name, unit price (the
+ *   surcharge) and note; a voided portion stays apart from the others.
+ * - A dish from the card joins the rows the kitchen ticket folds it with
+ *   (kotItemIdentity) at the same price, add-ons included.
  */
-export function compactMenuCourseRows(items: any[]): any[] {
-  const compacted: any[] = [];
-  const indexByIdentity = new Map<string, number>();
-  for (const item of items) {
-    if (item?.menu_role !== 'course' || !item?.menu_group_id) {
-      compacted.push(item);
-      continue;
-    }
-    const identity = JSON.stringify([
+function billRowIdentity(item: any): string | null {
+  if (item?.menu_role === 'course') {
+    if (!item?.menu_group_id) return null;
+    return JSON.stringify([
+      'menu',
       item.menu_group_id,
       item.product_id ?? null,
       String(item.product_name ?? ''),
@@ -866,6 +860,35 @@ export function compactMenuCourseRows(items: any[]): any[] {
       String(item.special_instructions ?? '').trim().toLowerCase(),
       item.status === 'voided',
     ]);
+  }
+  if (item?.menu_role || ['voided', 'void_adjustment'].includes(String(item?.status))) return null;
+  const addonPrices = parseAddons(item?.addons)
+    .filter((addon) => addon?.name)
+    .map((addon) => JSON.stringify([String(addon.name), Number(addon?.quantity) || 1, Number(addon?.price) || 0]))
+    .sort();
+  return JSON.stringify(['card', kotItemIdentity(item), Number(item?.unit_price) || 0, addonPrices]);
+}
+
+/**
+ * Folds the rows of a bill that read the same into one line.
+ *
+ * A line of eight menus writes a row per portion, and every "add" at the
+ * table writes rows of its own — the kitchen's progress, the run and the void
+ * work row by row — so three lasagne are three rows, and so are two Coca-Cola
+ * and a third ordered later. The guest reading the bill wants "Lasagne 3"
+ * under the menu and "Coca-Cola 3", not the same name down the paper.
+ * Quantity and money are summed. The rows themselves stay as they are: only
+ * the paper is compacted, as compactKotItems does for the kitchen.
+ */
+export function compactBillRows(items: any[]): any[] {
+  const compacted: any[] = [];
+  const indexByIdentity = new Map<string, number>();
+  for (const item of items) {
+    const identity = billRowIdentity(item);
+    if (identity === null) {
+      compacted.push(item);
+      continue;
+    }
     const index = indexByIdentity.get(identity);
     if (index === undefined) {
       indexByIdentity.set(identity, compacted.length);

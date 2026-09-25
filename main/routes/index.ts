@@ -32,6 +32,7 @@ import { databaseToolsRoutes } from './database-tools';
 import { menuCsvRoutes } from './menu-csv';
 import { heldOrderRoutes } from './held-orders';
 import { whatsappRoutes } from './whatsapp';
+import { WHATSAPP_AVAILABLE } from '../features';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
 import { orderCharges, roundMoney } from '../money';
@@ -75,7 +76,8 @@ export function registerRoutes(app: Express): void {
   app.use('/api/db-tools', databaseToolsRoutes);
   app.use('/api/menu-csv', menuCsvRoutes);
   app.use('/api/held-orders', heldOrderRoutes);
-  app.use('/api/whatsapp', whatsappRoutes);
+  // Switched off (main/features.ts): unmounted, so /api/whatsapp answers 404.
+  if (WHATSAPP_AVAILABLE) app.use('/api/whatsapp', whatsappRoutes);
 
   // Legacy/flat customer search endpoint (frontend uses this)
   app.get('/api/customers-search', inlineCustomerLookupRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req, res) => {

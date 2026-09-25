@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -20,6 +21,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { dialCodeFor, parsePhone } from '@/lib/phone';
 import { Ltr } from '@/components/layout/Ltr';
+import { WHATSAPP_AVAILABLE } from '@/lib/features';
 
 interface WhatsAppStatus {
   enabled: boolean;
@@ -189,7 +191,21 @@ function translateLastError(
   return raw ?? tLastError('cooldown');
 }
 
+/**
+ * WhatsApp is switched off (lib/features.ts): nothing links here any more, and
+ * an old bookmark lands back on Settings instead of on a console whose backend
+ * is not there. The console below is kept as it was, for the day it comes back.
+ */
 export default function WhatsAppPage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!WHATSAPP_AVAILABLE) router.replace('/settings');
+  }, [router]);
+  if (!WHATSAPP_AVAILABLE) return null;
+  return <WhatsAppConsole />;
+}
+
+function WhatsAppConsole() {
   const tNav = useTranslations('nav');
   const tTabs = useTranslations('whatsapp.tabs');
   const tConnection = useTranslations('whatsapp.connection');

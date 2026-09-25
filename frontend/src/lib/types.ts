@@ -336,6 +336,13 @@ export interface OrderItem {
   menu_group_id?: string | null;
   /** 'package' is the priced line, 'course' a dish chosen inside it. */
   menu_role?: 'package' | 'course' | null;
+  /**
+   * Variant and modifier choices from before this fork, null on every row it
+   * writes. Never shown, and still part of what makes two rows the same dish
+   * (`dishIdentity`), as they are on the kitchen ticket.
+   */
+  variant_selection?: unknown;
+  modifier_selection?: unknown;
 }
 
 export interface Bill {

@@ -3,7 +3,8 @@
 **Stato:** CURRENT. Deciso e fatto il 2026-09-15 sul branch `palmare`; rifatto nella grafica il
 2026-09-16 sul branch `rifacimento-grafica` (fase B del piano approvato quel giorno). Il 2026-09-24
 Ordina è passata dalla griglia di riquadri a un elenco di righe con foto, matita e `−  n  +`, e la
-ricerca ha preso la «x» per svuotarla.
+ricerca ha preso la «x» per svuotarla. Lo stesso giorno il QR per entrare è arrivato nella barra
+laterale del PC, alla voce «Palmari».
 
 Il Server App è la pagina che i camerieri aprono sul telefono, servita sulla porta `:3003` da
 `main/server-app.ts` e raggiungibile in LAN come `buonapp.local:3003`. Fino alla 5.0.0 era rimasto
@@ -11,6 +12,27 @@ alle funzioni di FloCafe: una griglia di prodotti, una nota per riga, l'invio. N
 aggiuntivi, coperti, menu fisso, uscite, e non vedeva la sala. Tutto questo esisteva sul PC
 centrale, e le finestre erano state scritte apposta con contratto props-dentro/callback-fuori per
 essere montate qui senza toccarle (vedi [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md)).
+
+## Come ci arriva il cameriere
+
+Il telefono apre `http://<IP del PC>:3003`, o `http://buonapp.local:3003` dove la rete risolve i
+nomi mDNS, e il cameriere entra con la sua email e la sua password: il palmare accetta solo il
+ruolo `server`. Gli indirizzi, con un QR per ogni rete su cui sta il PC, li mostra
+`components/settings/ServerAppAccess.tsx`, che li chiede a `GET /api/server-app-info` appena
+compare. Sta in due posti:
+
+- **«Palmari»**, nella barra laterale del PC subito sopra Impostazioni. Non è una pagina: apre una
+  finestra sopra la schermata in cui si è, così un ordine a metà in Ordina è ancora lì quando la
+  si chiude. La vedono titolare, responsabile e cassiere: il QR è solo un indirizzo, e per entrare
+  servono comunque le credenziali del cameriere. Sparisce quando il Server App è spento:
+  `server_app_enabled` la barra lo legge all'avvio e a ogni accesso, e Impostazioni lo aggiorna
+  quando si cambia.
+- **Impostazioni → Ordinazione al Tavolo**, sotto l'interruttore che accende e spegne il Server
+  App. Qui i codici comparivano solo dopo aver premuto «Carica Informazioni Server App»; ora
+  subito.
+
+Prima il QR stava solo in Impostazioni, a tre tocchi, e il cassiere, che le Impostazioni non le
+vede, non poteva mostrarlo a un cameriere appena arrivato.
 
 ## Cosa fa
 
@@ -36,7 +58,9 @@ volta che la finestra del menu si apriva sopra, perché stavano sullo stesso liv
   riprezza da solo;
 - l'uscita di ogni piatto alla carta, spostabile con un tocco prima e dopo l'invio
   (`PATCH /orders/:id/items/:itemId/service-run`). Dentro un menu no: lì l'ordine delle uscite lo
-  fanno le portate, e un selettore sotto ogni piatto era una colonna di pulsanti che nessuno preme;
+  fanno le portate, e un selettore sotto ogni piatto era una colonna di pulsanti che nessuno preme.
+  I piatti alla carta uguali, anche se aggiunti in più volte, sono una riga sola («3× Coca-Cola»), e
+  il selettore sotto la riga la sposta tutta;
 - **«Secondo 0/8: da scegliere»**, un pulsante a tutta larghezza sulla portata di un menu già
   mandato che ha ancora posto, con il conteggio di quanti piatti ha su quanti ne tiene: apre la
   stessa finestra del PC ristretta a quella portata e scrive con
@@ -68,11 +92,14 @@ Il tocco sulla riga, e il `+`, fanno quello che fa il tocco sul PC:
 niente da decidere, e una finestra per ogni piatto era un tocco in più tutta la sera. La matita apre
 comunque nota e quantità.
 
-Il numero fra `−` e `+` conta il piatto ovunque sia in comanda, anche dentro i menu. Il `−` serve a
-togliere un tocco sbagliato dalla riga stessa, senza aprire la comanda e tornare indietro. Toglie un
-piatto dalla riga che il `+` riempie, quella semplice senza note né aggiunte; se non c'è, dall'ultima
-riga di quel piatto. Un piatto scelto dentro un menu non lo tocca: si toglie nella finestra del
-menu. Quando non resta niente che possa togliere, il `−` si spegne.
+Il numero fra `−` e `+` conta i piatti ordinati da soli, come la griglia del PC. Un piatto scelto
+dentro un menu fisso appartiene al menu, e si vede in comanda sotto di lui. Fino al 2026-09-24
+contava anche lui: chiusa la finestra del menu, la riga di ogni suo piatto risultava selezionata,
+con un `−` che non poteva toglierlo. La riga del menu conta i menu, e il suo `−` resta spento: un
+menu si toglie dalla comanda. Il `−` serve a togliere un tocco sbagliato dalla riga stessa, senza
+aprire la comanda e tornare indietro. Toglie un piatto dalla riga che il `+` riempie, quella
+semplice senza note né aggiunte; se non c'è, dall'ultima riga di quel piatto. Quando non resta
+niente che possa togliere, il `−` si spegne.
 
 La comanda è una barra fissa in basso che dice quanti piatti e quanto, e un tocco la apre a schermo
 intero: righe da 48 px con il cestino, lo stepper e un pulsante con l'uscita corrente («2ª uscita»)

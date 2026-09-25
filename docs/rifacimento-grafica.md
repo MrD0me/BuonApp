@@ -86,7 +86,8 @@ Vedi [palmare.md](palmare.md) per il dettaglio. In breve:
 
 **La barra laterale** ha righe da 48 px e non contiene più «Comprimi»: quel pulsante era una voce di
 menu che non portava da nessuna parte. Il toggle sta nell'intestazione di ogni pagina, dove dice
-cosa fa.
+cosa fa. Stretta alle sole icone, ogni voce è la sua icona al centro, e il nome lo dice il tooltip.
+Fino al 2026-09-24 l'icona stava di lato, e accanto spuntava metà della prima lettera del nome.
 
 **L'intestazione è la stessa ovunque** (`PageToolbar`): toggle, titolo, azioni. Il titolo è la
 stessa parola della voce di menu — la pagina della sala si intitolava «Tavoli» mentre la barra

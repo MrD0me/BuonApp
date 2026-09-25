@@ -10,6 +10,7 @@ import { printerService } from '@/lib/printer/PrinterService';
 import { createTestBill, createTestOrder, createTestTenant, createTestCustomer } from '@/lib/printer/test-data';
 import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
 import { shareBillViaWhatsApp, getWhatsAppMessage } from '@/lib/whatsapp-share';
+import { WHATSAPP_AVAILABLE } from '@/lib/features';
 import { formatCurrencyForTenant, getCountryByCode } from '@/lib/countries';
 import { formatDate } from '@/lib/printer/format-date';
 import toast from 'react-hot-toast';
@@ -122,7 +123,8 @@ export default function PrintTestPage() {
     // "Print KOT" action, which must never be reachable in that state (#133).
     ...(kotPrintingEnabled ? [{ value: 'kot' as TestMode, label: 'KOT (Kitchen Ticket)', icon: Printer }] : []),
     { value: 'web-print', label: 'Web Print (Browser)', icon: FileText },
-    { value: 'whatsapp', label: 'WhatsApp Share', icon: MessageCircle },
+    // WhatsApp is switched off (lib/features.ts).
+    ...(WHATSAPP_AVAILABLE ? [{ value: 'whatsapp' as TestMode, label: 'WhatsApp Share', icon: MessageCircle }] : []),
   ];
 
   return (
