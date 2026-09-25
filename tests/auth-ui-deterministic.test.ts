@@ -38,14 +38,16 @@ async function run() {
   assert.equal(parseLoginFailure({ response: { status: 500, data: { error: 'Internal server error' } } }).status, 500, '500 status parsed');
 
   // ── 2. Storage-write failure surfaces StorageUnavailableError and leaves state logged out ──
+  const loginBodies: Record<string, unknown>[] = [];
   const serverApi = {
-    post: async (url: string) => {
+    post: async (url: string, body: Record<string, unknown>) => {
       if (url === '/auth/login') {
+        loginBodies.push(body);
         return {
           data: {
             access_token: 'tok-123',
             tenants: [{ id: 1, business_name: 'Cafe', language: 'en' }],
-            user: { id: 'u1', name: 'Owner', email: 'owner@cafe.local', role: 'owner' },
+            user: { id: 'u1', name: 'Owner', username: 'owner', role: 'owner' },
           },
         };
       }
@@ -72,7 +74,7 @@ async function run() {
 
   let storageError: unknown = null;
   try {
-    await useAuthStore.getState().login('owner@cafe.local', 'Pass123!');
+    await useAuthStore.getState().login('owner', 'Pass123!');
   } catch (err) {
     storageError = err;
   }
@@ -85,9 +87,14 @@ async function run() {
   // ── 3. Successful login persists the session when storage is available ──
   const workingStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
   (globalThis as any).localStorage = workingStorage;
-  await useAuthStore.getState().login('owner@cafe.local', 'Pass123!');
+  await useAuthStore.getState().login('owner', 'Pass123!');
   assert.equal(useAuthStore.getState().token, 'tok-123', 'successful login sets the token');
-  assert.equal(useAuthStore.getState().user?.email, 'owner@cafe.local', 'successful login sets the user');
+  assert.equal(useAuthStore.getState().user?.username, 'owner', 'successful login sets the user');
+  assert.deepEqual(
+    loginBodies[loginBodies.length - 1],
+    { username: 'owner', password: 'Pass123!', rememberMe: false },
+    'login posts the username, and no email',
+  );
   assert.equal(useAuthStore.getState().tenants.length, 1, 'successful login sets tenants');
   assert.equal(useAuthStore.getState().currentTenant?.id, 1, 'single-tenant login auto-selects the tenant');
 

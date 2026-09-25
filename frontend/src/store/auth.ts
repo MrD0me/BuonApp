@@ -21,7 +21,7 @@ interface AuthState {
   currentTenant: Tenant | null;
   loading: boolean;
 
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  login: (username: string, password: string, rememberMe?: boolean) => Promise<void>;
   selectTenant: (tenantId: number) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => void;
@@ -63,8 +63,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   currentTenant: null,
   loading: true,
 
-  login: async (email: string, password: string, rememberMe = false) => {
-    const { data } = await api.post('/auth/login', { email, password, rememberMe });
+  login: async (username: string, password: string, rememberMe = false) => {
+    const { data } = await api.post('/auth/login', { username, password, rememberMe });
     const tenants: Tenant[] = data.tenants;
     const currentTenant = tenants.length === 1 ? tenants[0] : null;
     persistSession(data.access_token, currentTenant);

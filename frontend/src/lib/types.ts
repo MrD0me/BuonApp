@@ -4,7 +4,7 @@ import type { CurrencyDisplay, DigitMode, CalendarMode } from '@/lib/countries';
 export interface User {
   id: number;
   name: string;
-  email: string;
+  username: string;
   phone: string | null;
   country_code: string;
   is_active: boolean;
@@ -373,7 +373,7 @@ export interface Bill {
 export interface Staff {
   id: string;
   name: string;
-  email: string | null;
+  username: string | null;
   role: string;
   has_pin?: boolean | number;
   is_active: number;

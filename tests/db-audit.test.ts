@@ -197,8 +197,10 @@ for (const dbPath of targets) {
       if (owners === 0) fail('no active owner user — login will be impossible');
       else ok(owners + ' active owner user(s)');
 
-      const noEmail = count(`SELECT COUNT(*) FROM users WHERE email IS NULL OR email = ''`);
-      if (noEmail > 0) warn(noEmail + ' user(s) without email');
+      // Before migration v96 the login column was email.
+      const login = columns('users').includes('username') ? 'username' : 'email';
+      const noLogin = count(`SELECT COUNT(*) FROM users WHERE ${login} IS NULL OR ${login} = ''`);
+      if (noLogin > 0) warn(noLogin + ` user(s) without ${login}`);
 
       const noPassword = count(`SELECT COUNT(*) FROM users WHERE password IS NULL OR password = ''`);
       if (noPassword > 0) fail(noPassword + ' user(s) without password hash');

@@ -9,12 +9,22 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, now } from '../db';
 import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
+import { isValidUsername, normalizeUsername } from '../lib/username';
 
 const router = Router();
 
 const OPERATIONAL_ROLES = ['cashier', 'server', 'chef'];
 const VALID_ROLES = ['owner', 'manager', ...OPERATIONAL_ROLES];
-const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at';
+const STAFF_SELECT_FIELDS = 'id, name, username, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at';
+
+const USERNAME_REQUIRED = { error: 'A username is required', code: 'username_required' };
+const USERNAME_INVALID = { error: 'Invalid username', code: 'username_invalid' };
+const USERNAME_TAKEN = { error: 'Username already in use', code: 'username_taken' };
+
+/** Two saves racing for the same name both pass the lookup; the UNIQUE column stops the second. */
+function isUsernameClash(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === 'SQLITE_CONSTRAINT_UNIQUE';
+}
 
 function canModifyTargetStaff(requesterRole: string, targetRole: string): boolean {
   if (requesterRole === 'owner') return true;
@@ -96,7 +106,7 @@ router.get('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
 router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request, res: Response) => {
   try {
-    const { name, email, password, role, pin } = req.body;
+    const { name, password, role, pin } = req.body;
 
     if (!name || !password || !role) {
       return res.status(400).json({ error: 'name, password, and role are required' });
@@ -121,13 +131,14 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
     }
 
+    const username = normalizeUsername(req.body.username);
+    if (!username) return res.status(400).json(USERNAME_REQUIRED);
+    if (!isValidUsername(username)) return res.status(400).json(USERNAME_INVALID);
+
     const db = getDatabase();
 
-    if (email) {
-      const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-      if (existing) {
-        return res.status(400).json({ error: 'Email already in use' });
-      }
+    if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) {
+      return res.status(400).json(USERNAME_TAKEN);
     }
 
     const id = uuidv4();
@@ -136,9 +147,9 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
     const hashedPin = hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null;
 
     db.prepare(`
-      INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+      INSERT INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, name, email || null, hashedPassword, role, hashedPin, now(), now());
+    `).run(id, name, username, hashedPassword, role, hashedPin, now(), now());
 
     const member = db.prepare(
       `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
@@ -146,6 +157,7 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
 
     res.status(201).json({ staff: member });
   } catch (error: any) {
+    if (isUsernameClash(error)) return res.status(400).json(USERNAME_TAKEN);
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -155,7 +167,7 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
 
 router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Request, res: Response) => {
   try {
-    const { name, email, password, role, pin, is_active } = req.body;
+    const { name, password, role, pin, is_active } = req.body;
     const db = getDatabase();
 
     if (is_active !== undefined) {
@@ -189,10 +201,18 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
     }
 
-    if (email && email !== member.email) {
-      const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.params.id);
-      if (existing) {
-        return res.status(400).json({ error: 'Email already in use' });
+    // Left out, the username stays. Sent, it is normalized, and held to the
+    // rule for new names only when it actually changes: an account migrated
+    // with a short one ("a", from a@…) can still be saved as it is.
+    let username: string | null = null;
+    if (req.body.username !== undefined) {
+      username = normalizeUsername(req.body.username);
+      if (!username) return res.status(400).json(USERNAME_REQUIRED);
+      if (username !== member.username) {
+        if (!isValidUsername(username)) return res.status(400).json(USERNAME_INVALID);
+        if (db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, req.params.id)) {
+          return res.status(400).json(USERNAME_TAKEN);
+        }
       }
     }
 
@@ -208,7 +228,7 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
         : member.pin_hash;
 
     // Revoke this user's outstanding sessions only when a credential actually
-    // changed (not on a bare name/email/role edit) — matches auth.ts's
+    // changed (not on a bare name/username/role edit) — matches auth.ts's
     // password/change and recover-password (#173).
     const credentialsChanged = hashedPassword !== member.password || hashedPin !== member.pin_hash;
     const tokensValidAfter = credentialsChanged ? now() : member.tokens_valid_after;
@@ -217,7 +237,7 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
     const result = db.prepare(`
       UPDATE users SET
         name       = COALESCE(?, name),
-        email      = COALESCE(?, email),
+        username   = COALESCE(?, username),
         password   = ?,
         role       = COALESCE(?, role),
         pin_hash   = ?,
@@ -229,7 +249,7 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
           OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1
         )
     `).run(
-      name || null, email || null, hashedPassword,
+      name || null, username, hashedPassword,
       role || null, hashedPin, tokensValidAfter,
       now(), req.params.id, demotesActiveOwner ? 1 : 0,
     );
@@ -244,6 +264,7 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
 
     res.json({ staff: updated });
   } catch (error: any) {
+    if (isUsernameClash(error)) return res.status(400).json(USERNAME_TAKEN);
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }

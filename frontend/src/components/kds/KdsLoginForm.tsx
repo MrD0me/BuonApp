@@ -24,15 +24,20 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
           )}
 
           <div>
-            <label htmlFor="kds-login-email" className="block text-sm font-medium text-gray-700 mb-1">{tAuth('email')}</label>
+            <label htmlFor="kds-login-username" className="block text-sm font-medium text-gray-700 mb-1">{tAuth('username')}</label>
             <input
-              id="kds-login-email"
-              data-testid="kds-login-email"
-              type="email"
-              value={conn.loginEmail}
-              onChange={(e) => conn.setLoginEmail(e.target.value)}
+              id="kds-login-username"
+              data-testid="kds-login-username"
+              type="text"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              dir="ltr"
+              value={conn.loginUsername}
+              onChange={(e) => conn.setLoginUsername(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
-              placeholder="chef@buonapp.local"
+              placeholder={tAuth('usernamePlaceholder')}
               required
             />
           </div>

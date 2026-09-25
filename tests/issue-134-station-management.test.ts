@@ -41,7 +41,7 @@ async function main() {
   seedCategory(db, 'cat-bev', 'Beverages');
 
   db.prepare(`INSERT INTO printers (id, name, connection_type, ip_address, port) VALUES ('pr-bar', 'Bar Printer', 'network', '192.168.1.70', 9100)`).run();
-  db.prepare(`INSERT INTO users (id, name, email, password, role) VALUES ('u-bar-staff', 'Bar Staff', 'bar@test.com', 'x', 'cashier')`).run();
+  db.prepare(`INSERT INTO users (id, name, username, password, role) VALUES ('u-bar-staff', 'Bar Staff', 'bar', 'x', 'cashier')`).run();
 
   const express = require('express');
   const app = express();
@@ -165,7 +165,7 @@ async function main() {
 
     console.log('\n─── Scenario E: re-assigning replaces the previous set, not additive ───');
     {
-      db.prepare(`INSERT INTO users (id, name, email, password, role) VALUES ('u-bar-staff-2', 'Bar Staff 2', 'bar2@test.com', 'x', 'cashier')`).run();
+      db.prepare(`INSERT INTO users (id, name, username, password, role) VALUES ('u-bar-staff-2', 'Bar Staff 2', 'bar2', 'x', 'cashier')`).run();
       const res = await api(baseUrl, `/api/kitchen-stations/${stationId!}/users`, {
         method: 'PUT',
         body: { user_ids: ['u-bar-staff-2'] },

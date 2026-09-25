@@ -9,7 +9,7 @@
  *   - blocked when the Master PIN has never been set on this device
  *   - blocked when Master PIN protection is unavailable (no OS keyring)
  *   - rejected with the wrong Master PIN
- *   - successful recovery with the correct email + PIN + new password
+ *   - successful recovery with the correct username + PIN + new password
  *   - the new password actually works for a subsequent /login call
  *   - rate-limiting kicks in after repeated wrong-PIN attempts
  *   - an unrelated password change does not disturb the stored Master PIN blob
@@ -99,7 +99,7 @@ async function runTests() {
   console.log('\nTest 1: recover-password blocked before setup is complete');
   {
     const res = await request(app).post('/api/auth/recover-password').send({
-      email: 'owner@example.com', master_pin: '1234', new_password: 'NewPass123',
+      username: 'owner', master_pin: '1234', new_password: 'NewPass123',
     });
     assert(res.status === 409, `blocked with 409 when no owner exists (got ${res.status})`);
     assert(!isMasterPinSet(), 'no Master PIN has been set yet at this point either');
@@ -111,15 +111,15 @@ async function runTests() {
   const bcrypt = require('bcryptjs');
   const ORIGINAL_PASSWORD = 'OriginalPass123';
   db.prepare(`
-    INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-    VALUES ('owner-1', 'Owner', 'owner@example.com', ?, 'owner', 1, datetime('now'), datetime('now'))
+    INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
+    VALUES ('owner-1', 'Owner', 'owner', ?, 'owner', 1, datetime('now'), datetime('now'))
   `).run(bcrypt.hashSync(ORIGINAL_PASSWORD, 10));
 
   // ── Test 2a: blocked when the Master PIN has never been set ─────────────
   console.log('\nTest 2a: recover-password blocked when Master PIN is not set yet');
   {
     const res = await request(app).post('/api/auth/recover-password').send({
-      email: 'owner@example.com', master_pin: '1234', new_password: 'NewPass123',
+      username: 'owner', master_pin: '1234', new_password: 'NewPass123',
     });
     assert(res.status === 409, `blocked with 409 when Master PIN is unset (got ${res.status}, ${JSON.stringify(res.body)})`);
   }
@@ -129,7 +129,7 @@ async function runTests() {
   {
     encryptionAvailable = false;
     const res = await request(app).post('/api/auth/recover-password').send({
-      email: 'owner@example.com', master_pin: '1234', new_password: 'NewPass123',
+      username: 'owner', master_pin: '1234', new_password: 'NewPass123',
     });
     assert(res.status === 503, `blocked with 503 when safeStorage is unavailable (got ${res.status})`);
     encryptionAvailable = true;
@@ -144,34 +144,34 @@ async function runTests() {
   console.log('\nTest 3: recover-password rejected with the wrong Master PIN');
   {
     const res = await request(app).post('/api/auth/recover-password').send({
-      email: 'owner@example.com', master_pin: '0000', new_password: 'NewPass123',
+      username: 'owner', master_pin: '0000', new_password: 'NewPass123',
     });
     assert(res.status === 403, `wrong PIN is rejected (got ${res.status}, ${JSON.stringify(res.body)})`);
 
     const login = await request(app).post('/api/auth/login').send({
-      email: 'owner@example.com', password: ORIGINAL_PASSWORD,
+      username: 'owner', password: ORIGINAL_PASSWORD,
     });
     assert(login.status === 200, 'original password still works after a failed recovery attempt');
   }
 
-  // ── Test 4: successful recovery with correct email + PIN + new password ─
-  console.log('\nTest 4: successful recovery with correct email, PIN, and new password');
+  // ── Test 4: successful recovery with correct username + PIN + new password ─
+  console.log('\nTest 4: successful recovery with correct username, PIN, and new password');
   const NEW_PASSWORD = 'BrandNewPass123';
   {
     const res = await request(app).post('/api/auth/recover-password').send({
-      email: 'Owner@Example.com', // exercises email normalization (case/whitespace)
+      username: '  Owner ', // exercises username normalization (case/whitespace)
       master_pin: '1234',
       new_password: NEW_PASSWORD,
     });
     assert(res.status === 200, `recovery succeeds with correct PIN (got ${res.status}, ${JSON.stringify(res.body)})`);
 
     const oldLogin = await request(app).post('/api/auth/login').send({
-      email: 'owner@example.com', password: ORIGINAL_PASSWORD,
+      username: 'owner', password: ORIGINAL_PASSWORD,
     });
     assert(oldLogin.status === 401, 'the old password no longer works after recovery');
 
     const newLogin = await request(app).post('/api/auth/login').send({
-      email: 'owner@example.com', password: NEW_PASSWORD,
+      username: 'owner', password: NEW_PASSWORD,
     });
     assert(newLogin.status === 200, `the new password set via recovery works for /login (got ${newLogin.status})`);
     assert(!!newLogin.body.access_token, 'login after recovery returns an access token');
@@ -189,7 +189,7 @@ async function runTests() {
   {
     const jwt = require('jsonwebtoken');
     const { getJWTSecret } = require('../main/routes/auth');
-    const token = jwt.sign({ userId: 'owner-1', email: 'owner@example.com', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
+    const token = jwt.sign({ userId: 'owner-1', username: 'owner', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
 
     const changeRes = await request(app).post('/api/auth/password/change')
       .set('Authorization', `Bearer ${token}`)
@@ -203,7 +203,7 @@ async function runTests() {
   {
     db.prepare("UPDATE users SET role = 'cashier' WHERE id = 'owner-1'").run();
     const res = await request(app).post('/api/auth/recover-password').send({
-      email: 'owner@example.com', master_pin: '1234', new_password: 'RecoveredOwnerPass123',
+      username: 'owner', master_pin: '1234', new_password: 'RecoveredOwnerPass123',
     });
     assert(res.status === 200, `recovery restores owner access when no active owner remains (got ${res.status}, ${JSON.stringify(res.body)})`);
     const recovered = db.prepare('SELECT role FROM users WHERE id = ?').get('owner-1') as { role: string };
@@ -219,13 +219,13 @@ async function runTests() {
     let lastStatus = 0;
     for (let i = 0; i < 4; i++) {
       const res = await request(app).post('/api/auth/recover-password').send({
-        email: 'owner@example.com', master_pin: '9999', new_password: 'AnotherNewPass123',
+        username: 'owner', master_pin: '9999', new_password: 'AnotherNewPass123',
       });
       lastStatus = res.status;
       assert(res.status === 403, `attempt ${i + 1} with wrong PIN is rejected with 403 (got ${res.status})`);
     }
     const blocked = await request(app).post('/api/auth/recover-password').send({
-      email: 'owner@example.com', master_pin: '9999', new_password: 'AnotherNewPass123',
+      username: 'owner', master_pin: '9999', new_password: 'AnotherNewPass123',
     });
     assert(blocked.status === 429, `the 5th failed attempt in the window is rate-limited (got ${blocked.status})`);
     assert(lastStatus === 403, 'sanity: the attempts immediately before the block were still plain wrong-PIN rejections');

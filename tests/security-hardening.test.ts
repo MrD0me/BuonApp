@@ -39,14 +39,14 @@ const { databaseRoutes } = require('../main/routes/database');
 const { authRoutes, getJWTSecret } = require('../main/routes/auth');
 const { orderRoutes } = require('../main/routes/orders');
 
-function seedUser(db: any, id: string, role: string, email: string, categoryIds?: string[]) {
+function seedUser(db: any, id: string, role: string, username: string, categoryIds?: string[]) {
   db.prepare(`
-    INSERT OR REPLACE INTO users (id, name, email, password, role, pin_hash, category_ids, is_active, created_at, updated_at)
+    INSERT OR REPLACE INTO users (id, name, username, password, role, pin_hash, category_ids, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
   `).run(
     id,
     `${role} user`,
-    email,
+    username,
     bcrypt.hashSync('testpass123', 10),
     role,
     bcrypt.hashSync('1234', 10),
@@ -55,7 +55,7 @@ function seedUser(db: any, id: string, role: string, email: string, categoryIds?
     now(),
   );
 
-  const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
+  const token = jwt.sign({ userId: id, username, role }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -76,11 +76,11 @@ async function main() {
   assert(!legacyLoaderHtml.includes("'unsafe-eval'"), 'legacy loader CSP does not allow eval');
 
   const db = initTestDb();
-  const ownerAuth   = seedUser(db, 'security-owner',   'owner',   'security-owner@test.local');
-  const managerAuth = seedUser(db, 'security-manager', 'manager', 'security-manager@test.local');
-  const cashierAuth = seedUser(db, 'security-cashier', 'cashier', 'security-cashier@test.local');
-  const waiterAuth  = seedUser(db, 'security-server',  'server',  'security-server@test.local');
-  const chefAuth    = seedUser(db, 'security-chef',    'chef',    'security-chef@test.local', ['cat-security']);
+  const ownerAuth   = seedUser(db, 'security-owner',   'owner',   'security-owner');
+  const managerAuth = seedUser(db, 'security-manager', 'manager', 'security-manager');
+  const cashierAuth = seedUser(db, 'security-cashier', 'cashier', 'security-cashier');
+  const waiterAuth  = seedUser(db, 'security-server',  'server',  'security-server');
+  const chefAuth    = seedUser(db, 'security-chef',    'chef',    'security-chef', ['cat-security']);
 
   db.prepare(`
     INSERT OR IGNORE INTO categories (id, name, is_active, created_at, updated_at)
@@ -198,7 +198,7 @@ async function main() {
   assert(weakCreateRes.body.error.includes('at least 8 characters'), 'create staff returns policy error');
 
   const strongCreateRes = await request(app).post('/api/staff').set(ownerAuth).send({
-    name: 'test', password: 'StrongPass1', role: 'cashier', email: 'test1@test.local'
+    name: 'test', password: 'StrongPass1', role: 'cashier', username: 'test1'
   });
   assertEqual(strongCreateRes.status, 201, 'owner can create staff with strong password (vuln-0006)');
   const newStaffId = strongCreateRes.body.staff.id;

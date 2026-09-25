@@ -17,9 +17,9 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
 
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 
-async function login(page: Page, email: string): Promise<void> {
+async function login(page: Page, username: string): Promise<void> {
   await page.goto(`${BASE}/auth/login`);
-  await page.locator('#email').fill(email);
+  await page.locator('#username').fill(username);
   await page.locator('#password').fill(E2E_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/pos/**', { timeout: 20000 });
@@ -27,7 +27,7 @@ async function login(page: Page, email: string): Promise<void> {
 }
 
 test('Batch 5C Pages (Orders, Tables, Customers, OrderHistoryGrid) render correctly in English and Persian', async ({ page }) => {
-  await login(page, 'owner@buonapp.local');
+  await login(page, 'owner');
 
   // ==========================================
   // 1. ENGLISH (EN) BASELINE

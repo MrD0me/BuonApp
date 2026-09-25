@@ -14,6 +14,7 @@ import { COUNTRIES, getCountryByCode, getLocalizedCountryName, countryMatchesQue
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import { useLocale, useTranslations, type AppConfig } from 'use-intl';
 import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
+import { isValidUsername, normalizeUsername } from '@/lib/username';
 
 type SetupProfile = 'empty' | 'express' | 'demo';
 type ServiceModel = 'qsr' | 'finedine';
@@ -50,22 +51,6 @@ const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).
   (lang) => LANGUAGES[lang].selectable,
 );
 
-// manually since the frontend can't import backend TS modules directly.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const SUSPECT_EMAIL_TLDS = new Set(['example', 'invalid', 'lcaol', 'local', 'localhost', 'test']);
-
-function isValidOwnerEmail(email: string): boolean {
-  return EMAIL_PATTERN.test(email);
-}
-
-function hasSuspectEmailDomain(email: string): boolean {
-  if (!isValidOwnerEmail(email)) return false;
-  const domain = email.split('@').pop()?.toLowerCase() || '';
-  const labels = domain.split('.');
-  const tld = labels[labels.length - 1] || '';
-  return SUSPECT_EMAIL_TLDS.has(tld);
-}
-
 export default function SetupPage() {
   const { logout } = useAuthStore();
   const [step, setStep] = useState(1);
@@ -89,7 +74,7 @@ export default function SetupPage() {
   const [timezone, setTimezone] = useState<string>(() => getCountryByCode('IN')?.timezone || 'Asia/Kolkata');
   const [form, setForm] = useState({
     name: '',
-    email: '',
+    username: '',
     password: '',
     confirmPassword: '',
     business_name: '',
@@ -97,10 +82,8 @@ export default function SetupPage() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const passwordsEntered = form.password.length > 0 && form.confirmPassword.length > 0;
   const passwordsMatch = !passwordsEntered || form.password === form.confirmPassword;
-  const ownerEmail = form.email.trim().toLowerCase();
-  const ownerEmailEntered = ownerEmail.length > 0;
-  const ownerEmailInvalid = ownerEmailEntered && !isValidOwnerEmail(ownerEmail);
-  const ownerEmailWarning = ownerEmailEntered && !ownerEmailInvalid && hasSuspectEmailDomain(ownerEmail);
+  const ownerUsername = normalizeUsername(form.username);
+  const ownerUsernameInvalid = ownerUsername.length > 0 && !isValidUsername(ownerUsername);
 
   const [masterPinAvailable, setMasterPinAvailable] = useState<boolean | null>(null);
   const [masterPin, setMasterPin] = useState('');
@@ -117,6 +100,7 @@ export default function SetupPage() {
   };
   const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
   const t = useTranslations('setup');
+  const tAuth = useTranslations('auth');
   const locale = useLocale();
 
   useEffect(() => {
@@ -162,12 +146,12 @@ export default function SetupPage() {
   };
 
   const validateOwner = () => {
-    if (!form.name.trim() || !form.email.trim() || !form.password) {
+    if (!form.name.trim() || !ownerUsername || !form.password) {
       toast.error(t('errorNameRequired'));
       return false;
     }
-    if (!isValidOwnerEmail(form.email.trim())) {
-      toast.error(t('errorInvalidEmail'));
+    if (!isValidUsername(ownerUsername)) {
+      toast.error(tAuth('usernameInvalid'));
       return false;
     }
     if (!isPasswordValid(form.password)) {
@@ -215,7 +199,7 @@ export default function SetupPage() {
 
       await api.post('/auth/setup/initialize', {
         name: form.name,
-        email: form.email,
+        username: ownerUsername,
         password: form.password,
         business_type: 'restaurant',
         business_name: form.business_name || undefined,
@@ -476,26 +460,28 @@ export default function SetupPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">{t('ownerEmail')}</Label>
+                    <Label htmlFor="username">{tAuth('username')}</Label>
                     <Input
-                      id="email"
-                      type="email"
-                      autoComplete="email"
-                      value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
-                      placeholder={t('ownerEmailPlaceholder')}
-                      aria-invalid={ownerEmailInvalid}
+                      id="username"
+                      type="text"
+                      autoComplete="username"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      value={form.username}
+                      onChange={(e) => setForm({ ...form, username: e.target.value })}
+                      placeholder={tAuth('usernamePlaceholder')}
+                      aria-invalid={ownerUsernameInvalid}
                       dir="ltr"
                       required
                     />
-                    {ownerEmailInvalid && (
+                    {ownerUsernameInvalid ? (
                       <p className="text-xs font-medium text-red-600">
-                        {t('errorInvalidEmail')}
+                        {tAuth('usernameInvalid')}
                       </p>
-                    )}
-                    {ownerEmailWarning && (
-                      <p className="text-xs font-medium text-orange-600">
-                        {t('ownerEmailDomainWarning')}
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {tAuth('usernameHint')}
                       </p>
                     )}
                   </div>
@@ -592,7 +578,7 @@ export default function SetupPage() {
                     </span>
                   </label>
 
-                  <Button type="submit" disabled={ownerEmailInvalid || !passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
+                  <Button type="submit" disabled={ownerUsernameInvalid || !passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
                     {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                   </Button>
                 </form>

@@ -326,7 +326,7 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   - È l'unica voce della barra che non porta a una pagina: apre una finestra sopra la schermata in
     cui si è, e chiusa lascia tutto com'era, anche un ordine a metà in Ordina.
   - La vede anche il cassiere, che non vede le Impostazioni: il codice è solo un indirizzo, e per
-    entrare servono comunque email e password del cameriere.
+    entrare servono comunque nome utente e password del cameriere.
   - Sparisce quando il Server App è spento.
 
   Vedi [palmare.md](palmare.md#come-ci-arriva-il-cameriere).

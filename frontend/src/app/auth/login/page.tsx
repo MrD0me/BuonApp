@@ -6,6 +6,7 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import { useAuthStore, StorageUnavailableError } from '@/store/auth';
 import { parseLoginFailure } from '@/lib/login-errors';
+import { looksLikeEmail } from '@/lib/username';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,7 +38,7 @@ function LoginContent() {
   const tStaff = useTranslations('staff');
   const tBusinessType = useTranslations('businessType');
 
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -91,10 +92,16 @@ function LoginContent() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setLoginError(null);
+    // Somebody still typing the email they used before usernames: say what
+    // changed, rather than spend one of their attempts on a certain failure.
+    if (looksLikeEmail(username)) {
+      setLoginError(t('usernameNotEmail'));
+      return;
+    }
+    setLoading(true);
     try {
-      await login(email, password, rememberMe);
+      await login(username, password, rememberMe);
       toast.success(t('signInSuccess'));
     } catch (err: unknown) {
       if (err instanceof StorageUnavailableError) {
@@ -187,8 +194,8 @@ function LoginContent() {
           <CardContent className="pt-6">
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">{t('email')}</Label>
-                <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('emailPlaceholder')} dir="ltr" required />
+                <Label htmlFor="username">{t('username')}</Label>
+                <Input id="username" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} placeholder={t('usernamePlaceholder')} dir="ltr" required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">{t('password')}</Label>

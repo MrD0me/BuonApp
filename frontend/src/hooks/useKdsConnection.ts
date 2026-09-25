@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import type { AxiosInstance } from 'axios';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
+import { looksLikeEmail } from '@/lib/username';
 
 // Bounded exponential backoff for KDS WebSocket reconnects: 1s, 2s, 4s, ...
 // capping at 30s so a prolonged outage doesn't hammer the server while a brief
@@ -165,12 +166,12 @@ export interface UseKdsConnectionResult {
   connected: boolean;
   connectionMode: ConnectionMode;
   updating: number | null;
-  loginEmail: string;
+  loginUsername: string;
   loginPassword: string;
   loginError: string;
   loginLoading: boolean;
   rememberMe: boolean;
-  setLoginEmail: (v: string) => void;
+  setLoginUsername: (v: string) => void;
   setLoginPassword: (v: string) => void;
   setRememberMe: (v: boolean) => void;
   handleLogin: (e: React.FormEvent) => Promise<void>;
@@ -206,6 +207,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const itemStatusPath = endpoints?.itemStatus ?? ITEM_STATUS_ENDPOINT;
   const t = useTranslations('kds');
   const tNav = useTranslations('nav');
+  const tAuth = useTranslations('auth');
   const { confirm, ConfirmDialog } = useConfirm();
 
   const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[normalizeKitchenStatus(s)].labelKey);
@@ -222,7 +224,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const [connected, setConnected] = useState(false);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>(null);
   const [updating, setUpdating] = useState<number | null>(null);
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
@@ -594,6 +596,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
+      if (looksLikeEmail(loginUsername)) {
+        setLoginError(tAuth('usernameNotEmail'));
+        return;
+      }
       clearKdsAuthBlocked();
       setLoginError('');
       sessionGenerationRef.current += 1;
@@ -603,7 +609,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
       try {
         const { data } = await api.post(loginPath, {
-          email: loginEmail,
+          username: loginUsername,
           password: loginPassword,
           rememberMe,
         });
@@ -630,7 +636,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }
       }
     },
-    [loginEmail, loginPassword, rememberMe, loginPath, api, t, tryWebSocket],
+    [loginUsername, loginPassword, rememberMe, loginPath, api, t, tAuth, tryWebSocket],
   );
 
   const handleLogout = useCallback(async () => {
@@ -749,12 +755,12 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     connected,
     connectionMode,
     updating,
-    loginEmail,
+    loginUsername,
     loginPassword,
     loginError,
     loginLoading,
     rememberMe,
-    setLoginEmail,
+    setLoginUsername,
     setLoginPassword,
     setRememberMe,
     handleLogin,

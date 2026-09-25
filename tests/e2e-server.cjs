@@ -26,10 +26,10 @@ const { shutdown: shutdownWhatsApp, requestShutdown: requestWhatsAppShutdown } =
 const { startStandaloneServers } = require('../dist/standalone-startup');
 const { startKdsServer, stopKdsServer } = require('../dist/kds-server');
 
-function seedUser(id, email, role) {
+function seedUser(id, username, role) {
   getDatabase().prepare(
-    'INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)'
-  ).run(id, `E2E ${role}`, email, bcrypt.hashSync('E2ePass123!', 10), role, now(), now());
+    'INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)'
+  ).run(id, `E2E ${role}`, username, bcrypt.hashSync('E2ePass123!', 10), role, now(), now());
 }
 
 function seedPosFixture() {
@@ -152,9 +152,9 @@ async function stop(exitCode = 0) {
   await startStandaloneServers({
     initializeDatabase: initDatabase,
     prepare: () => {
-      seedUser('e2e-owner', 'owner@buonapp.local', 'owner');
-      seedUser('e2e-manager', 'manager@buonapp.local', 'manager');
-      seedUser('e2e-server', 'server@buonapp.local', 'server');
+      seedUser('e2e-owner', 'owner', 'owner');
+      seedUser('e2e-manager', 'manager', 'manager');
+      seedUser('e2e-server', 'server', 'server');
       seedPosFixture();
     },
     startServer,

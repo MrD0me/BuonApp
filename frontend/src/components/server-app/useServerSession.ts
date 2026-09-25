@@ -7,7 +7,7 @@ import { clearServerToken, createServerApi, readServerToken, storeServerToken } 
 export interface ServerUser {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: string;
 }
 
@@ -18,7 +18,7 @@ export interface ServerSession {
   loading: boolean;
   /** The owner switched the Server App off: nothing to log into. */
   disabled: boolean;
-  login: (email: string, password: string, rememberMe: boolean) => Promise<void>;
+  login: (username: string, password: string, rememberMe: boolean) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -61,9 +61,9 @@ export function useServerSession(): ServerSession {
     return () => { cancelled = true; };
   }, [api]);
 
-  const login = useCallback(async (email: string, password: string, rememberMe: boolean) => {
+  const login = useCallback(async (username: string, password: string, rememberMe: boolean) => {
     if (!api) return;
-    const res = await api.post('/api/auth/login', { email, password, remember_me: rememberMe });
+    const res = await api.post('/api/auth/login', { username, password, remember_me: rememberMe });
     storeServerToken(res.data.access_token);
     setUser(res.data.user);
   }, [api]);

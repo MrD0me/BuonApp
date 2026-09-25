@@ -42,8 +42,8 @@ const {
 const { customerRoutes } = require('../main/routes/customers');
 const { getJWTSecret } = require('../main/routes/auth');
 
-function makeToken(id: string, role: string, email: string) {
-  const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
+function makeToken(id: string, role: string, username: string) {
+  const token = jwt.sign({ userId: id, username, role }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -61,11 +61,11 @@ async function main() {
   ).run(custId, 'Auth Test Customer', '5550000001', now(), now());
 
   // Seed users for role checks
-  const ownerAuth   = makeToken('owner-auth-001',   'owner',   'owner@auth.test');
-  const managerAuth = makeToken('mgr-auth-001',     'manager', 'manager@auth.test');
-  const cashierAuth = makeToken('cashier-auth-001', 'cashier', 'cashier@auth.test');
-  const waiterAuth  = makeToken('server-auth-001',  'server',  'server@auth.test');
-  const chefAuth    = makeToken('chef-auth-001',    'chef',    'chef@auth.test');
+  const ownerAuth   = makeToken('owner-auth-001',   'owner',   'owner-auth');
+  const managerAuth = makeToken('mgr-auth-001',     'manager', 'manager-auth');
+  const cashierAuth = makeToken('cashier-auth-001', 'cashier', 'cashier-auth');
+  const waiterAuth  = makeToken('server-auth-001',  'server',  'server-auth');
+  const chefAuth    = makeToken('chef-auth-001',    'chef',    'chef-auth');
 
   const app = createApp({ '/api/customers': customerRoutes });
 

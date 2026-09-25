@@ -135,9 +135,9 @@ async function main() {
 
   for (const role of ['owner', 'manager', 'cashier', 'chef', 'server']) {
     db.prepare(`
-      INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(`server-app-${role}`, `Server App ${role}`, `${role}@server-app.test`, passwordHash, role, now(), now());
+    `).run(`server-app-${role}`, `Server App ${role}`, role, passwordHash, role, now(), now());
   }
 
   await startServerApp();
@@ -146,18 +146,21 @@ async function main() {
   try {
     for (const role of ['owner', 'manager', 'cashier', 'chef']) {
       const response = await postJson(baseUrl, '/api/auth/login', {
-        email: `${role}@server-app.test`,
+        username: role,
         password: 'ServerPass123!',
       });
       assert.equal(response.status, 403, `${role} cannot log in to Server App`);
       assert.match(String(response.body.error), /Only service staff/i);
     }
 
+    // Typed on a phone: a capital from the keyboard and a stray space still sign in.
     const serverLogin = await postJson(baseUrl, '/api/auth/login', {
-      email: 'server@server-app.test',
+      username: ' Server ',
       password: 'ServerPass123!',
     });
     assert.equal(serverLogin.status, 200, 'server can log in to Server App');
+    assert.equal(serverLogin.body.user.username, 'server', 'Server App returns the stored username');
+    assert.equal(serverLogin.body.user.email, undefined, 'Server App no longer returns an email');
     assert.equal(serverLogin.body.user.role, 'server', 'Server App returns server role');
     assert.ok(serverLogin.body.access_token, 'Server App returns a token for server');
 

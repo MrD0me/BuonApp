@@ -42,14 +42,13 @@ const { registerRoutes } = require('../main/routes/index');
 const { getJWTSecret } = require('../main/routes/auth');
 
 function seedUser(db: any, id: string, role: string, isActive = 1, pin = '1234') {
-  const email = `${id}@test.local`;
   db.prepare(`
-    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    INSERT INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     id,
-    email,
+    id,
     bcrypt.hashSync('Testpass123', 10),
     role,
     pin ? bcrypt.hashSync(pin, 10) : null,
@@ -58,7 +57,7 @@ function seedUser(db: any, id: string, role: string, isActive = 1, pin = '1234')
     now()
   );
 
-  const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
+  const token = jwt.sign({ userId: id, username: id, role }, getJWTSecret(), { expiresIn: '1h' });
   return { headers: { Authorization: `Bearer ${token}` }, token, id };
 }
 

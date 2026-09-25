@@ -432,7 +432,7 @@ export function ServerAppShell() {
           <div className="flex h-16 items-center gap-2">
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-xl leading-tight font-bold">{t('sala')}</h1>
-              <p className="truncate text-sm text-muted-foreground">{user.name || user.email}</p>
+              <p className="truncate text-sm text-muted-foreground">{user.name || user.username}</p>
             </div>
             <Button type="button" variant="outline" size="icon-touch" onClick={refreshAll} aria-label={t('refresh')}>
               <RefreshCw />

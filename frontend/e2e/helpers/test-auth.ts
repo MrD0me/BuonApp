@@ -14,14 +14,14 @@ function base64Url(data: string | Buffer): string {
  */
 export function getE2eToken(
   userId = 'e2e-owner',
-  email = 'owner@buonapp.local',
+  username = 'owner',
   role = 'owner',
 ): string {
   const header = base64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = base64Url(
     JSON.stringify({
       userId,
-      email,
+      username,
       role,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600,

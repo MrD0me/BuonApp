@@ -14,7 +14,7 @@ import * as os from 'os';
  *
  *  - `<html dir="rtl">` is applied once the active language is Persian
  *    (HtmlLangSync), and stays `ltr` for English.
- *  - Naturally-LTR fields (email, URLs, technical values) are isolated in
+ *  - Naturally-LTR fields (usernames, URLs, technical values) are isolated in
  *    `dir="ltr"` islands so they stay readable inside the RTL page.
  *  - The Settings page does not overflow horizontally in RTL.
  *  - Directional navigation arrows mirror via `.rtl-flip`.
@@ -26,8 +26,8 @@ import * as os from 'os';
  * (login syncs the tenant language), so it restores `en` afterwards to avoid
  * leaking Persian into the other e2e specs that use English text locators.
  *
- * The e2e fixture (tests/e2e-server.cjs) seeds manager@buonapp.local /
- * E2ePass123! and owner@buonapp.local / E2ePass123!.
+ * The e2e fixture (tests/e2e-server.cjs) seeds manager / E2ePass123! and
+ * owner / E2ePass123!.
  */
 
 const BASE = 'http://localhost:3001';
@@ -50,7 +50,7 @@ import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 
 async function loginAsManager(page: Page): Promise<void> {
   await page.goto(`${BASE}/auth/login`);
-  await page.locator('#email').fill('manager@buonapp.local');
+  await page.locator('#username').fill('manager');
   await page.locator('#password').fill(E2E_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/pos/**', { timeout: 20000 });
@@ -63,7 +63,7 @@ async function logout(page: Page): Promise<void> {
   });
 }
 
-test('login page is LTR in English and RTL in Persian with LTR email and end-aligned toggle', async ({ page }) => {
+test('login page is LTR in English and RTL in Persian with LTR username and end-aligned toggle', async ({ page }) => {
   // 1. English (LTR)
   await page.goto(`${BASE}/auth/login`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
@@ -77,8 +77,8 @@ test('login page is LTR in English and RTL in Persian with LTR email and end-ali
 
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
 
-  // The email field is naturally LTR and must stay an LTR island inside RTL.
-  await expect(page.locator('#email')).toHaveAttribute('dir', 'ltr');
+  // The username field is naturally LTR and must stay an LTR island inside RTL.
+  await expect(page.locator('#username')).toHaveAttribute('dir', 'ltr');
 
   // The password eye toggle sits at the inline-end: in RTL that is the left
   // side of the input, so it must sit on the left half of the input.
@@ -93,7 +93,7 @@ test('login page is LTR in English and RTL in Persian with LTR email and end-ali
   await captureScreenshot(page, 'auth-login-rtl-fa.png');
 });
 
-test('recover password page is LTR in English and RTL in Persian with .rtl-flip arrow and LTR email', async ({ page }) => {
+test('recover password page is LTR in English and RTL in Persian with .rtl-flip arrow and LTR username', async ({ page }) => {
   await page.route('**/api/auth/setup/status', (route) => {
     route.fulfill({
       status: 200,
@@ -105,7 +105,7 @@ test('recover password page is LTR in English and RTL in Persian with .rtl-flip 
   // 1. English (LTR)
   await page.goto(`${BASE}/auth/recover`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  await expect(page.locator('#recover-email')).toBeVisible();
+  await expect(page.locator('#recover-username')).toBeVisible();
   await captureScreenshot(page, 'auth-recover-ltr-en.png');
 
   // 2. Persian (RTL)
@@ -116,8 +116,8 @@ test('recover password page is LTR in English and RTL in Persian with .rtl-flip 
 
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
 
-  // Recover email input must have dir="ltr"
-  await expect(page.locator('#recover-email')).toHaveAttribute('dir', 'ltr');
+  // Recover username input must have dir="ltr"
+  await expect(page.locator('#recover-username')).toHaveAttribute('dir', 'ltr');
 
   // Back arrow has rtl-flip class
   const backButtonArrow = page.locator('button svg.rtl-flip');
@@ -172,9 +172,9 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   await page.locator('button', { hasText: /ادامه|Continue/ }).first().click();
 
   // Step 3 (Owner Account)
-  await expect(page.locator('#email')).toBeVisible();
-  // Owner email input is naturally LTR
-  await expect(page.locator('#email')).toHaveAttribute('dir', 'ltr');
+  await expect(page.locator('#username')).toBeVisible();
+  // Owner username input is naturally LTR
+  await expect(page.locator('#username')).toHaveAttribute('dir', 'ltr');
 
   await captureScreenshot(page, 'setup-step3-owner-account-rtl-fa.png');
 });
@@ -268,10 +268,10 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     await page.goto(`${BASE}/settings?tab=account`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
 
-    // Account email (manager@buonapp.local) is in an LTR island
-    const email = page.locator('text=manager@buonapp.local').first();
-    await expect(email).toBeVisible();
-    const hasLtrAncestor = await email.evaluate((el) => {
+    // Account username (manager) is in an LTR island
+    const username = page.getByTestId('account-username');
+    await expect(username).toHaveText('manager');
+    const hasLtrAncestor = await username.evaluate((el) => {
       let node: HTMLElement | null = el as HTMLElement;
       while (node) {
         if (node.getAttribute('dir') === 'ltr') return true;
@@ -279,7 +279,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
       }
       return false;
     });
-    expect(hasLtrAncestor, 'account email must live inside an LTR island').toBeTruthy();
+    expect(hasLtrAncestor, 'account username must live inside an LTR island').toBeTruthy();
 
     const accountOverflow = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,

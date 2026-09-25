@@ -46,11 +46,11 @@ const { getJWTSecret } = require('../main/routes/auth');
 
 function seedCashier(db: any) {
   db.prepare(`
-    INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    INSERT OR REPLACE INTO users (id, name, username, password, role, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-  `).run('price-cashier', 'Cashier', 'price-cashier@test.local',
+  `).run('price-cashier', 'Cashier', 'price-cashier',
     bcrypt.hashSync('testpass123', 10), 'cashier', now(), now());
-  const token = jwt.sign({ userId: 'price-cashier', email: 'price-cashier@test.local', role: 'cashier' }, getJWTSecret(), { expiresIn: '1h' });
+  const token = jwt.sign({ userId: 'price-cashier', username: 'price-cashier', role: 'cashier' }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 

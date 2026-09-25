@@ -31,13 +31,12 @@ const { orderRoutes } = require('../main/routes/orders');
 const { registerRoutes } = require('../main/routes/index');
 
 function seedUser(db: any, id: string, role: string, pin?: string) {
-  const email = `${id}@test.local`;
   db.prepare(`
-    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    INSERT INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-  `).run(id, id, email, bcrypt.hashSync('testpass123', 10), role, pin ? bcrypt.hashSync(pin, 10) : null, now(), now());
+  `).run(id, id, id, bcrypt.hashSync('testpass123', 10), role, pin ? bcrypt.hashSync(pin, 10) : null, now(), now());
   return {
-    Authorization: `Bearer ${jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' })}`,
+    Authorization: `Bearer ${jwt.sign({ userId: id, username: id, role }, getJWTSecret(), { expiresIn: '1h' })}`,
   };
 }
 

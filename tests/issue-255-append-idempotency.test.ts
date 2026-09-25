@@ -33,10 +33,10 @@ const { getJWTSecret } = require('../main/routes/auth');
 function seedServerUser(db: any) {
   const userId = 'server-255';
   db.prepare(`
-    INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    INSERT OR IGNORE INTO users (id, name, username, password, role, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, 'server', 1, ?, ?)
-  `).run(userId, 'Issue 255 Server', 'server-255@test.local', bcrypt.hashSync('testpass123', 10), now(), now());
-  const token = jwt.sign({ userId, email: 'server-255@test.local', role: 'server' }, getJWTSecret(), { expiresIn: '1h' });
+  `).run(userId, 'Issue 255 Server', userId, bcrypt.hashSync('testpass123', 10), now(), now());
+  const token = jwt.sign({ userId, username: userId, role: 'server' }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 

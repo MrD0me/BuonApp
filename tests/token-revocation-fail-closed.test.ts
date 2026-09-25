@@ -67,11 +67,11 @@ async function run() {
 
   // ── 5. Route-level: valid token is denied when the store is unavailable ──
   {
-    db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-      VALUES ('rev-owner-1', 'Rev Owner', 'rev-owner@test.local', ?, 'owner', 1, ?, ?)`)
+    db.prepare(`INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
+      VALUES ('rev-owner-1', 'Rev Owner', 'rev-owner', ?, 'owner', 1, ?, ?)`)
       .run(bcrypt.hashSync('Pass1234!', 10), now(), now());
     const token = jwt.sign(
-      { userId: 'rev-owner-1', email: 'rev-owner@test.local', role: 'owner' },
+      { userId: 'rev-owner-1', username: 'rev-owner', role: 'owner' },
       getJWTSecret(),
       { expiresIn: '1h' },
     );
