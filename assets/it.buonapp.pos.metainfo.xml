@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.2.3" date="2026-09-26">
+      <description>
+        <p>An order cancelled after its preconto was printed kept its bill unpaid, and the day refused to close over it: an unpaid bill for food nobody ate, which a forced close then wrote into the day's notes. The bill of a cancelled order is now owed by nobody. A correction only: no new feature, and no database migration.</p>
+      </description>
+    </release>
     <release version="6.2.2" date="2026-09-26">
       <description>
         <p>With the whole room on the till's screen, most tables are drawn small, and a small table did not say how many it seats; one with dishes to send lost its name to the badge beside it. Every table now shows its name in full and its seats. A correction only: no new feature, and no database migration.</p>

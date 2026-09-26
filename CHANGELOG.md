@@ -4,6 +4,18 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.2.3] - 2026-09-26
+
+An order cancelled after its preconto was printed kept its bill unpaid, and
+the day refused to close over it: an unpaid bill for food nobody ate, which a
+forced close then wrote into the day's notes. The bill of a cancelled order is
+now owed by nobody. A correction only: no new feature, and no database
+migration.
+
+### Fixed
+
+- **The bill of a cancelled order no longer blocks the day's close.** Printing the preconto opens the order's bill; cancelling the order cancelled its lines and left the bill unpaid, and the close counted every unpaid bill of the day without looking at the order. It showed as the warning beside *Day in progress*, in the close dialog's list of unpaid bills, and, when the owner forced the close, as `with 1 unpaid bill(s)` in the day's notes, which the archive and the printed closing report carry. The Orders screen already left cancelled orders out of *Unpaid*. The close and the day's summary now count only bills somebody owes: an unpaid bill on an order that was served still blocks, and money already taken on a later-cancelled order stays in the takings. A day still open reads right as soon as the update is in; a day already closed keeps the summary and notes it was frozen with.
+
 ## [6.2.2] - 2026-09-26
 
 With the whole room on the till's screen, most tables are drawn small, and a
