@@ -103,7 +103,7 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
     });
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `flo-export-${timestamp}.json`;
+    const filename = `buonapp-export-${timestamp}.json`;
 
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

@@ -11,7 +11,7 @@ BuonApp UI is the user interface for the BuonApp point-of-sale system. It runs a
 - Dine-in, counter, takeaway, and delivery order types
 - Held orders shared across devices
 - Per-item and per-order discounts, with manager PIN overrides for voids
-- Optional split checks at table checkout
+- One bill per order, payable with more than one method
 
 ### Tables
 - The dining room drawn as a floor map, one tab per room
@@ -35,7 +35,6 @@ BuonApp UI is the user interface for the BuonApp point-of-sale system. It runs a
 - Filter bar — search by order number, filter by table, type, or status
 - Print receipt with a confirmation modal and a print log
 - Cancel order with a reason, a free-the-table option, and manager PIN override
-- WhatsApp bill sharing
 - Loyalty points, when the customer book is enabled
 
 ### Kitchen Display (optional)
@@ -50,9 +49,9 @@ BuonApp UI is the user interface for the BuonApp point-of-sale system. It runs a
 - **Add-on groups** — modifier groups linked to products
 - **Customers** — the customer book and loyalty wallet, hidden when switched off
 - **Staff** — accounts and roles (Owner, Manager, Cashier, Server, Chef)
-- **WhatsApp** — pairing and bill delivery
+- **WhatsApp** — pairing and bill delivery; the code ships but the feature is switched off (`WHATSAPP_AVAILABLE` in `src/lib/features.ts`), so no screen leads here
 - **Print test** — printer probe including the accent and code-page check
-- **Settings** — store details, printers, kitchen stations, tax, and feature switches
+- **Settings** — store details and the registration number printed on the bill, printers, kitchen stations, and feature switches
 
 ## Tech Stack
 
@@ -105,7 +104,7 @@ src/
 │   │   ├── customers/      # Customer book (optional)
 │   │   ├── staff/          # Staff accounts and roles
 │   │   ├── kds/            # Kitchen Display inside the app
-│   │   ├── whatsapp/       # WhatsApp pairing and delivery
+│   │   ├── whatsapp/       # WhatsApp pairing and delivery (switched off)
 │   │   ├── print-test/     # Printer probe
 │   │   └── settings/       # App configuration
 │   ├── kds-standalone/     # Standalone KDS mode (:3002)
