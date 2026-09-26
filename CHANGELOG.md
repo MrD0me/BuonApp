@@ -4,6 +4,17 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.2.1] - 2026-09-26
+
+On the till's 1024x768 screen the floor map ran off the right and the bottom,
+and the floor had to scroll it to find a table. The whole room now fits on
+screen. A correction only: no new feature, and no database migration, so an
+upgrade touches nothing in the data.
+
+### Fixed
+
+- **The floor map fits the whole room on screen.** The map was scaled to the width it was given and never below 70%, so the height did not count at all. On the till, whose map frame is about 816x481 px, a large room (1800x1100) was drawn at 1260x770, 444 px too wide and 289 too tall, and even a small room ran 119 px off the bottom. The scale now fits width and height both, the whole room is on screen with no scrollbars, and only a frame too small to hold anything legible (under 30%) falls back to scrolling. The fit also counts tables left outside the room when it was made smaller, which a room resize does not move. A small table in a large room comes out under 50 px wide on this till, where its name was down to its first letter; below 72 px a tile now sets its name one size smaller, with tighter padding.
+
 ## [6.2.0] - 2026-09-26
 
 BuonApp sends no mail, yet the till, the kitchen display and the handhelds all

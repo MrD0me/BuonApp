@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.2.1" date="2026-09-26">
+      <description>
+        <p>On the till's 1024x768 screen the floor map ran off the right and the bottom, and the floor had to scroll it to find a table. The whole room now fits on screen. A correction only: no new feature, and no database migration, so an upgrade touches nothing in the data.</p>
+      </description>
+    </release>
     <release version="6.2.0" date="2026-09-26">
       <description>
         <p>BuonApp sends no mail, yet the till, the kitchen display and the handhelds all asked for an email and a password, and the emails were invented to get past the form. Staff now sign in with a username, and each account keeps the part of its old email before the @, so nobody has a new name to learn. On the handheld the dishes are a list instead of a grid of tiles, the QR to join it is one tap away for the cashier too, and signing out of it now outlasts a restart of the PC. Identical dishes added later are summed on the table and on the bill. One database migration (v96) renames the login column; reload the kitchen display and the handhelds after updating.</p>
