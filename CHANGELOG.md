@@ -4,6 +4,38 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.2.0] - 2026-09-26
+
+BuonApp sends no mail, yet the till, the kitchen display and the handhelds all
+asked for an email and a password, and the emails were invented to get past the
+form. Staff now sign in with a username, and each account keeps the part of its
+old email before the @, so nobody has a new name to learn. On the handheld the
+dishes are a list instead of a grid of tiles, the QR to join it is one tap away
+for the cashier too, and signing out of it now outlasts a restart of the PC.
+Identical dishes added later are summed on the table and on the bill. One
+database migration (v96) renames the login column; reload the kitchen display
+and the handhelds after updating.
+
+### Added
+
+- **Staff sign in with a username, not an email (migration v96).** The login on the till (`:3001`), the kitchen display (`:3002`) and the handheld (`:3003`), the Master PIN password recovery and the setup wizard take a username where they took an email. A username is 3 to 32 characters among `a-z`, `0-9`, `.`, `_` and `-`, starting and ending with a letter or a digit; case, surrounding spaces and accents do not count, so `Niccolò` signs in as `niccolo`. The migration renames `users.email` to `users.username` in place — the UNIQUE constraint follows the column, and the backup taken before migrating keeps the old emails — and gives every account the part of its email before the @ (`mario@ristorante.it` → `mario`). Clashes become `mario2`, `mario3`, the active owner keeping the plain name; an account with no email takes one from its name (`mario.rossi`), or else from its role. In Staff the username is required and unique, and the API answers `400` with `code` `username_required`, `username_invalid` or `username_taken`. A form with an `@` in the field explains the change instead of sending, so it costs no attempt. The API takes `username` where it took `email`, and the JWT carries a `username` claim; tokens issued before the update stay valid. A restore or a JSON import that brings accounts back without a username gives them one.
+- **Handhelds in the sidebar.** A waiter joins the handheld by scanning a QR with the page's address, and it lived only at the bottom of the Server App tab in Settings, behind a button that loaded it, where the cashier, who cannot open Settings, never saw it. A **Handhelds** entry above Settings opens it in a window over whatever screen is open, an order half-written in Ordering included; owner, manager and cashier see it, and it disappears when the Server App is switched off. The Settings tab shows the codes as soon as it opens.
+- **The handheld's Ordering screen is a list.** One dish per row — photo, name, price, and at the end the pencil and `− n +` — instead of a grid of tiles that confused. The `−` takes back a wrong tap from the row itself, without opening the check; the number counts the dish wherever it is on the check and is dimmed at zero, so the dishes already taken stand out while scrolling. A dish with no photo shows its initials on its colour, as on the till, and the search has an `×` that clears it and keeps the keyboard open. Photos reach the phone through a new `GET /api/products/:id/image` on `:3003`, open without a token like the main API's because an `<img>` cannot send one, passed through as bytes with their ETag.
+
+### Changed
+
+- **Identical dishes added later are summed on the table and on the bill.** Every addition writes new rows, and the table summary drew one per row: two Cokes and then a third were `2×` with `1×` under it, while the kitchen ticket already folded them. The rows in the order stay as they are — each has its round, its service run, its kitchen state and its price — and what changes is how they are shown: the same dish, with the same add-ons in any order and the same note, at the same price, run and kitchen state, is one line in the table panel, on the handheld, and in Ordering's table window and *Already ordered*. On the till the sheet of a summed row acts on the latest addition and says so (`1× Coke · one of 3`). The preconto folds them too, on the thermal printer and on both browser prints, and a cancelled row stays beside the negative row that clears it.
+- **In the fixed-menu window the courses stand apart from the dishes.** A course heading was white like the dishes and shorter than a dish row, while the counted dishes were tinted across: the eye found the chosen dishes before the courses. A course is now a band of the brand blue, closed above and below by the rule that closes *How many menus?*, and the counted dishes keep half the tint. The handheld mounts the same window and gets the same drawing.
+- **WhatsApp is switched off, not removed.** Nobody uses it and it was never tried on a real till. Two switches, `WHATSAPP_AVAILABLE` in `main/features.ts` and `frontend/src/lib/features.ts`, keep `/api/whatsapp` unmounted (it answers `404`) and its service stopped even with `whatsapp_enabled` true in the database, and no screen offers it; the order panels stop polling its status every five seconds. The service, routes, strings, tables and any saved session stay where they are, and their tests keep running.
+
+### Fixed
+
+- **Signing out of a handheld did not survive a restart of the PC.** The till and the kitchen display write a revoked token to the database with its expiry; the handheld's logout revoked it in memory only, so after the first restart a token the waiter had signed out of was good again until it expired — up to ten days with *Keep me logged in*. The phone forgets its token anyway, but a copy of it (the handheld speaks plain HTTP on the house Wi-Fi) gave back a waiter's powers. The logout now passes the expiry, and the revocation is written down.
+- **The *to send* counter counted rows, not dishes.** Two tiramisù rung up together are one row with quantity 2, and *Send to kitchen (n)* and the *N to send* badge said 1. They now sum the quantities of the rows still to send, the menu's own row left out, and Ordering's table window counts the same way as the order panel, the floor and the handheld.
+- **On the handheld, dishes chosen inside a menu showed as selected in Ordering.** Once the fixed-menu window closed, the list lit the row of every dish chosen in the menu and counted it between `−` and `+`, with the `−` disabled: they looked ordered twice. Each cart line now counts for its own product, as on the till's grid: a dish chosen in a menu shows on the check under the menu, and the menu's row counts the menus.
+- **With the sidebar collapsed, half a letter peeked out beside every icon.** A 20 px icon plus an 8 px gap left 4 px for the name — half its first letter beside every icon — and the icon sat to one side. Collapsed, the name is now left to screen readers and the tooltip, and the icons are centred in one column with the house initial.
+- **`docs/API.md` described staff routes that do not exist.** It had `PATCH` and `DELETE` on `/api/users/:id`, a `{ users }` list and a `waiter` role; the staff section and the role table now describe what `main/routes/staff.ts` does — `PUT`, deactivate and reactivate instead of delete, `{ staff }` responses, the `server` role, the manager's limits and the login's lockout.
+
 ## [6.1.0] - 2026-09-24
 
 A fixed menu was one guest's menu. Eight menus were eight groups, and the
