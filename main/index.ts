@@ -259,6 +259,24 @@ if (gotSingleInstanceLock) {
   });
 }
 
+/**
+ * The pages are laid out for a window of about 1140x800: that is the size they
+ * were drawn and checked at. The till's 1024x768 falls a size short of it, and
+ * there everything came out a size too big — titles, 44 px buttons, the
+ * sidebar — and the room map and the menu grid got what was left. On a screen
+ * that small the renderer is zoomed out to make up the difference, as Ctrl and
+ * minus would in a browser: 90 % on the till, which leaves a 44 px button at
+ * the 40 px Windows asks of a touch target. In steps of 5 %, never below 75 %.
+ */
+const LAYOUT_WIDTH = 1140;
+const LAYOUT_HEIGHT = 800;
+const MIN_ZOOM = 0.75;
+
+function rendererZoomFor(workArea: { width: number; height: number }): number {
+  const fit = Math.min(1, workArea.width / LAYOUT_WIDTH, workArea.height / LAYOUT_HEIGHT);
+  return Math.max(MIN_ZOOM, Math.round(fit * 20) / 20);
+}
+
 function createWindow(): void {
   // Runs on every call, not just the initial one — the crash-recovery path
   // below (render-process-gone) and the macOS 'activate' handler both call
@@ -285,7 +303,8 @@ function createWindow(): void {
   const windowWidth = Math.min(1400, workArea.width);
   const windowHeight = Math.min(900, workArea.height);
   const startMaximised = workArea.width <= 1400 || workArea.height <= 900;
-  log.info(`[BuonApp] Work area ${workArea.width}x${workArea.height} at ${screen.getPrimaryDisplay().scaleFactor}x -> window ${windowWidth}x${windowHeight}${startMaximised ? ' (maximised)' : ''}`);
+  const zoomFactor = rendererZoomFor(workArea);
+  log.info(`[BuonApp] Work area ${workArea.width}x${workArea.height} at ${screen.getPrimaryDisplay().scaleFactor}x -> window ${windowWidth}x${windowHeight}${startMaximised ? ' (maximised)' : ''}, zoom ${Math.round(zoomFactor * 100)}%`);
 
   mainWindow = new BrowserWindow({
     width: windowWidth,
@@ -300,6 +319,10 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Chromium keeps zoom per host, not per window: every window on
+      // localhost follows this one, on the same screen. The kitchen window
+      // opens on the LAN address and keeps its own 100 %.
+      zoomFactor,
     },
     show: false,
   });
