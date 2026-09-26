@@ -3459,7 +3459,7 @@ export default function SettingsPage() {
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `flo-export-${new Date().toISOString().split('T')[0]}.json`;
+                    a.download = `buonapp-export-${new Date().toISOString().split('T')[0]}.json`;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
