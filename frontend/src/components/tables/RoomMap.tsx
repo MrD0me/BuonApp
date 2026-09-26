@@ -15,14 +15,16 @@ import { CircleDollarSign, Link2 } from 'lucide-react';
 /**
  * The dining room, drawn to scale (phase 2 of docs/table-management.md).
  *
- * Rooms are laid out in abstract units and scaled to whatever width the page
- * gives them, so the same map reads on the central PC and on a tablet. The
- * scale is floored so a large room becomes scrollable rather than unreadable.
+ * Rooms are laid out in abstract units and scaled to fit the frame the page
+ * gives them, width and height both, so the whole room is on screen at once.
+ * Scaled to the width alone, a room on the till's 1024x768 ran off the bottom
+ * and the floor had to scroll the map to find a table. Only a frame too small
+ * to hold anything legible falls back to scrolling.
  */
 
 /** Dragged positions land on this grid, so a hand-arranged room still lines up. */
 const SNAP = 10;
-const MIN_SCALE = 0.7;
+const MIN_SCALE = 0.3;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -81,6 +83,9 @@ function TableTile({
   const drawnHeight = height * scale;
   const drawnWidth = width * scale;
   const showDetail = drawnHeight >= 60 && drawnWidth >= 72;
+  // A small table in a big room, fitted to the till's screen, is under 50 px
+  // wide: at full size and padding its name was down to its first letter.
+  const compact = drawnWidth < 72;
   const showSecondLine = drawnHeight >= (table.shape === 'round' ? 96 : 76);
   // A table being held shows who it is being held for; that is the whole point
   // of marking it reserved rather than just colouring it.
@@ -117,7 +122,7 @@ function TableTile({
       className={`
         flex flex-col overflow-hidden select-none text-start
         ${tone === 'free' ? 'bg-card' : style.soft}
-        ${round ? `items-center justify-center rounded-full border-2 px-3 text-center ${style.border}` : 'rounded-xl border border-border'}
+        ${round ? `items-center justify-center rounded-full border-2 ${compact ? 'px-1' : 'px-3'} text-center ${style.border}` : 'rounded-xl border border-border'}
         ${editing ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
         ${dragging ? 'shadow-lg ring-2 ring-brand z-10' : 'shadow-xs'}
         ${!table.is_active ? 'opacity-50' : ''}
@@ -129,8 +134,8 @@ function TableTile({
           corners. A thick border would meet the thin ones on a diagonal and
           read as a crescent stuck to the side of the table. */}
       {!round && <span aria-hidden="true" className={`absolute inset-y-0 start-0 w-1.5 ${style.dot}`} />}
-      <div className={`flex items-start justify-between gap-1 ${round ? 'flex-col items-center' : 'ps-3.5 pe-2 pt-2'}`}>
-        <span className="truncate text-base font-bold leading-tight text-foreground">{table.name}</span>
+      <div className={`flex items-start justify-between gap-1 ${round ? 'flex-col items-center' : compact ? 'ps-2.5 pe-0.5 pt-1.5' : 'ps-3.5 pe-2 pt-2'}`}>
+        <span className={`truncate font-bold leading-tight text-foreground ${compact ? 'text-sm' : 'text-base'}`}>{table.name}</span>
         {pending > 0 && (
           <StatusBadge tone="pending" size="sm" title={tTables('kotPending')}>
             {drawnWidth >= 150 ? t('pendingToSend', { count: pending }) : <Ltr>{String(pending)}</Ltr>}
@@ -194,7 +199,7 @@ export function RoomMap({ room, tables, ordersByTable, editing, onSelect, onMove
   const tTables = useTranslations('tables');
   const canvasRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
-  const [availableWidth, setAvailableWidth] = useState(0);
+  const [available, setAvailable] = useState({ width: 0, height: 0 });
 
   /**
    * Measure on attach and keep measuring. A callback ref rather than an effect:
@@ -206,11 +211,11 @@ export function RoomMap({ room, tables, ordersByTable, editing, onSelect, onMove
     observerRef.current?.disconnect();
     observerRef.current = null;
     if (!node) return;
-    setAvailableWidth(node.clientWidth);
+    setAvailable({ width: node.clientWidth, height: node.clientHeight });
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (entry) setAvailableWidth(entry.contentRect.width);
+      if (entry) setAvailable({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
     observer.observe(node);
     observerRef.current = observer;
@@ -218,9 +223,22 @@ export function RoomMap({ room, tables, ordersByTable, editing, onSelect, onMove
 
   const roomWidth = room.width || 1200;
   const roomHeight = room.height || 800;
-  const scale = availableWidth > 0
-    ? Math.max(MIN_SCALE, Math.min(1, availableWidth / roomWidth))
-    : 1;
+  // What has to fit is the room plus any table left outside it: making a room
+  // smaller does not move the tables already placed in it.
+  let extentWidth = roomWidth;
+  let extentHeight = roomHeight;
+  for (const table of tables) {
+    extentWidth = Math.max(extentWidth, (table.position_x ?? 0) + (table.width ?? 150));
+    extentHeight = Math.max(extentHeight, (table.position_y ?? 0) + (table.height ?? 110));
+  }
+  const fit = Math.min(
+    1,
+    available.width > 0 ? available.width / extentWidth : 1,
+    available.height > 0 ? available.height / extentHeight : 1,
+  );
+  // Rounded down to a thousandth: a canvas a fraction of a pixel too big for
+  // its frame brings back the scrollbars this is here to remove.
+  const scale = Math.max(MIN_SCALE, Math.floor(fit * 1000) / 1000);
 
   // The live drag lives in a ref, not in state: a flick where the move and the
   // release land in the same frame would otherwise read a stale position at
