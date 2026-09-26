@@ -18,6 +18,7 @@
  * J) the closing report renders from the frozen summary
  * K) migration v74 files pre-existing orders into backfilled days
  * L) forcing cancels the orders left open, so no table is freed onto a live one
+ * M) the bill of a cancelled order is owed by nobody and does not block the close
  *
  * Usage: node tests/run-electron-node-test.cjs tests/service-days.test.ts
  */
@@ -474,6 +475,50 @@ async function main() {
 
     assertEqual(forcedRes.data.summary.orders.cancelled, 1, 'the frozen summary counts it as cancelled');
     assert(String(forcedRes.data.day.notes || '').includes('cancelling 1 open order(s)'), 'the notes record what forcing did');
+    assert(String(forcedRes.data.day.notes || '').includes('with 1 unpaid bill(s)'), 'a live unpaid bill is still recorded');
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Scenario M: a cancelled order's bill is owed by nobody
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n─── Scenario M: cancelled order with a bill ───');
+
+    // Printing the preconto opens the bill; cancelling the order afterwards
+    // voided its lines and left the bill unpaid, and the close then refused to
+    // run over a bill for food nobody ate.
+    const voidedId = await placeOrder(null);
+    db.prepare(`
+      INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, created_at, updated_at)
+      VALUES ('BILL-M-1', ?, 20, 20, 0, 20, 'unpaid', ?, ?)
+    `).run(voidedId, now(), now());
+    const cancelRes = await api(baseUrl, `/api/orders/${voidedId}/status`, {
+      method: 'PATCH', headers: authHeader, body: { status: 'cancelled', reason: 'tavolo andato via' },
+    });
+    assertEqual(cancelRes.status, 200, 'the order with a preconto is cancelled');
+
+    // A bill on an order that did run is still owed, and still blocks.
+    const owedId = await placeOrder(null);
+    await completeOrder(owedId);
+    db.prepare(`
+      INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, created_at, updated_at)
+      VALUES ('BILL-M-2', ?, 20, 20, 0, 20, 'unpaid', ?, ?)
+    `).run(owedId, now(), now());
+
+    const voidDay = await api(baseUrl, '/api/service-days/current', { headers: authHeader });
+    assertEqual(voidDay.status, 200, 'the day is live');
+    assertEqual(
+      voidDay.data.blockers.unpaidBills.map((bill: { bill_number: string }) => bill.bill_number).join(','),
+      'BILL-M-2',
+      'only the bill of the order that ran blocks the close',
+    );
+    assertEqual(voidDay.data.summary.bills.unpaid, 1, 'the summary counts one unpaid bill');
+    assertEqual(voidDay.data.summary.bills.count, 1, 'and the cancelled order brings no bill of its own');
+
+    db.prepare("UPDATE bills SET paid_amount = 20, balance = 0, payment_status = 'paid', paid_at = ? WHERE bill_number = 'BILL-M-2'").run(now());
+    const voidClose = await api(baseUrl, `/api/service-days/${voidDay.data.day.id}/close`, { method: 'POST', headers: authHeader, body: {} });
+    assertEqual(voidClose.status, 200, 'the day closes without forcing');
+    assertEqual(voidClose.data.day.notes, null, 'and its notes say nothing about unpaid bills');
+    assertEqual(voidClose.data.summary.bills.unpaid, 0, 'the frozen summary has no unpaid bill');
+    assertEqual(voidClose.data.summary.orders.cancelled, 1, 'the cancelled order is still counted as cancelled');
 
     console.log('\n✅ All service day tests passed');
   } finally {

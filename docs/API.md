@@ -575,8 +575,11 @@ Owner/manager.
 
 **Body:** `{ "clear_tables": false, "force": false, "reason": null }`
 
-`clear_tables` deletes the tables so the next day starts from a blank map. `force` is owner-only,
-requires `reason`, and leaves open orders (and their tables) alone.
+`clear_tables` deletes the tables so the next day starts from a blank map. The close is refused
+while the day has open orders or unpaid bills; the bill of a cancelled order is owed by nobody and
+does not count. `force` is owner-only, requires `reason`, and cancels the orders still open (stock
+back, lines cancelled, the reason on each) before the summary is frozen; unpaid bills are left as
+they are, and the day's notes record how many there were.
 
 **Response (200):**
 ```json
