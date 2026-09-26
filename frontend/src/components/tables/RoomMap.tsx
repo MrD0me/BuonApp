@@ -10,7 +10,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import { TABLE_STATUS_TONE, TONE_STYLES } from '@/lib/status-styles';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n/enums';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { CircleDollarSign, Link2 } from 'lucide-react';
+import { CircleDollarSign, Link2, Users } from 'lucide-react';
 
 /**
  * The dining room, drawn to scale (phase 2 of docs/table-management.md).
@@ -25,6 +25,13 @@ import { CircleDollarSign, Link2 } from 'lucide-react';
 /** Dragged positions land on this grid, so a hand-arranged room still lines up. */
 const SNAP = 10;
 const MIN_SCALE = 0.3;
+
+/**
+ * A bold character's advance, in ems. Generous, so that a name sized by it
+ * fits rather than nearly fits: "Tav 12" measures 0.5 em a character.
+ */
+const NAME_EM = 0.55;
+const MIN_NAME_PX = 10;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -83,15 +90,44 @@ function TableTile({
   const drawnHeight = height * scale;
   const drawnWidth = width * scale;
   const showDetail = drawnHeight >= 60 && drawnWidth >= 72;
-  // A small table in a big room, fitted to the till's screen, is under 50 px
-  // wide: at full size and padding its name was down to its first letter.
-  const compact = drawnWidth < 72;
+  // Anything smaller tightens up, with a smaller name and less padding, and
+  // gives its seats as an icon and a number, as the handheld does. A big room
+  // fitted to the till's screen draws most tables under that size: at full size
+  // a small table's name was down to its first letter, and only the long
+  // tables said how many they seat, which is what a party is walked to a
+  // table by.
+  const compact = !showDetail;
+  const showSeats = compact && drawnHeight >= (table.shape === 'round' ? 42 : 36);
   const showSecondLine = drawnHeight >= (table.shape === 'round' ? 96 : 76);
   // A table being held shows who it is being held for; that is the whole point
   // of marking it reserved rather than just colouring it.
   const booking = !order ? table.reservation ?? null : null;
   const isGroupMember = Boolean(table.merged_into);
   const round = table.shape === 'round';
+
+  // The name is what the floor finds a table by, so it is never the part that
+  // gives way. It is set as large as the tile allows, from 16 px (14 on a
+  // compact tile) down to 10, and the badge of dishes to send sits beside it
+  // only where both fit at full size: squeezed in beside it on a small table,
+  // the badge left "Ta…". Where it does not fit the tile is outlined instead,
+  // in the colour the legend gives to dishes still to send.
+  const nameMaxPx = compact ? 14 : 16;
+  const nameRoom = round
+    ? drawnWidth - 4 - (compact ? 8 : 24)
+    : drawnWidth - (compact ? 12 : 24);
+  const nameEms = Math.max(table.name.length, 1) * NAME_EM;
+  const badgeWidth = (label: string) => 20 + label.length * NAME_EM * 12;
+  const longBadge = t('pendingToSend', { count: pending });
+  // A round tile stacks the badge under the name; a rectangle puts it beside.
+  const badgeFits = (label: string) => round
+    ? !compact && badgeWidth(label) <= nameRoom
+    : nameEms * nameMaxPx + badgeWidth(label) <= nameRoom;
+  const badgeLabel = pending === 0 ? null
+    : drawnWidth >= 150 && badgeFits(longBadge) ? longBadge
+      : badgeFits(String(pending)) ? String(pending) : null;
+  const pendingOutline = pending > 0 && badgeLabel === null;
+  const besideName = badgeLabel !== null && !round ? badgeWidth(badgeLabel) : 0;
+  const namePx = clamp(Math.floor((nameRoom - besideName) / nameEms), MIN_NAME_PX, nameMaxPx);
 
   // The state is the colour, and the legend above the map says what the
   // colours mean. A pill saying "Disponibile" as well was the same fact twice,
@@ -127,6 +163,7 @@ function TableTile({
         ${dragging ? 'shadow-lg ring-2 ring-brand z-10' : 'shadow-xs'}
         ${!table.is_active ? 'opacity-50' : ''}
         ${isGroupMember ? 'border-dashed opacity-70' : ''}
+        ${pendingOutline ? 'outline-2 -outline-offset-2 outline-pending' : ''}
         transition-shadow
       `}
     >
@@ -134,17 +171,17 @@ function TableTile({
           corners. A thick border would meet the thin ones on a diagonal and
           read as a crescent stuck to the side of the table. */}
       {!round && <span aria-hidden="true" className={`absolute inset-y-0 start-0 w-1.5 ${style.dot}`} />}
-      <div className={`flex items-start justify-between gap-1 ${round ? 'flex-col items-center' : compact ? 'ps-2.5 pe-0.5 pt-1.5' : 'ps-3.5 pe-2 pt-2'}`}>
-        <span className={`truncate font-bold leading-tight text-foreground ${compact ? 'text-sm' : 'text-base'}`}>{table.name}</span>
-        {pending > 0 && (
+      <div className={`flex items-start justify-between gap-1 ${round ? 'flex-col items-center' : compact ? 'ps-2 pe-0.5 pt-1' : 'ps-3.5 pe-2 pt-2'}`}>
+        <span className="truncate font-bold leading-tight text-foreground" style={{ fontSize: namePx }}>{table.name}</span>
+        {badgeLabel !== null && (
           <StatusBadge tone="pending" size="sm" title={tTables('kotPending')}>
-            {drawnWidth >= 150 ? t('pendingToSend', { count: pending }) : <Ltr>{String(pending)}</Ltr>}
+            {badgeLabel === longBadge ? longBadge : <Ltr>{badgeLabel}</Ltr>}
           </StatusBadge>
         )}
       </div>
       {/* A round table centres its text: pushed to the bottom with mt-auto it
           ran off the curve. */}
-      <div className={`flex flex-col gap-0.5 ${round ? 'items-center' : 'mt-auto ps-3.5 pe-2 pb-2 pt-1'}`}>
+      <div className={`flex flex-col gap-0.5 ${round ? 'items-center' : compact ? 'mt-auto ps-2 pe-0.5 pb-1' : 'mt-auto ps-3.5 pe-2 pb-2 pt-1'}`}>
         {(isGroupMember || unpriced) && (
           <span className="flex items-center gap-1.5">
             {isGroupMember && <Link2 size={14} className="shrink-0 text-muted-foreground" aria-label={tTables('mergedInto')} />}
@@ -180,6 +217,16 @@ function TableTile({
           ) : (
             <span className="truncate text-xs text-muted-foreground">{tTables('capacitySeats', { count: table.capacity })}</span>
           )
+        )}
+        {/* Who is there out of how many it seats, as on the full tile: a
+            booking or an open order puts its party in front of the seats. */}
+        {showSeats && (
+          <span className={`flex items-center gap-0.5 text-xs leading-none ${booking ? 'text-table-reserved' : 'text-muted-foreground'}`}>
+            <Users size={12} className="shrink-0" aria-hidden="true" />
+            <Ltr>{order
+              ? `${order.guest_count ?? 1}/${table.capacity}`
+              : booking ? `${booking.guests}/${table.capacity}` : String(table.capacity)}</Ltr>
+          </span>
         )}
       </div>
     </div>
