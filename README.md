@@ -62,7 +62,7 @@ Node.js is only required to develop BuonApp, not to run a packaged release.
 - **Catalog:** Products with images and barcodes, categories, add-on groups, fixed menus, and CSV menu import/export.
 - **Customer display:** A second screen showing the running order and the payment status to the guest.
 - **Optional customer book:** The customer list, the loyalty wallet, and the customer field at the till are one switch in Settings. A restaurant that keeps only reservations turns them off, and the write endpoints close with them.
-- **Staff and accountability:** Owner, Manager, Cashier, Server, and Chef roles, manager PIN overrides for voids and cancellations, and a print log kept per bill.
+- **Staff and accountability:** Owner, Manager, Cashier, Server, and Chef roles, each signing in with a username and a password — no email, since nothing here sends mail — manager PIN overrides for voids and cancellations, and a print log kept per bill.
 - **Data protection:** Local SQLite with a timestamped backup taken automatically before every schema migration, manual backup and restore, database health checks, and optional Google Drive backup.
 
 ## Offline-first by design
