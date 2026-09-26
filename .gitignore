@@ -48,3 +48,7 @@ specs/
 /.github
 /release-clean
 /release-installer
+
+# graphify: interpreter and scan root of the local machine
+graphify-out/.graphify_python
+graphify-out/.graphify_root
