@@ -192,19 +192,39 @@ export default function TablesPage() {
     // Full height, so the map scrolls inside its own frame instead of pushing
     // the bottom of the room under the fold on a 768 px screen.
     <div className="flex h-full flex-col gap-4">
-      {/* Titled like the sidebar entry: the page and the bar say the same word. */}
+      {/* Titled like the sidebar entry: the page and the bar say the same word.
+          Editing swaps the service actions for its own in the same bar rather
+          than opening a band of them under it: on the till that band ran to
+          two rows, and every pixel of it came off the map, which shrank a
+          quarter and set the table names a size smaller than in service. */}
       <PageToolbar
         title={tNav('tables')}
         actions={(
           <>
-            <ServiceDayChip readOnly />
-            {/* Bookings belong to the room, so they are reached from it rather
-                than from a bar entry of their own. */}
-            <Button variant="outline" size="touch" asChild>
-              <Link href="/reservations">
-                <CalendarCheck /> {tNav('reservations')}
-              </Link>
-            </Button>
+            {editing ? (
+              <>
+                <Button variant="outline" size="touch" onClick={() => setShowLayouts(true)}>
+                  <LayoutGrid /> {tTables('layouts')}
+                </Button>
+                <Button variant="outline" size="touch" onClick={() => setRoomForm({ room: null })}>
+                  <Plus /> {tTables('addRoom')}
+                </Button>
+                <Button variant="outline" size="touch" onClick={() => setTableForm({ table: null })} disabled={rooms.length === 0}>
+                  <Plus /> {tTables('addTable')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <ServiceDayChip readOnly />
+                {/* Bookings belong to the room, so they are reached from it rather
+                    than from a bar entry of their own. */}
+                <Button variant="outline" size="touch" asChild>
+                  <Link href="/reservations">
+                    <CalendarCheck /> {tNav('reservations')}
+                  </Link>
+                </Button>
+              </>
+            )}
             {canEdit && (
               <Button variant={editing ? 'default' : 'outline'} size="touch" onClick={() => setEditing((value) => !value)}>
                 {editing ? <><MapIcon /> {tTables('serviceMode')}</> : <><PenLine /> {tTables('editMode')}</>}
@@ -213,20 +233,6 @@ export default function TablesPage() {
           </>
         )}
       />
-      {editing && (
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-brand/30 bg-brand-light/40 px-4 py-3">
-          <Button variant="outline" size="touch" onClick={() => setShowLayouts(true)}>
-            <LayoutGrid /> {tTables('layouts')}
-          </Button>
-          <Button variant="outline" size="touch" onClick={() => setRoomForm({ room: null })}>
-            <Plus /> {tTables('addRoom')}
-          </Button>
-          <Button size="touch" onClick={() => setTableForm({ table: null })} disabled={rooms.length === 0}>
-            <Plus /> {tTables('addTable')}
-          </Button>
-          <p className="ms-auto text-sm text-muted-foreground">{tTables('editModeHint')}</p>
-        </div>
-      )}
 
       {rooms.length === 0 ? (
         <EmptyState
@@ -286,22 +292,29 @@ export default function TablesPage() {
                 </>
               )}
             </div>
-            {/* What the colours mean, once, instead of a dot the eye has to decode. */}
-            <div className="hidden flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground md:flex">
-              {(['available', 'occupied', 'reserved', 'held'] as const).map((status) => (
-                <span key={status} className="flex items-center gap-1.5">
-                  <StatusDot tone={TABLE_STATUS_TONE[status]} />
-                  {tTables(TABLE_STATUS_LABEL_KEYS[status])}
+            {/* While editing, the colours are not what the room is being read
+                for: how to move a table is. The hint wraps inside the row
+                beside the rooms rather than dropping to a line of its own. */}
+            {editing ? (
+              <p className="min-w-48 flex-1 basis-0 text-end text-sm text-muted-foreground">{tTables('editModeHint')}</p>
+            ) : (
+              // What the colours mean, once, instead of a dot the eye has to decode.
+              <div className="hidden flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground md:flex">
+                {(['available', 'occupied', 'reserved', 'held'] as const).map((status) => (
+                  <span key={status} className="flex items-center gap-1.5">
+                    <StatusDot tone={TABLE_STATUS_TONE[status]} />
+                    {tTables(TABLE_STATUS_LABEL_KEYS[status])}
+                  </span>
+                ))}
+                {/* A dot like the others: the same badge with a number inside
+                    read as a live count of plates waiting, and said 2 with
+                    nothing to send. */}
+                <span className="flex items-center gap-1.5">
+                  <StatusDot tone="pending" />
+                  {tTables('legendPending')}
                 </span>
-              ))}
-              {/* A dot like the others: the same badge with a number inside
-                  read as a live count of plates waiting, and said 2 with
-                  nothing to send. */}
-              <span className="flex items-center gap-1.5">
-                <StatusDot tone="pending" />
-                {tTables('legendPending')}
-              </span>
-            </div>
+              </div>
+            )}
           </div>
 
           {activeRoom && (
