@@ -4,6 +4,27 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.3.0] - 2026-09-27
+
+On the till's 1024x768 screen the whole interface came out a size too large,
+titles, buttons and sidebar alike, and the floor map and the dish grid got what
+was left. The main window now opens zoomed to fit, 90% on that till, and the
+floor map keeps its size when the room is being edited. The Products tab of the
+Menu filters by category. No database migration.
+
+### Added
+
+- **The Products tab filters by category.** The tab listed the whole menu in one table, and checking the first courses meant scrolling all of it. A drop-down beside *CSV* and *Add Product* now filters by category: each entry says how many products it holds, an empty category shows with `(0)`, and products with no category, which the API and the CSV import allow, have an entry of their own while there are any. While it filters, the drop-down is outlined in the brand colour, so that a short list does not pass for the whole menu, and *Add Product* starts in that category. A drop-down rather than a button per category as in Ordering: on the till the buttons wrapped over four rows and pushed the table below the fold, where the drop-down sits in the row the buttons already had.
+
+### Changed
+
+- **On a small screen the interface is zoomed out.** The pages are designed and tried at about 1140x800; on the till's 1024x768 the titles, buttons and sidebar kept their full size, and the floor map and the dish grid took what was left. The main window now opens with its zoom lowered by what the work area lacks to reach that size, in 5% steps and never below 75%: on the till it is 90%, as Ctrl and minus in a browser, and a 44 px button stays at 40, the least Windows asks of a touch target. A work area of about 1140x800 or more stays at 100%. The startup log writes the zoom beside the screen size. Chromium keeps zoom per address and not per window, so every window on `localhost` follows it; the kitchen display's window opens on the network address and stays at 100%.
+- **The database export is named `buonapp-export-<date>.json`** instead of `flo-export-<date>.json`, from both the backend and the Settings page. The `app: 'FloDesktop'` field inside the file stays: the import checks it, and changing it would stop the exports already made from restoring.
+
+### Fixed
+
+- **In edit mode the floor map shrank by a quarter.** Entering edit mode added a band of buttons under the page bar and, beside the rooms, the pencil and the bin, which pushed the legend onto a row of its own. On the till, in Italian, the band ran to two rows: about 145 px of height taken from the map, whose scale fell from 0.45 to 0.35, so that a four-seat table went from 68x50 to 52x38 px and its name from 14 to 12 px. *Floor plans*, *Add room* and *Add Table* now take the place of the day chip and *Bookings* in the page bar, which edit mode has no use for, and the hint on moving a table takes the legend's place and wraps within its row instead of dropping below it. The map is the same size in service and in edit mode.
+
 ## [6.2.3] - 2026-09-26
 
 An order cancelled after its preconto was printed kept its bill unpaid, and

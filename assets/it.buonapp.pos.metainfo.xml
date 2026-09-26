@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.3.0" date="2026-09-27">
+      <description>
+        <p>On the till's 1024x768 screen the whole interface came out a size too large, titles, buttons and sidebar alike, and the floor map and the dish grid got what was left. The main window now opens zoomed to fit, 90% on that till, and the floor map keeps its size when the room is being edited. The Products tab of the Menu filters by category. No database migration.</p>
+      </description>
+    </release>
     <release version="6.2.3" date="2026-09-26">
       <description>
         <p>An order cancelled after its preconto was printed kept its bill unpaid, and the day refused to close over it: an unpaid bill for food nobody ate, which a forced close then wrote into the day's notes. The bill of a cancelled order is now owed by nobody. A correction only: no new feature, and no database migration.</p>
