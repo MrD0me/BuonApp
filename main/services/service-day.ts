@@ -49,6 +49,15 @@ export interface ServiceDayBlockers {
 
 const OPEN_ORDER_SQL = "status NOT IN ('completed', 'cancelled')";
 
+/**
+ * A bill somebody still owes, over `bills b JOIN orders o`. The bill of an
+ * order cancelled afterwards is owed by nobody: printing the preconto opens
+ * the bill, cancelling voids the order's lines but leaves the bill unpaid, and
+ * the close went on asking for it and wrote it into the day's notes. The
+ * orders screen already shows such an order as nothing to pay.
+ */
+const OWED_BILL_SQL = "b.payment_status != 'paid' AND o.status != 'cancelled'";
+
 /** Money coming back out of SQL SUM() over REAL columns, trimmed to cents. */
 function money(value: unknown): number {
   const amount = Number(value || 0);
@@ -103,7 +112,7 @@ export function getServiceDayBlockers(db: Db, serviceDayId: string): ServiceDayB
   const unpaidBills = db.prepare(`
     SELECT b.id, b.bill_number, b.total, b.paid_amount
     FROM bills b JOIN orders o ON o.id = b.order_id
-    WHERE o.service_day_id = ? AND b.payment_status != 'paid'
+    WHERE o.service_day_id = ? AND ${OWED_BILL_SQL}
     ORDER BY b.created_at
   `).all(serviceDayId) as ServiceDayBlockers['unpaidBills'];
 
@@ -160,11 +169,13 @@ export function computeServiceDaySummary(db: Db, serviceDayId: string): ServiceD
     FROM orders WHERE service_day_id = ?
   `).get(serviceDayId) as any;
 
+  // A cancelled order's unpaid bill is neither paid nor owed, so it is not
+  // counted as a bill at all; what was taken on it still counts as takings.
   const bills = db.prepare(`
     SELECT
-      COUNT(*) AS count,
+      COALESCE(SUM(CASE WHEN b.payment_status = 'paid' OR o.status != 'cancelled' THEN 1 ELSE 0 END), 0) AS count,
       COALESCE(SUM(CASE WHEN b.payment_status = 'paid' THEN 1 ELSE 0 END), 0) AS paid,
-      COALESCE(SUM(CASE WHEN b.payment_status != 'paid' THEN 1 ELSE 0 END), 0) AS unpaid,
+      COALESCE(SUM(CASE WHEN ${OWED_BILL_SQL} THEN 1 ELSE 0 END), 0) AS unpaid,
       COALESCE(SUM(b.paid_amount), 0) AS takings
     FROM bills b JOIN orders o ON o.id = b.order_id
     WHERE o.service_day_id = ?
