@@ -4,6 +4,18 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.2.2] - 2026-09-26
+
+With the whole room on the till's screen, most tables are drawn small, and a
+small table did not say how many it seats; one with dishes to send lost its
+name to the badge beside it. Every table now shows its name in full and its
+seats. A correction only: no new feature, and no database migration.
+
+### Fixed
+
+- **Every table on the floor map shows its seats.** The seats appeared only on a tile large enough to write "4 seats", which on the till, with the room fitted to the screen, left the long horizontal tables and little else. A smaller tile now gives them as the people icon and a number, as the handheld does; with an open order or a booking it reads party over seats (`2/4`).
+- **A table's name is never cut.** The name is set as large as the tile allows, 16 px (14 on a small tile) down to 10, sized by its own length: `Tav 12` asks 42 px at 14 and a small table in a large room has 38. The badge of dishes to send stays beside the name only where both fit at full size, since squeezed in beside it on a small table it left `Ta…`. Where it does not fit, the table is outlined in the colour the legend gives to dishes still to send, and the count is in the table's panel.
+
 ## [6.2.1] - 2026-09-26
 
 On the till's 1024x768 screen the floor map ran off the right and the bottom,

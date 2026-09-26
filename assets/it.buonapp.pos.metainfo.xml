@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.2.2" date="2026-09-26">
+      <description>
+        <p>With the whole room on the till's screen, most tables are drawn small, and a small table did not say how many it seats; one with dishes to send lost its name to the badge beside it. Every table now shows its name in full and its seats. A correction only: no new feature, and no database migration.</p>
+      </description>
+    </release>
     <release version="6.2.1" date="2026-09-26">
       <description>
         <p>On the till's 1024x768 screen the floor map ran off the right and the bottom, and the floor had to scroll it to find a table. The whole room now fits on screen. A correction only: no new feature, and no database migration, so an upgrade touches nothing in the data.</p>
