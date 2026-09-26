@@ -40,8 +40,8 @@ const {
 const { customerRoutes } = require('../main/routes/customers');
 const { getJWTSecret } = require('../main/routes/auth');
 
-function makeToken(id: string, role: string, email: string) {
-  const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
+function makeToken(id: string, role: string, username: string) {
+  const token = jwt.sign({ userId: id, username, role }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -59,7 +59,7 @@ async function main() {
     ).run(`cust-pag-${i}`, `Pagination Customer ${i}`, `+91900000000${i}`, now(), now());
   }
 
-  const ownerAuth = makeToken('owner-pag-001', 'owner', 'owner@pag.test');
+  const ownerAuth = makeToken('owner-pag-001', 'owner', 'owner-pag');
   const app = createApp({ '/api/customers': customerRoutes });
 
   // Test 1: Missing per_page returns all customers (200)

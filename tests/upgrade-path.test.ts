@@ -256,6 +256,13 @@ function main() {
     `a migrated old install should match a fresh install's schema exactly, found: ${JSON.stringify(report.findings)}`);
   console.log('   ✓ runHealthCheck() reports zero drift between the migrated old install and a fresh install');
 
+  // ── v96: the login email became a username ───────────────────────────────
+  const userColumns = db.prepare('PRAGMA table_info(users)').all().map((column: any) => column.name);
+  assert.ok(userColumns.includes('username') && !userColumns.includes('email'), 'accounts sign in by username, not email');
+  assert.equal((db.prepare("SELECT username FROM users WHERE id = 'user-1'").get() as { username: string }).username, 'admin',
+    'the owner who signed in as admin@flo.local signs in as admin');
+  console.log('   ✓ the old admin@flo.local owner signs in as admin (v96)');
+
   // ── The columns must actually be usable, not just present ───────────────
   const customerId = db.prepare(`SELECT id FROM customers LIMIT 1`).get() as { id: string } | undefined;
   if (customerId) {
@@ -293,6 +300,8 @@ function main() {
     undefined,
     'replaying the migrations from an older stamp purges the cloud settings again',
   );
+  assert.equal((getDatabase().prepare("SELECT username FROM users WHERE id = 'user-1'").get() as { username: string }).username, 'admin',
+    'replaying the migrations, the v70 rebuild included, keeps the username');
   console.log('   ✓ reopening is idempotent and preserves deliberate settings');
   closeDatabase();
 

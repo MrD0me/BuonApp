@@ -39,14 +39,13 @@ const { staffRoutes } = require('../main/routes/staff');
 const { getJWTSecret } = require('../main/routes/auth');
 
 function seedUser(db: any, id: string, role: string, pin = '1234') {
-  const email = `${id}@test.local`;
   db.prepare(`
-    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    INSERT INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
   `).run(
     id,
     id,
-    email,
+    id,
     bcrypt.hashSync('Testpass1', 10),
     role,
     pin ? bcrypt.hashSync(pin, 10) : null,
@@ -54,7 +53,7 @@ function seedUser(db: any, id: string, role: string, pin = '1234') {
     now(),
   );
 
-  const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
+  const token = jwt.sign({ userId: id, username: id, role }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -98,7 +97,7 @@ async function main() {
 
   for (const role of ['owner', 'manager']) {
     result = await request(app).post('/api/staff').set(managerAuth).send({
-      name: `Forbidden ${role}`, email: `forbidden-${role}@test.local`, password: 'StrongPass1', role,
+      name: `Forbidden ${role}`, username: `forbidden-${role}`, password: 'StrongPass1', role,
     });
     assertEqual(result.status, 403, `manager cannot create ${role}`);
   }
@@ -107,7 +106,7 @@ async function main() {
   const managerCreated: Record<string, string> = {};
   for (const role of ['cashier', 'server', 'chef']) {
     result = await request(app).post('/api/staff').set(managerAuth).send({
-      name: `Managed ${role}`, email: `managed-${role}@test.local`, password: 'StrongPass1', role,
+      name: `Managed ${role}`, username: `managed-${role}`, password: 'StrongPass1', role,
     });
     assertEqual(result.status, 201, `manager can create ${role}`);
     managerCreated[role] = result.body.staff?.id;
@@ -122,14 +121,14 @@ async function main() {
   }
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '1234',
+    name: 'Pinned cashier', username: 'pinned-cashier', password: 'StrongPass1', role: 'cashier', pin: '1234',
   });
   assertEqual(result.status, 400, 'operational roles reject a non-empty PIN');
 
   console.log('\n── PIN policy ─────────────────────────────────────────────────');
   for (const pin of ['abcd', '123', '1234567']) {
     result = await request(app).post('/api/staff').set(ownerAuth).send({
-      name: `Bad PIN ${pin}`, email: `bad-pin-${pin}@test.local`, password: 'StrongPass1', role: 'manager', pin,
+      name: `Bad PIN ${pin}`, username: `bad-pin-${pin}`, password: 'StrongPass1', role: 'manager', pin,
     });
     assertEqual(result.status, 400, `PIN ${pin} is rejected unless it is 4-6 numeric digits`);
   }
@@ -161,7 +160,7 @@ async function main() {
 
   console.log('\n── Owner full access ───────────────────────────────────────────');
   result = await request(app).post('/api/staff').set(ownerAuth).send({
-    name: 'Owner-created manager', email: 'owner-created-manager@test.local', password: 'StrongPass1', role: 'manager', pin: '9876',
+    name: 'Owner-created manager', username: 'owner-created-manager', password: 'StrongPass1', role: 'manager', pin: '9876',
   });
   assertEqual(result.status, 201, 'owner can create a manager with a valid PIN');
   assertEqual(result.body.staff.has_pin, 1, 'staff responses expose has_pin for configured PINs');

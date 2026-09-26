@@ -85,7 +85,7 @@ async function main() {
       method: 'POST',
       body: {
         name: 'Morocco Owner',
-        email: 'ma-owner@test.local',
+        username: 'ma-owner',
         password: 'Test1234',
         business_type: 'restaurant',
         business_name: 'Cafe Maroc',

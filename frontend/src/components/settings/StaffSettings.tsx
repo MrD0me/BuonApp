@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Ltr } from '@/components/layout/Ltr';
+import { isValidUsername, normalizeUsername } from '@/lib/username';
 import toast from 'react-hot-toast';
 import { Plus, X, Edit, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import type { Staff } from '@/lib/types';
@@ -53,7 +55,7 @@ export function StaffSettings() {
   const [resetPwStaff, setResetPwStaff] = useState<Staff | null>(null);
   const [form, setForm] = useState({
     name: '',
-    email: '',
+    username: '',
     password: '',
     confirmPassword: '',
     role: 'server',
@@ -86,7 +88,7 @@ export function StaffSettings() {
 
   const openAdd = () => {
     setEditingStaff(null);
-    setForm({ name: '', email: '', password: '', confirmPassword: '', role: 'server', pin: '' });
+    setForm({ name: '', username: '', password: '', confirmPassword: '', role: 'server', pin: '' });
     setShowPassword(false);
     setShowPin(false);
     setShowForm(true);
@@ -94,7 +96,7 @@ export function StaffSettings() {
 
   const openEdit = (s: Staff) => {
     setEditingStaff(s);
-    setForm({ name: s.name, email: s.email || '', password: '', confirmPassword: '', role: s.role, pin: '' });
+    setForm({ name: s.name, username: s.username || '', password: '', confirmPassword: '', role: s.role, pin: '' });
     setShowPassword(false);
     setShowPin(false);
     setShowForm(true);
@@ -114,11 +116,18 @@ export function StaffSettings() {
       toast.error(tSetup('passwordsMismatch'));
       return;
     }
+    // The rule applies to a name being chosen: an account that came through
+    // the switch from emails with a short one ("a", from a@…) saves as it is.
+    const username = normalizeUsername(form.username);
+    if (username !== editingStaff?.username && !isValidUsername(username)) {
+      toast.error(tAuth('usernameInvalid'));
+      return;
+    }
     try {
       if (editingStaff) {
         await api.put(`/staff/${editingStaff.id}`, {
           name: form.name,
-          email: form.email || null,
+          username,
           role: form.role,
           ...(form.password ? { password: form.password } : {}),
           ...(form.pin ? { pin: form.pin } : {}),
@@ -127,7 +136,7 @@ export function StaffSettings() {
       } else {
         await api.post('/staff', {
           name: form.name,
-          email: form.email || null,
+          username,
           password: form.password,
           role: form.role,
           ...(form.pin ? { pin: form.pin } : {}),
@@ -136,8 +145,13 @@ export function StaffSettings() {
       }
       closeForm();
       fetchStaff();
-    } catch {
-      toast.error(t('failedToSave'));
+    } catch (error: unknown) {
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      toast.error(
+        code === 'username_taken' ? tAuth('usernameTaken')
+          : code === 'username_invalid' || code === 'username_required' ? tAuth('usernameInvalid')
+            : t('failedToSave'),
+      );
     }
   };
 
@@ -193,7 +207,7 @@ export function StaffSettings() {
             <div className="flex justify-between items-start mb-3">
               <div>
                 <p className="font-bold text-gray-900">{s.name}</p>
-                <p className="text-xs text-gray-500">{s.email || '—'}</p>
+                <p className="text-xs text-gray-500">{s.username ? <Ltr>{s.username}</Ltr> : '—'}</p>
                 {Boolean(s.has_pin) && (
                   <p className="text-xs text-green-600 mt-1">{t('pinSet')}</p>
                 )}
@@ -237,11 +251,15 @@ export function StaffSettings() {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required
               />
-              <input
-                type="email" placeholder={`${tAuth('email')} (${tCommon('optional')})`} value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-              />
+              <div>
+                <input
+                  type="text" placeholder={tAuth('username')} value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} dir="ltr"
+                  className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required
+                />
+                <p className="text-xs text-gray-500 mt-1">{tAuth('usernameHint')}</p>
+              </div>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'} placeholder={editingStaff ? t('newPasswordPlaceholder') : t('passwordPlaceholder')}

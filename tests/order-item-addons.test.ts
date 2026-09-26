@@ -119,9 +119,9 @@ async function main() {
   // ── Seed ────────────────────────────────────────────────────────────────
   const ownerId = 'owner-addons-norm-test';
   db.prepare(
-    `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    `INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(ownerId, 'Test Owner', 'owner-norm@test.local', bcrypt.hashSync('password', 10), 'owner', 1, now(), now());
+  ).run(ownerId, 'Test Owner', 'owner-norm', bcrypt.hashSync('password', 10), 'owner', 1, now(), now());
 
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)`).run('cat-addon-norm', 'Test', 1);
   db.prepare(
@@ -159,7 +159,7 @@ async function main() {
   const server = await listen(app);
   const addr = server.address() as any;
   const baseUrl = `http://127.0.0.1:${addr.port}`;
-  const token = jwt.sign({ userId: ownerId, email: 'owner-norm@test.local', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
+  const token = jwt.sign({ userId: ownerId, username: 'owner-norm', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
   const authHeader = `Bearer ${token}`;
 
   try {

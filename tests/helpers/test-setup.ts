@@ -180,12 +180,12 @@ function seedOwnerUser(db: any): { userId: string; token: string; authHeader: Re
   const passwordHash = bcrypt.hashSync('testpass123', 10);
 
   db.prepare(
-    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    `INSERT OR IGNORE INTO users (id, name, username, password, role, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(userId, 'Test Owner', 'owner@test.local', passwordHash, 'owner', 1, now(), now());
+  ).run(userId, 'Test Owner', userId, passwordHash, 'owner', 1, now(), now());
 
   const token = jwt.sign(
-    { userId, email: 'owner@test.local', role: 'owner' },
+    { userId, username: userId, role: 'owner' },
     getJWTSecret(),
     { expiresIn: '1h' }
   );
@@ -200,12 +200,12 @@ function seedManagerUser(db: any): { userId: string; token: string; authHeader: 
   const pinHash = bcrypt.hashSync('1234', 10);
 
   db.prepare(
-    `INSERT OR IGNORE INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    `INSERT OR IGNORE INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(userId, 'Test Manager', 'manager@test.local', passwordHash, 'manager', pinHash, 1, now(), now());
+  ).run(userId, 'Test Manager', userId, passwordHash, 'manager', pinHash, 1, now(), now());
 
   const token = jwt.sign(
-    { userId, email: 'manager@test.local', role: 'manager' },
+    { userId, username: userId, role: 'manager' },
     getJWTSecret(),
     { expiresIn: '1h' }
   );
@@ -224,12 +224,12 @@ function seedServerUser(db: any): { userId: string; token: string; authHeader: R
   const passwordHash = bcrypt.hashSync('testpass123', 10);
 
   db.prepare(
-    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    `INSERT OR IGNORE INTO users (id, name, username, password, role, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(userId, 'Test Server', 'server@test.local', passwordHash, 'server', 1, now(), now());
+  ).run(userId, 'Test Server', userId, passwordHash, 'server', 1, now(), now());
 
   const token = jwt.sign(
-    { userId, email: 'server@test.local', role: 'server' },
+    { userId, username: userId, role: 'server' },
     getJWTSecret(),
     { expiresIn: '1h' }
   );

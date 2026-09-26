@@ -382,10 +382,11 @@ function restoreRedactedUserPlaceholders(
   if (importedUserRows.length === 0) return 0;
 
   const currentCols = getTableColumns(db, 'users');
+  // No username here: mergeUserSecurityState, which runs right after, names
+  // every account that is left without one.
   const insertableCols = [
     'id',
     'name',
-    'email',
     'password',
     'role',
     'category_ids',
@@ -417,7 +418,6 @@ function restoreRedactedUserPlaceholders(
     const values: Record<string, unknown> = {
       id,
       name: typeof row.name === 'string' && row.name.trim() ? row.name : `Imported staff ${id}`,
-      email: null,
       password: `disabled-redacted-import-${id}`,
       role,
       category_ids: typeof row.category_ids === 'string' ? row.category_ids : null,

@@ -14,6 +14,7 @@ import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, se
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
+import { normalizeUsername } from './lib/username';
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
@@ -24,14 +25,10 @@ const SERVER_APP_ALLOWED_ROLES = new Set(['server']);
 
 type ServerAppUser = {
   userId: string;
-  email?: string;
+  username?: string;
   role: string;
   iat?: number;
 };
-
-function normalizeEmail(email: unknown): string {
-  return String(email || '').trim().toLowerCase();
-}
 
 export function isServerAppRunning(): boolean {
   return serverApp !== null;
@@ -75,7 +72,7 @@ function requireServerAppAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
     const db = getDatabase();
-    const user = db.prepare('SELECT id, email, role, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
+    const user = db.prepare('SELECT id, username, role, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
     if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
@@ -85,7 +82,7 @@ function requireServerAppAuth(req: Request, res: Response, next: NextFunction) {
 
     (req as any).user = {
       userId: user.id,
-      email: user.email,
+      username: user.username,
       role: user.role,
       iat: decoded.iat,
     } satisfies ServerAppUser;
@@ -230,13 +227,13 @@ export function startServerApp(): Promise<void> {
     app.post('/api/auth/login', authRateLimit(), (req: Request, res: Response) => {
       if (!isServerAppEnabled()) return res.status(404).json({ error: 'Not found' });
       try {
-        const email = normalizeEmail(req.body?.email);
+        const username = normalizeUsername(req.body?.username);
         const { password, remember_me } = req.body;
-        if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+        if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
         const db = getDatabase();
         const bcrypt = require('bcryptjs');
-        const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
+        const user = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username) as any;
         let passwordMatches = false;
         if (user) {
           try {
@@ -253,14 +250,14 @@ export function startServerApp(): Promise<void> {
         }
 
         const token = jwt.sign(
-          { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
+          { userId: user.id, username: user.username, role: user.role, jti: uuidv4() },
           getJWTSecret(),
           { expiresIn: remember_me ? '10d' : '24h' },
         );
 
         res.json({
           access_token: token,
-          user: { id: user.id, name: user.name, email: user.email, role: user.role },
+          user: { id: user.id, name: user.name, username: user.username, role: user.role },
         });
       } catch (error: any) {
         console.error('[Server App] Login error:', error);
@@ -270,7 +267,7 @@ export function startServerApp(): Promise<void> {
 
     app.get('/api/auth/me', requireServerAppAuth, (req: Request, res: Response) => {
       const user = (req as any).user as ServerAppUser;
-      const row = getDatabase().prepare('SELECT id, name, email, role FROM users WHERE id = ? AND is_active = 1').get(user.userId) as any;
+      const row = getDatabase().prepare('SELECT id, name, username, role FROM users WHERE id = ? AND is_active = 1').get(user.userId) as any;
       if (!row) return res.status(401).json({ error: 'Invalid token' });
       res.json({ user: row });
     });

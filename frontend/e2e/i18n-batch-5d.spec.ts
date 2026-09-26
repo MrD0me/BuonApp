@@ -19,9 +19,9 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
 
 import * as jwt from 'jsonwebtoken';
 
-function getE2eToken(userId = 'e2e-manager', email = 'manager@buonapp.local', role = 'manager'): string {
+function getE2eToken(userId = 'e2e-manager', username = 'manager', role = 'manager'): string {
   const secret = process.env.JWT_SECRET || 'e2e-test-secret';
-  return jwt.sign({ userId, email, role }, secret, { expiresIn: '1h' });
+  return jwt.sign({ userId, username, role }, secret, { expiresIn: '1h' });
 }
 
 async function setLanguage(page: Page, token: string, value: string): Promise<void> {
@@ -43,7 +43,7 @@ async function setLanguage(page: Page, token: string, value: string): Promise<vo
 test('Batch 5D: KDS and Server App render and function correctly in English and Persian (RTL)', async ({ page }) => {
   // 1. Setup session & seed data
   const token = getE2eToken();
-  const serverToken = getE2eToken('e2e-server', 'server@buonapp.local', 'server');
+  const serverToken = getE2eToken('e2e-server', 'server', 'server');
 
   // Create table if not present
   await page.request.post(`${BASE_API}/api/tables`, {
@@ -76,7 +76,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await expect(page.getByTestId('kds-login-form')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Kitchen Display');
   await expect(page.getByText('Sign in with your kitchen staff account')).toBeVisible();
-  await expect(page.getByText('Email', { exact: true })).toBeVisible();
+  await expect(page.getByText('Username', { exact: true })).toBeVisible();
   await expect(page.getByText('Password', { exact: true })).toBeVisible();
   await expect(page.getByText('Keep me logged in')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
@@ -84,7 +84,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await captureScreenshot(page, 'kds-login-en.png');
 
   // Log in to KDS
-  await page.getByTestId('kds-login-email').fill('manager@buonapp.local');
+  await page.getByTestId('kds-login-username').fill('manager');
   await page.getByTestId('kds-login-password').fill('E2ePass123!');
   await page.getByTestId('kds-login-submit').click();
   await expect(page.getByTestId('kds-workspace')).toBeVisible();
@@ -123,7 +123,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Server App');
   await expect(page.getByText('Tableside ordering for service staff')).toBeVisible();
-  await expect(page.getByPlaceholder('server@buonapp.local')).toBeVisible();
+  await expect(page.getByPlaceholder('Username')).toBeVisible();
   await expect(page.getByPlaceholder('Password')).toBeVisible();
   await expect(page.getByText('Keep me logged in')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
@@ -183,7 +183,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.getByTestId('kds-login-form')).toBeVisible();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('نمایشگر آشپزخانه');
     await expect(page.getByText('با حساب کاربری کارکنان آشپزخانه وارد شوید')).toBeVisible();
-    await expect(page.getByText('ایمیل', { exact: true })).toBeVisible();
+    await expect(page.getByText('نام کاربری', { exact: true })).toBeVisible();
     await expect(page.getByText('گذرواژه', { exact: true })).toBeVisible();
     await expect(page.getByText('ورود من را به یاد بسپار')).toBeVisible();
     await expect(page.getByRole('button', { name: 'ورود' })).toBeVisible();
@@ -192,7 +192,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await captureScreenshot(page, 'kds-login-fa.png');
 
     // Log in to KDS in FA
-    await page.getByTestId('kds-login-email').fill('manager@buonapp.local');
+    await page.getByTestId('kds-login-username').fill('manager');
     await page.getByTestId('kds-login-password').fill('E2ePass123!');
     await page.getByTestId('kds-login-submit').click();
     await expect(page.getByTestId('kds-workspace')).toBeVisible();
@@ -232,7 +232,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('برنامه سرور');
     await expect(page.getByText('ثبت سفارش کنار میز برای کارکنان خدمات')).toBeVisible();
-    await expect(page.getByPlaceholder('server@buonapp.local')).toBeVisible();
+    await expect(page.getByPlaceholder('نام کاربری')).toBeVisible();
     await expect(page.getByPlaceholder('گذرواژه')).toBeVisible();
     await expect(page.getByText('ورود من را به یاد بسپار')).toBeVisible();
     await expect(page.getByRole('button', { name: 'ورود' })).toBeVisible();

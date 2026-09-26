@@ -19,57 +19,107 @@ None of the three should ever be reachable from the public internet.
 ## Authentication
 
 ### POST `/api/auth/login`
-Authenticate user and receive JWT token.
+Authenticate a user and receive a JWT.
+
+Accounts sign in with a username, not an email: BuonApp sends no mail, so an
+email was only ever an invented identifier (migration v96 turned each existing
+one into the part before the `@`). The username is matched regardless of case,
+surrounding spaces and accents, and `POST /api/auth/recover-password`
+identifies the owner the same way.
 
 **Request:**
 ```json
 {
-  "email": "chef1@buonapp.local",
-  "password": "chef123"
+  "username": "chef1",
+  "password": "ChefPass123",
+  "rememberMe": false
 }
 ```
+
+`rememberMe` is optional: `true` makes the token last 10 days instead of 24 hours.
 
 **Response (200):**
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "token_type": "Bearer",
+  "token_type": "bearer",
   "expires_in": 86400,
   "user": {
     "id": "chef-1",
     "name": "Chef One",
-    "email": "chef1@buonapp.local",
+    "username": "chef1",
     "role": "chef",
     "category_ids": ["cat-1", "cat-2"]
-  }
+  },
+  "tenants": [
+    { "id": 1, "business_name": "Trattoria", "currency": "EUR", "language": "it", "role": "chef" }
+  ]
 }
 ```
+
+`tenants` always holds the one local business, with its regional settings and
+the user's role (shortened above); the frontend selects it on its own.
 
 **Error (401):**
 ```json
 {
-  "error": "Invalid credentials"
+  "error": "Invalid credentials",
+  "attempts_remaining": 4
 }
 ```
+
+`attempts_remaining` says how many of the 5 attempts allowed per address are
+left. The fifth failure also carries `lockout_minutes: 15`, and further
+attempts answer `429` until the 15 minutes are up. A missing username or
+password answers `400`.
+
+The KDS (`:3002`) and the Server App (`:3003`) have their own
+`POST /api/auth/login`, with the same `username` and `password`:
+
+- the KDS admits `chef`, `manager` and `owner` (`403` for anyone else, and for
+  a user none of whose kitchen stations is active) and returns the user's
+  `station_ids`; its token always lasts 24 hours;
+- the Server App admits only `server`; its flag for staying signed in is
+  `remember_me` (10 days);
+- both answer `{ "access_token", "user" }`, without `token_type` or `tenants`,
+  and neither counts failed attempts: they are bound only by the rate limit
+  every authentication route shares, 10 requests per 15 minutes per address.
+
 ---
 
 ## User Management
 
-### GET `/api/users`
-List all users (owner/manager only).
+Staff accounts are served at `/api/users`, and at `/api/staff` for the same
+routes. Every route needs an owner or manager token
+(**Headers:** `Authorization: Bearer <token>`), and creating or changing an
+account shares the authentication rate limit above. Two rules hold everywhere:
 
-**Headers:** `Authorization: Bearer <token>`
+- a manager manages only operational staff (`cashier`, `server`, `chef`):
+  creating, changing, deactivating or reactivating an owner or a manager
+  answers `403`, and only an owner changes roles;
+- the last active owner can be neither demoted nor deactivated (`400`).
+
+Accounts are never deleted, because orders and print logs refer to them: they
+are deactivated instead. The routes that take an `:id` answer `404` when there
+is no such account.
+
+### GET `/api/users`
+List accounts, ordered by role and then name. Optional query: `role` (one of
+`owner`, `manager`, `cashier`, `server`, `chef`) and `active` (`true` or `false`).
 
 **Response (200):**
 ```json
 {
-  "users": [
+  "staff": [
     {
       "id": "user-1",
       "name": "Owner",
-      "email": "admin@buonapp.local",
+      "username": "admin",
       "role": "owner",
-      "is_active": 1
+      "has_pin": 1,
+      "is_active": 1,
+      "created_at": "2026-09-01 10:00:00",
+      "updated_at": "2026-09-01 10:00:00"
     }
   ]
 }
@@ -77,52 +127,80 @@ List all users (owner/manager only).
 
 ---
 
-### POST `/api/users`
-Create new user.
+### GET `/api/users/:id`
+One account, with `performance`: the orders it opened on the current UTC day
+and their total.
 
-**Headers:** `Authorization: Bearer <token>`
+**Response (200):**
+```json
+{
+  "staff": {
+    "id": "user-1",
+    "name": "Owner",
+    "username": "admin",
+    "role": "owner",
+    "has_pin": 1,
+    "is_active": 1,
+    "created_at": "2026-09-01 10:00:00",
+    "updated_at": "2026-09-01 10:00:00",
+    "performance": { "orders_served": 12, "total_sales": 540.5 }
+  }
+}
+```
+
+---
+
+### POST `/api/users`
+Create an account.
 
 **Request:**
 ```json
 {
   "name": "Chef One",
-  "email": "chef1@buonapp.local",
-  "password": "chef123",
-  "role": "chef",
-  "category_ids": ["cat-1", "cat-2"]
+  "username": "chef1",
+  "password": "ChefPass123",
+  "role": "chef"
 }
 ```
 
-**Response (201):**
-```json
-{
-  "success": true,
-  "id": "chef-1"
-}
-```
+- `name`, `username`, `password` and `role` are required.
+- `password` needs at least 8 characters, with an uppercase letter, a lowercase
+  letter and a digit.
+- `username` is 3 to 32 characters among `a-z`, `0-9`, `.`, `_` and `-`,
+  starting and ending with a letter or a digit. It is stored lowercase with
+  accents folded, so `Niccolò` is saved as `niccolo`. A missing, malformed or
+  already used one answers `400` with `code` `username_required`,
+  `username_invalid` or `username_taken`.
+- `pin` is optional, 4 to 6 digits, and only for `owner` and `manager`: it
+  approves overrides such as discounts and cancellations, and signs nobody in.
+
+**Response (201):** `{ "staff": { ... } }`, shaped as in the list.
 
 ---
 
-### PATCH `/api/users/:id`
-Update user details.
+### PUT `/api/users/:id`
+Change an account. Every field is optional: `name`, `username`, `password`,
+`role`, `pin`; a field left out keeps its value.
 
-**Headers:** `Authorization: Bearer <token>`
+- `username` follows the rules above, but is checked only when it changes: an
+  account migrated with a short one (`a`, from `a@…`) saves as it is.
+- `pin`: a value replaces it and an empty string removes it. Moving an account
+  to an operational role removes it too.
+- A new password or PIN ends the account's open sessions.
+- `is_active` answers `400`: use the two routes below.
 
-**Request:**
-```json
-{
-  "name": "Updated Name",
-  "role": "manager",
-  "category_ids": ["cat-1", "cat-2", "cat-3"]
-}
-```
+**Response (200):** `{ "staff": { ... } }`
 
 ---
 
-### DELETE `/api/users/:id`
-Delete user.
+### POST `/api/users/:id/deactivate`
+Switch an account off and end its open sessions. `400` when it is already off,
+or when it is the last active owner.
 
-**Headers:** `Authorization: Bearer <token>`
+### POST `/api/users/:id/reactivate`
+Switch an account back on. `400` when it is already on.
+
+Both answer `{ "staff": { ... } }`.
 
 ---
 
@@ -1423,7 +1501,7 @@ Each item in an order has its own status, allowing:
 | `owner` | Full access, user management, settings |
 | `manager` | Most features, limited settings |
 | `cashier` | POS, orders, bills |
-| `waiter` | Orders, tables |
+| `server` | Orders and tables; the only role the tableside handheld admits |
 | `chef` | KDS only |
 
 ---

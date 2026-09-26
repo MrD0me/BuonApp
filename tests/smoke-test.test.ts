@@ -48,13 +48,13 @@ async function run() {
     const bcrypt = require('bcryptjs');
     const hashed = bcrypt.hashSync('OwnerPass123!', 10);
     db.prepare(`
-      INSERT INTO users (id, name, email, password, role, is_active)
-      VALUES ('user-owner-1', 'Owner User', 'owner@buonapp.local', ?, 'owner', 1)
+      INSERT INTO users (id, name, username, password, role, is_active)
+      VALUES ('user-owner-1', 'Owner User', 'owner', ?, 'owner', 1)
     `).run(hashed);
 
     const loginRes = await request(`http://127.0.0.1:${mainPort}`)
       .post('/api/auth/login')
-      .send({ email: 'owner@buonapp.local', password: 'OwnerPass123!' });
+      .send({ username: 'owner', password: 'OwnerPass123!' });
     assert(loginRes.status === 200, 'Main API owner login succeeds with token');
     assert(!!loginRes.body.access_token, 'Main API returns access_token for authed owner');
 

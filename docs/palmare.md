@@ -16,8 +16,8 @@ essere montate qui senza toccarle (vedi [coperto-e-menu-fisso.md](coperto-e-menu
 ## Come ci arriva il cameriere
 
 Il telefono apre `http://<IP del PC>:3003`, o `http://buonapp.local:3003` dove la rete risolve i
-nomi mDNS, e il cameriere entra con la sua email e la sua password: il palmare accetta solo il
-ruolo `server`. Gli indirizzi, con un QR per ogni rete su cui sta il PC, li mostra
+nomi mDNS, e il cameriere entra con il suo nome utente e la sua password: il palmare accetta solo
+il ruolo `server`. Gli indirizzi, con un QR per ogni rete su cui sta il PC, li mostra
 `components/settings/ServerAppAccess.tsx`, che li chiede a `GET /api/server-app-info` appena
 compare. Sta in due posti:
 

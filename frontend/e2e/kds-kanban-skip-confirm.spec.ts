@@ -6,7 +6,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
 
   // 1. Create a fresh order via POS API with pending kitchen status
   const loginRes = await page.request.post('http://localhost:3001/api/auth/login', {
-    data: { email: 'manager@buonapp.local', password: 'E2ePass123!' },
+    data: { username: 'manager', password: 'E2ePass123!' },
   });
   expect(loginRes.ok()).toBeTruthy();
   const { access_token } = await loginRes.json();
@@ -32,7 +32,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   // login is skipped, and the assertion below times out on a workspace nobody
   // signed in to. Same sequence as kds-login.spec.ts.
   await expect(page.getByTestId('kds-login-form')).toBeVisible();
-  await page.getByTestId('kds-login-email').fill('manager@buonapp.local');
+  await page.getByTestId('kds-login-username').fill('manager');
   await page.getByTestId('kds-login-password').fill('E2ePass123!');
   await page.getByTestId('kds-login-submit').click();
   await expect(page.getByTestId('kds-workspace')).toBeVisible();

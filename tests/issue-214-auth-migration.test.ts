@@ -39,12 +39,12 @@ async function main() {
       .run(managerPassword, 'user-demo-manager');
     db.prepare('UPDATE users SET password = ?, is_active = 1, tokens_valid_after = NULL WHERE id = ?')
       .run(changedPassword, 'user-demo-cashier');
-    db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    db.prepare(`INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
-      .run('unrelated-demo-password', 'Unrelated', 'unrelated@test.local', managerPassword, 'cashier', now(), now());
+      .run('unrelated-demo-password', 'Unrelated', 'unrelated', managerPassword, 'cashier', now(), now());
 
     const legacyToken = jwt.sign(
-      { userId: 'user-demo-manager', email: 'manager@buonapp.local', role: 'manager' },
+      { userId: 'user-demo-manager', username: 'demo.manager', role: 'manager' },
       getJWTSecret(),
       { expiresIn: '1h' },
     );
@@ -88,13 +88,13 @@ async function main() {
 
       const disabledLogin = await request(baseUrl, '/login', {
         method: 'POST',
-        body: JSON.stringify({ email: 'manager@buonapp.local', password: 'demo12345' }),
+        body: JSON.stringify({ username: 'demo.manager', password: 'demo12345' }),
       });
       if (disabledLogin.status !== 401) throw new Error(`disabled demo login returned ${disabledLogin.status}`);
 
       const changedLogin = await request(baseUrl, '/login', {
         method: 'POST',
-        body: JSON.stringify({ email: 'cashier@buonapp.local', password: 'ChangedPass123!' }),
+        body: JSON.stringify({ username: 'demo.cashier', password: 'ChangedPass123!' }),
       });
       if (changedLogin.status !== 200) throw new Error(`changed demo password login returned ${changedLogin.status}`);
       const malformedPasswordChange = await request(baseUrl, '/password/change', {

@@ -145,7 +145,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       method: 'POST',
       body: JSON.stringify({
         name: 'First Owner',
-        email: 'owner@example.com',
+        username: 'owner',
         password: 'TestPass123',
         business_type: 'restaurant',
         business_name: 'First Cafe',
@@ -161,7 +161,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       method: 'POST',
       body: JSON.stringify({
         name: 'First Owner',
-        email: 'owner@example.com',
+        username: 'owner',
         password: 'TestPass123',
         business_type: 'restaurant',
         business_name: 'First Cafe',
@@ -178,11 +178,32 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(count('users'), 0, 'no owner is created when the timezone is invalid');
     console.log('   ✓ setup rejects an invalid IANA timezone');
 
+    // An email is not a username any more, and neither is anything too short
+    // or with spaces in it: the owner picks a name the login forms will take.
+    for (const username of ['owner@example.com', 'jo', 'mario rossi']) {
+      const invalidUsername = await request(baseUrl, '/setup/initialize', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'First Owner',
+          username,
+          password: 'TestPass123',
+          business_type: 'restaurant',
+          setup_profile: 'express',
+          service_model: 'qsr',
+          terms_accepted: true,
+        }),
+      });
+      assert.equal(invalidUsername.status, 400, `setup rejects the username ${JSON.stringify(username)}`);
+      assert.equal(invalidUsername.data.code, 'username_invalid');
+      assert.equal(count('users'), 0, 'no owner is created with an invalid username');
+    }
+    console.log('   ✓ setup rejects emails, short names and spaces as the owner username');
+
     const first = await request(baseUrl, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({
         name: 'First Owner',
-        email: 'owner@example.com',
+        username: 'owner',
         password: 'TestPass123',
         business_type: 'restaurant',
         business_name: 'First Cafe',
@@ -198,10 +219,12 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     });
 
     assert.equal(first.status, 200);
-    assert.equal(first.data.user.email, 'owner@example.com');
+    assert.equal(first.data.user.username, 'owner');
+    assert.equal(first.data.user.email, undefined, 'the owner has no email any more');
     assert.equal(first.data.user.role, 'owner');
     assert.equal(count('users'), 1, 'setup creates the first owner');
-    const ownerRow = getDatabase().prepare('SELECT terms_accepted_at FROM users WHERE email = ?').get('owner@example.com') as { terms_accepted_at: string | null };
+    assert.equal(setting('email'), '', 'setup no longer copies a login into the business email setting');
+    const ownerRow = getDatabase().prepare('SELECT terms_accepted_at FROM users WHERE username = ?').get('owner') as { terms_accepted_at: string | null };
     assert.ok(ownerRow.terms_accepted_at, 'terms acceptance is stamped with a timestamp on the owner record');
     assert.equal(setting('business_name'), 'First Cafe');
     assert.equal(setting('business_type'), 'restaurant');
@@ -224,7 +247,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       method: 'POST',
       body: JSON.stringify({
         name: 'Second Owner',
-        email: 'second@example.com',
+        username: 'second',
         password: 'TestPass123',
         business_type: 'restaurant',
         terms_accepted: true,
@@ -242,7 +265,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       method: 'POST',
       body: JSON.stringify({
         name: 'Third Owner',
-        email: 'third@example.com',
+        username: 'third',
         password: 'TestPass123',
         business_type: 'restaurant',
         terms_accepted: true,
@@ -287,7 +310,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     const created = await request(`http://127.0.0.1:${dineInAddress.port}/api/auth`, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({
-        name: 'Dine Owner', email: 'dine-owner@example.com', password: 'TestPass123',
+        name: 'Dine Owner', username: 'dine-owner', password: 'TestPass123',
         business_type: 'restaurant', setup_profile: 'express', service_model: 'finedine',
         terms_accepted: true,
       }),

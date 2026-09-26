@@ -798,12 +798,12 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
 
     const serverAppUserId = 'server-app-shutdown-user';
     getDatabase().prepare(`
-      INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      INSERT OR REPLACE INTO users (id, name, username, password, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(serverAppUserId, 'Server App Test User', 'server-app-shutdown@example.com', 'test', 'server', new Date().toISOString(), new Date().toISOString());
+    `).run(serverAppUserId, 'Server App Test User', 'server-app-shutdown', 'test', 'server', new Date().toISOString(), new Date().toISOString());
     const { getJWTSecret } = await import('../main/routes/auth');
     const jwt = require('jsonwebtoken');
-    const token = jwt.sign({ userId: serverAppUserId, email: 'server-app-shutdown@example.com', role: 'server' }, getJWTSecret());
+    const token = jwt.sign({ userId: serverAppUserId, username: 'server-app-shutdown', role: 'server' }, getJWTSecret());
     const originalFetch = globalThis.fetch;
     let fetchStarted!: () => void;
     const fetchStartedPromise = new Promise<void>((resolve) => { fetchStarted = resolve; });

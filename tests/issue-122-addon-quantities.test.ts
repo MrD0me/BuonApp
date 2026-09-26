@@ -125,8 +125,8 @@ async function runTests() {
   let token: string;
   const pinHash = bcrypt.hashSync('1234', 10);
   db.prepare(`
-    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-    VALUES ('user-1', 'Admin', 'admin@test.com', 'hash', 'owner', ?, 1, ?, ?)
+    INSERT INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES ('user-1', 'Admin', 'admin', 'hash', 'owner', ?, 1, ?, ?)
   `).run(pinHash, now(), now());
 
   token = jwt.sign({ userId: 'user-1', role: 'owner' }, getJWTSecret());

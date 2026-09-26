@@ -13,6 +13,7 @@ import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
+import { normalizeUsername } from './lib/username';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -24,7 +25,7 @@ let activeKdsPort = KDS_PORT;
 
 type KdsRequestUser = {
   userId: string;
-  email?: string;
+  username?: string;
   role: string;
   categoryIds: string[];
   stationIds: string[];
@@ -118,7 +119,7 @@ export function startKdsServer(): Promise<void> {
       try {
         const decoded = jwt.verify(token, getJWTSecret()) as any;
         const db = getDatabase();
-        const user = db.prepare('SELECT id, email, role, category_ids, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
+        const user = db.prepare('SELECT id, username, role, category_ids, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
         if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
           return res.status(401).json({ error: 'Invalid token' });
         }
@@ -131,7 +132,7 @@ export function startKdsServer(): Promise<void> {
         if (stationAssignmentsConfigured && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
         (req as any).user = {
           userId: user.id,
-          email: user.email,
+          username: user.username,
           role: user.role,
           categoryIds: categoryIdsForRole(user.role, user.category_ids),
           stationIds,
@@ -186,15 +187,16 @@ export function startKdsServer(): Promise<void> {
     // KDS Auth - verify user has chef/manager/owner role
     app.post('/api/auth/login', authRateLimit(), (req: Request, res: Response) => {
       try {
-        const { email, password } = req.body;
-        if (!email || !password) {
-          return res.status(400).json({ error: 'Email and password required' });
+        const username = normalizeUsername(req.body?.username);
+        const { password } = req.body || {};
+        if (!username || !password) {
+          return res.status(400).json({ error: 'Username and password required' });
         }
 
         const db = getDatabase();
         const bcrypt = require('bcryptjs');
 
-        const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
+        const user = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username) as any;
         if (!user || !bcrypt.compareSync(password, user.password)) {
           return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -212,7 +214,7 @@ export function startKdsServer(): Promise<void> {
         }
 
         const token = jwt.sign(
-          { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
+          { userId: user.id, username: user.username, role: user.role, jti: uuidv4() },
           getJWTSecret(),
           { expiresIn: '24h' }
         );
@@ -222,7 +224,7 @@ export function startKdsServer(): Promise<void> {
           user: {
             id: user.id,
             name: user.name,
-            email: user.email,
+            username: user.username,
             role: user.role,
             category_ids: categoryIdsForRole(user.role, user.category_ids),
             station_ids: stationIds,
@@ -255,7 +257,7 @@ export function startKdsServer(): Promise<void> {
       try {
         const authedUser = (req as any).user as KdsRequestUser;
         const db = getDatabase();
-        const row = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(authedUser.userId) as any;
+        const row = db.prepare('SELECT id, name, username, role FROM users WHERE id = ?').get(authedUser.userId) as any;
         if (!row) {
           return res.status(404).json({ error: 'User not found' });
         }

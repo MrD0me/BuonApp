@@ -40,8 +40,8 @@ const {
 const { billRoutes } = require('../main/routes/bills');
 const { getJWTSecret } = require('../main/routes/auth');
 
-function makeToken(id: string, role: string, email: string) {
-  const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
+function makeToken(id: string, role: string, username: string) {
+  const token = jwt.sign({ userId: id, username, role }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -56,20 +56,20 @@ async function run() {
 
   // Seed active manager 1 (PIN: 1111)
   db.prepare(`
-    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-    VALUES ('mgr-1', 'Manager One', 'mgr1@test.local', 'Pass1234!', 'manager', ?, 1, ?, ?)
+    INSERT INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES ('mgr-1', 'Manager One', 'mgr1', 'Pass1234!', 'manager', ?, 1, ?, ?)
   `).run(bcrypt.hashSync('1111', 10), now(), now());
 
   // Seed active manager 2 (PIN: 2222)
   db.prepare(`
-    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-    VALUES ('mgr-2', 'Manager Two', 'mgr2@test.local', 'Pass1234!', 'manager', ?, 1, ?, ?)
+    INSERT INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES ('mgr-2', 'Manager Two', 'mgr2', 'Pass1234!', 'manager', ?, 1, ?, ?)
   `).run(bcrypt.hashSync('2222', 10), now(), now());
 
   // Seed deactivated manager 3 (PIN: 3333, is_active = 0)
   db.prepare(`
-    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-    VALUES ('mgr-3', 'Deactivated Manager', 'mgr3@test.local', 'Pass1234!', 'manager', ?, 0, ?, ?)
+    INSERT INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES ('mgr-3', 'Deactivated Manager', 'mgr3', 'Pass1234!', 'manager', ?, 0, ?, ?)
   `).run(bcrypt.hashSync('3333', 10), now(), now());
 
   // Seed an order and bill to test discount approval
@@ -85,7 +85,7 @@ async function run() {
   `).run(orderId, now(), now());
   const billId = billRes.lastInsertRowid;
 
-  const ownerAuth = makeToken('mgr-1', 'manager', 'mgr1@test.local');
+  const ownerAuth = makeToken('mgr-1', 'manager', 'mgr1');
   const app = createApp({ '/api/bills': billRoutes });
 
   // Test 1: Valid Manager 1 PIN (1111) succeeds

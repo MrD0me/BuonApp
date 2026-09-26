@@ -10,6 +10,7 @@ import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { DEFAULT_ROOM_WIDTH, DEFAULT_ROOM_HEIGHT, defaultTableSize, createGridPlacer } from './lib/table-geometry';
 import { DEFAULT_ORDER_TYPES, ORDER_TYPES_SETTING_KEY } from './lib/order-types';
+import { assignMissingUsernames, convertLegacyUsernames } from './lib/username';
 import { COVER_CHARGE_SETTING_KEY } from './money';
 
 let db: Database.Database;
@@ -1436,7 +1437,7 @@ export function mergeUserStationSecurityState(
 export type UserSecurityState = {
   id: string;
   name: string;
-  email: string | null;
+  username: string | null;
   password: string;
   pin: string | null;
   pin_hash: string | null;
@@ -1567,13 +1568,17 @@ export function hasUserKdsStationAssignments(dbInstance: Database.Database, user
 
 export function captureUserSecurityState(dbInstance: Database.Database): UserSecurityState[] {
   try {
-    return dbInstance.prepare('SELECT id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, station_assignments_configured FROM users').all() as UserSecurityState[];
+    return dbInstance.prepare('SELECT id, name, username, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, station_assignments_configured FROM users').all() as UserSecurityState[];
   } catch {
     return [];
   }
 }
 
 export function mergeUserSecurityState(dbInstance: Database.Database, rows: UserSecurityState[]): void {
+  // A current account keeps its username even when the restored data gave it
+  // to somebody else — an older snapshot, a backup from before v96, another
+  // install. The other row loses it and is renamed from its name at the end.
+  const releaseUsername = dbInstance.prepare('UPDATE users SET username = NULL WHERE username = ? AND id <> ?');
   for (const row of rows) {
     const restored = dbInstance.prepare('SELECT id, is_active, tokens_valid_after, station_assignments_configured FROM users WHERE id = ?').get(row.id) as UserSecurityState | undefined;
     if (!restored) continue;
@@ -1584,13 +1589,14 @@ export function mergeUserSecurityState(dbInstance: Database.Database, rows: User
     const currentTime = Number.isFinite(currentParsedTime) ? currentParsedTime : Number.NEGATIVE_INFINITY;
     const restoredTime = Number.isFinite(restoredParsedTime) ? restoredParsedTime : Number.NEGATIVE_INFINITY;
     const tokensValidAfter = currentTime >= restoredTime ? currentEpoch : restoredEpoch;
+    if (row.username) releaseUsername.run(row.username, row.id);
     dbInstance.prepare(`
       UPDATE users
-      SET name = ?, email = ?, password = ?, pin = ?, pin_hash = ?, role = ?, category_ids = ?,
+      SET name = ?, username = ?, password = ?, pin = ?, pin_hash = ?, role = ?, category_ids = ?,
           is_active = ?, tokens_valid_after = ?, station_assignments_configured = ?
       WHERE id = ?
     `).run(
-      row.name, row.email, row.password, row.pin, row.pin_hash, row.role, row.category_ids,
+      row.name, row.username, row.password, row.pin, row.pin_hash, row.role, row.category_ids,
       row.is_active,
       tokensValidAfter,
       row.station_assignments_configured || 0,
@@ -1609,20 +1615,19 @@ export function mergeUserSecurityState(dbInstance: Database.Database, rows: User
   }
 
   const insertPreservedUser = dbInstance.prepare(`
-    INSERT INTO users (id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, station_assignments_configured, created_at, updated_at)
+    INSERT INTO users (id, name, username, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, station_assignments_configured, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const row of rows) {
     if (restoredIds.has(row.id)) continue;
-    const emailConflict = row.email
-      ? dbInstance.prepare('SELECT id FROM users WHERE email = ?').get(row.email) as { id: string } | undefined
-      : undefined;
-    if (emailConflict) dbInstance.prepare('UPDATE users SET email = NULL WHERE id = ?').run(emailConflict.id);
+    if (row.username) releaseUsername.run(row.username, row.id);
     insertPreservedUser.run(
-      row.id, row.name, row.email, row.password, row.pin, row.pin_hash, row.role,
+      row.id, row.name, row.username, row.password, row.pin, row.pin_hash, row.role,
       row.category_ids, row.is_active, row.tokens_valid_after, row.station_assignments_configured || 0, now(), now(),
     );
   }
+
+  assignMissingUsernames(dbInstance);
 }
 
 function readRevocations(dbInstance: Database.Database): RevocationRow[] {
@@ -3801,6 +3806,11 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 70,
     name: 'rename_waiter_role_to_server',
     up: () => {
+      // v96 renamed users.email to username. A database rewound below this
+      // version replays the rebuild on a table that has no email any more, so
+      // the login column is read under whichever name it has now and v96
+      // renames it again. A first run reads email, exactly as it always did.
+      const loginColumn = getColumns(db, 'users').includes('email') ? 'email' : 'username';
       db.exec(`
         PRAGMA foreign_keys = OFF;
         CREATE TABLE users_role_server_migration (
@@ -3826,7 +3836,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           created_at, updated_at
         )
         SELECT
-          id, name, email, password,
+          id, name, ${loginColumn}, password,
           CASE WHEN role = 'waiter' THEN 'server' ELSE role END,
           pin, pin_hash, category_ids, is_active,
           terms_accepted_at, tokens_valid_after, station_assignments_configured,
@@ -4633,6 +4643,25 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 96,
+    name: 'rename_user_email_to_username',
+    up: () => {
+      // Nobody signs in with a mailbox here: BuonApp sends no mail and has no
+      // cloud, so the email every login asked for was invented to get past the
+      // form, and staff added without one could not sign in at all. The column
+      // becomes the username, and each account takes the part of its email
+      // before the @ (see convertLegacyUsernames). A rename, not a rebuild: the
+      // UNIQUE constraint follows the column, and SQLite cannot drop a UNIQUE
+      // column anyway. The backup taken before migrating keeps the old emails.
+      const columns = getColumns(db, 'users');
+      if (columns.includes('email') && !columns.includes('username')) {
+        db.exec('ALTER TABLE users RENAME COLUMN email TO username');
+      }
+      const changed = convertLegacyUsernames(db);
+      console.log(`[DB] v96: ${changed} account(s) given a username from their email or name`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4984,6 +5013,7 @@ function createSchema(): void {
     -- ── Users (authentication + roles) ──────────────────────────────────
     -- Roles: owner, manager, cashier, server, chef
     -- KDS is operated by the chef role.
+    -- email is the old login column: migration v96 renames it to username.
 
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,

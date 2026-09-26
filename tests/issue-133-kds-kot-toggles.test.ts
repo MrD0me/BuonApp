@@ -45,18 +45,18 @@ const { kdsInfoRoutes } = require('../main/routes/kds-info');
 const { printerRoutes } = require('../main/routes/printers');
 const { getJWTSecret } = require('../main/routes/auth');
 
-function seedUser(db: any, id: string, role: string, email: string) {
+function seedUser(db: any, id: string, role: string, username: string) {
   db.prepare(`
-    INSERT OR REPLACE INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    INSERT OR REPLACE INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
   `).run(
-    id, `${role} user`, email,
+    id, `${role} user`, username,
     bcrypt.hashSync('testpass123', 10),
     role,
     bcrypt.hashSync('1234', 10),
     now(), now(),
   );
-  const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
+  const token = jwt.sign({ userId: id, username, role }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -65,10 +65,10 @@ async function main() {
   console.log('='.repeat(60));
 
   const db = initTestDb();
-  const ownerAuth = seedUser(db, 'issue133-owner', 'owner', 'issue133-owner@test.local');
-  const cashierAuth = seedUser(db, 'issue133-cashier', 'cashier', 'issue133-cashier@test.local');
-  const waiterAuth = seedUser(db, 'issue133-server', 'server', 'issue133-server@test.local');
-  const chefAuth = seedUser(db, 'issue133-chef', 'chef', 'issue133-chef@test.local');
+  const ownerAuth = seedUser(db, 'issue133-owner', 'owner', 'issue133-owner');
+  const cashierAuth = seedUser(db, 'issue133-cashier', 'cashier', 'issue133-cashier');
+  const waiterAuth = seedUser(db, 'issue133-server', 'server', 'issue133-server');
+  const chefAuth = seedUser(db, 'issue133-chef', 'chef', 'issue133-chef');
 
   const app = createApp({
     '/api/settings': settingsRoutes,

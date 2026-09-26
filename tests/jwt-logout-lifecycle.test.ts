@@ -51,8 +51,8 @@ async function run() {
 
   // Seed owner user
   db.prepare(`
-    INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-    VALUES ('jwt-owner-1', 'JWT Owner', 'jwt-owner@test.local', ?, 'owner', 1, ?, ?)
+    INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
+    VALUES ('jwt-owner-1', 'JWT Owner', 'jwt-owner', ?, 'owner', 1, ?, ?)
   `).run(bcrypt.hashSync('Pass1234!', 10), now(), now());
 
   const app = createApp({
@@ -63,7 +63,7 @@ async function run() {
   // Step 1: Login to get token
   const loginRes = await request(app)
     .post('/api/auth/login')
-    .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    .send({ username: 'jwt-owner', password: 'Pass1234!' });
   assertEqual(loginRes.status, 200, 'Login succeeds');
   const token = loginRes.body.access_token;
   assert(!!token, 'Access token returned');
@@ -118,7 +118,7 @@ async function run() {
   // A bounded in-memory cache must not evict durable revocations.
   for (let i = 0; i < 5001; i++) {
     const churnToken = jwt.sign(
-      { userId: 'jwt-owner-1', email: 'jwt-owner@test.local', role: 'owner', jti: `churn-${i}` },
+      { userId: 'jwt-owner-1', username: 'jwt-owner', role: 'owner', jti: `churn-${i}` },
       getJWTSecret(),
       { expiresIn: '1h' },
     );
@@ -128,7 +128,7 @@ async function run() {
 
   // Step 7: Test expired token -> 401
   const expiredToken = jwt.sign(
-    { userId: 'jwt-owner-1', email: 'jwt-owner@test.local', role: 'owner' },
+    { userId: 'jwt-owner-1', username: 'jwt-owner', role: 'owner' },
     getJWTSecret(),
     { expiresIn: '-1s' }
   );

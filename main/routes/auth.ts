@@ -12,6 +12,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { resolveRoomForNewTable, findFreeSlot } from '../services/tables';
 import { defaultTableSize } from '../lib/table-geometry';
 import { normalizeOptionalPhone } from '../lib/phone';
+import { isUsernameShape, isValidUsername, normalizeUsername, pickUniqueUsername, takenUsernames, usernameFromName } from '../lib/username';
 
 const router = Router();
 
@@ -113,10 +114,6 @@ function getUserCount(db: ReturnType<typeof getDatabase>): number {
   return (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number }).count;
 }
 
-function normalizeEmail(email: unknown): string {
-  return String(email || '').trim().toLowerCase();
-}
-
 export function parseCategoryIds(value: unknown): string[] {
   if (typeof value !== 'string' || value.length === 0) return [];
   try {
@@ -125,15 +122,6 @@ export function parseCategoryIds(value: unknown): string[] {
   } catch {
     return [];
   }
-}
-
-// RFC 5321 caps a mailbox at 254 octets. Bound the length before applying the
-// email regex so an attacker-supplied email cannot drive `[^\s@]+` backtracking
-// into super-linear time (CodeQL js/polynomial-redos).
-export const MAX_EMAIL_LENGTH = 254;
-
-export function isValidEmail(email: string): boolean {
-  return email.length <= MAX_EMAIL_LENGTH && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<string, unknown>): void {
@@ -185,11 +173,15 @@ function insertCustomer(db: ReturnType<typeof getDatabase>, id: string, name: st
   `).run(id, name, finalPhone, finalCountryCode, now(), now());
 }
 
-function insertStaffUser(db: ReturnType<typeof getDatabase>, id: string, name: string, email: string, role: string, password: string, isActive = 1): void {
+function insertStaffUser(db: ReturnType<typeof getDatabase>, id: string, name: string, role: string, password: string, isActive = 1): void {
+  // The username comes from the localized name ("Cassiere Demo" → cassiere.demo)
+  // and steers clear of any account already there, the owner's included: the
+  // insert ignores a clash, and would otherwise drop the row without a word.
+  const username = pickUniqueUsername(usernameFromName(name, role), takenUsernames(db));
   db.prepare(`
-    INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    INSERT OR IGNORE INTO users (id, name, username, password, role, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, email, bcrypt.hashSync(password, 10), role, isActive, now(), now());
+  `).run(id, name, username, bcrypt.hashSync(password, 10), role, isActive, now(), now());
 }
 
 function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: string): void {
@@ -372,9 +364,9 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   // Demo staff remains useful as localized sample rows, but must never ship with
   // a reusable public credential. The inactive rows can be explicitly replaced
   // by an owner during setup if staff access is wanted.
-  insertStaffUser(db, 'user-demo-manager', menu.staff.manager, 'manager@buonapp.local', 'manager', randomBytes(32).toString('hex'), 0);
-  insertStaffUser(db, 'user-demo-cashier', menu.staff.cashier, 'cashier@buonapp.local', 'cashier', randomBytes(32).toString('hex'), 0);
-  insertStaffUser(db, 'user-demo-chef', menu.staff.chef, 'chef@buonapp.local', 'chef', randomBytes(32).toString('hex'), 0);
+  insertStaffUser(db, 'user-demo-manager', menu.staff.manager, 'manager', randomBytes(32).toString('hex'), 0);
+  insertStaffUser(db, 'user-demo-cashier', menu.staff.cashier, 'cashier', randomBytes(32).toString('hex'), 0);
+  insertStaffUser(db, 'user-demo-chef', menu.staff.chef, 'chef', randomBytes(32).toString('hex'), 0);
 }
 
 export function seedSetupProfile(db: ReturnType<typeof getDatabase>, profile: string, serviceModel: string, language?: string, country?: string): void {
@@ -444,15 +436,15 @@ router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Re
       return res.status(429).json({ error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.` });
     }
 
-    const email = normalizeEmail(req.body?.email);
+    const username = normalizeUsername(req.body?.username);
     const { password, rememberMe } = req.body || {};
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
     }
 
     const db = getDatabase();
-    const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
+    const user = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username) as any;
     let passwordMatches = false;
     if (user) {
       try {
@@ -475,7 +467,7 @@ router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Re
 
     const remember = !!rememberMe;
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, remember, jti: uuidv4() },
+      { userId: user.id, username: user.username, role: user.role, remember, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -489,7 +481,7 @@ router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Re
       user: {
         id: user.id,
         name: user.name,
-        email: user.email,
+        username: user.username,
         role: user.role,
         category_ids: parseCategoryIds(user.category_ids),
       },
@@ -520,7 +512,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role, is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db.prepare('SELECT id, name, username, role, is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -531,7 +523,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, tenantId: 1, remember, jti: uuidv4() },
+      { userId: user.id, username: user.username, role: user.role, tenantId: 1, remember, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -581,14 +573,16 @@ router.post('/refresh', (req: Request, res: Response) => {
     // Without this, a token minted before a password/PIN change (#173) could
     // keep refreshing itself into new tokens forever, bypassing revocation entirely.
     const db = getDatabase();
-    const user = db.prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db.prepare('SELECT username, is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
     if (!user || user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
+    // The username is read from the account, not copied from the old token: a
+    // token signed before v96 carries an email instead, and a username can change.
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId, remember, jti: uuidv4() },
+      { userId: decoded.userId, username: user.username, role: decoded.role, tenantId: decoded.tenantId, remember, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -619,7 +613,7 @@ router.get('/me', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role, is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db.prepare('SELECT id, name, username, role, is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -628,7 +622,7 @@ router.get('/me', (req: Request, res: Response) => {
     const tenant = buildLocalTenant(db, user.role);
 
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { id: user.id, name: user.name, username: user.username, role: user.role },
       tenants: [tenant],
     });
   } catch {
@@ -714,19 +708,21 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       return res.status(409).json({ error: 'Setup has not been completed yet. Use first-run setup to create the owner account.' });
     }
 
-    const email = normalizeEmail(req.body?.email);
+    const username = normalizeUsername(req.body?.username);
     const { master_pin, new_password } = req.body || {};
 
-    if (!email || !isValidEmail(email)) {
-      return res.status(400).json({ error: 'A valid email is required' });
+    // Shape only, not the length rule for new names: an owner whose email was
+    // a@… signs in, and recovers, as "a".
+    if (!isUsernameShape(username)) {
+      return res.status(400).json({ error: 'A valid username is required' });
     }
     if (!new_password || !validatePassword(new_password)) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
 
-    // Rate-limit key is IP-scoped only (not email-scoped) so an attacker can't
-    // reset the Master PIN attempt counter simply by guessing a different
-    // email address on each request.
+    // Rate-limit key is IP-scoped only (not username-scoped) so an attacker
+    // can't reset the Master PIN attempt counter simply by guessing a
+    // different username on each request.
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const pinResult = authorizeMasterPin(master_pin, `auth:recover-password:${ip}`);
     if (!pinResult.ok) {
@@ -735,10 +731,10 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
 
     const activeOwnerCount = (db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'owner' AND is_active = 1").get() as { count: number }).count;
     const user = activeOwnerCount === 0
-      ? db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any
-      : db.prepare('SELECT * FROM users WHERE email = ? AND role = ? AND is_active = 1').get(email, INITIAL_ADMIN_ROLE) as any;
+      ? db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username) as any
+      : db.prepare('SELECT * FROM users WHERE username = ? AND role = ? AND is_active = 1').get(username, INITIAL_ADMIN_ROLE) as any;
     if (!user) {
-      return res.status(404).json({ error: 'No active owner account found with that email on this install' });
+      return res.status(404).json({ error: 'No active owner account found with that username on this install' });
     }
 
     const hashedPassword = bcrypt.hashSync(new_password, 10);
@@ -847,7 +843,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       terms_accepted,
       master_pin,
     } = req.body;
-    const email = normalizeEmail(req.body.email);
+    const username = normalizeUsername(req.body.username);
     const displayName = String(name || '').trim();
     const normalizedBusinessType = String(business_type || 'restaurant').trim();
     const normalizedSetupProfile = String(setup_profile || 'express').trim().toLowerCase();
@@ -868,15 +864,15 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       }
       outletPhone = normPhone.e164 || '';
     }
-    if (!displayName || !email || !password) {
-      return res.status(400).json({ error: 'Name, email, and password are required' });
+    if (!displayName || !username || !password) {
+      return res.status(400).json({ error: 'Name, username, and password are required' });
     }
     if (!validatePassword(password)) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
 
-    if (!isValidEmail(email)) {
-      return res.status(400).json({ error: 'A valid email is required' });
+    if (!isValidUsername(username)) {
+      return res.status(400).json({ error: 'Invalid username', code: 'username_invalid' });
     }
 
     if (terms_accepted !== true) {
@@ -916,16 +912,16 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         throw new Error('Setup already complete. This endpoint is disabled.');
       }
 
-      const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+      const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
       if (existingUser) {
-        throw new Error('User with this email already exists');
+        throw new Error('User with this username already exists');
       }
 
       userId = uuidv4();
       db.prepare(`
-        INSERT INTO users (id, name, email, password, role, is_active, terms_accepted_at, created_at, updated_at)
+        INSERT INTO users (id, name, username, password, role, is_active, terms_accepted_at, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(userId, displayName, email, hashedPassword, INITIAL_ADMIN_ROLE, 1, now(), now(), now());
+      `).run(userId, displayName, username, hashedPassword, INITIAL_ADMIN_ROLE, 1, now(), now(), now());
 
       upsertSettings(db, {
         business_name: resolvedStoreName,
@@ -939,7 +935,6 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         business_phone: outletPhone,
         address: outletAddress,
         phone: outletPhone,
-        email,
         tax_registration_number,
         state_code,
         billing_type: billing_type || (normalizedServiceModel === 'qsr' ? 'prepaid' : 'postpaid'),
@@ -953,7 +948,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     })();
 
     const token = jwt.sign(
-      { userId, email, role: INITIAL_ADMIN_ROLE, jti: uuidv4() },
+      { userId, username, role: INITIAL_ADMIN_ROLE, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
@@ -964,7 +959,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       access_token: token,
       token_type: 'bearer',
       expires_in: 86400,
-      user: { id: userId, name: displayName, email, role: INITIAL_ADMIN_ROLE },
+      user: { id: userId, name: displayName, username, role: INITIAL_ADMIN_ROLE },
       tenant,
       tenants: [tenant],
     });

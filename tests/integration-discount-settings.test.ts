@@ -133,8 +133,8 @@ async function seedTestData(db: any) {
   const bcrypt = require('bcryptjs');
   const pinHash = bcrypt.hashSync('1234', 10);
   db.prepare(`
-    INSERT OR IGNORE INTO users (name, email, role, pin_hash, created_at, updated_at)
-    VALUES ('Test Manager', 'manager@test.com', 'manager', ?, datetime('now'), datetime('now'))
+    INSERT OR IGNORE INTO users (name, username, role, pin_hash, created_at, updated_at)
+    VALUES ('Test Manager', 'manager', 'manager', ?, datetime('now'), datetime('now'))
   `).run(pinHash);
 }
 

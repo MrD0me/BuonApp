@@ -120,7 +120,7 @@ const downloadServer = http.createServer(app);
 installHttpShutdownTracking(downloadServer);
 
 function tokenFor(userId: string, role: string): string {
-  return jwt.sign({ userId, email: `${userId}@buonapp.local`, role }, getJWTSecret(), { expiresIn: '1h' });
+  return jwt.sign({ userId, username: userId, role }, getJWTSecret(), { expiresIn: '1h' });
 }
 
 async function runTests() {
@@ -131,14 +131,14 @@ async function runTests() {
   console.log('\nTest 1: setup requires master_pin');
   {
     const missingPin = await request(app).post('/api/auth/setup/initialize').send({
-      name: 'Owner', email: 'owner@example.com', password: 'TestPass123',
+      name: 'Owner', username: 'owner', password: 'TestPass123',
       business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
       terms_accepted: true,
     });
     assert(missingPin.status === 400, `setup without master_pin returns 400 (got ${missingPin.status})`);
 
     const ok = await request(app).post('/api/auth/setup/initialize').send({
-      name: 'Owner', email: 'owner@example.com', password: 'TestPass123',
+      name: 'Owner', username: 'owner', password: 'TestPass123',
       business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
       terms_accepted: true, master_pin: '1234',
     });
@@ -195,11 +195,11 @@ async function runTests() {
   });
   assert(redactedUserImport.status === 200, `redacted exported users are restored as placeholders (got ${redactedUserImport.status}, ${JSON.stringify(redactedUserImport.body)})`);
   assert(redactedUserImport.body.placeholderUsersCreated === 1, 'import reports one placeholder user created');
-  const placeholderUser = db.prepare("SELECT name, role, is_active, password, email FROM users WHERE id = 'redacted-user-1'").get() as { name: string; role: string; is_active: number; password: string; email: string | null } | undefined;
+  const placeholderUser = db.prepare("SELECT name, role, is_active, password, username FROM users WHERE id = 'redacted-user-1'").get() as { name: string; role: string; is_active: number; password: string; username: string | null } | undefined;
   assert(placeholderUser?.name === 'Imported Redacted User', 'placeholder user preserves display name');
   assert(placeholderUser?.role === 'server', 'placeholder user preserves role');
   assert(placeholderUser?.is_active === 0, 'placeholder user is inactive');
-  assert(placeholderUser?.email == null, 'placeholder user does not reserve the exported email');
+  assert(placeholderUser?.username === 'imported.redacted.user', 'placeholder user gets a username from its name, so it can sign in once reactivated');
   assert(placeholderUser?.password !== '[REDACTED]', 'placeholder user does not use the redaction marker as a password');
 
   // Redacted export fields must never become literal credentials on import.

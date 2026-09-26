@@ -41,7 +41,7 @@ async function run() {
 
   const setupPayload = {
     name: 'Recovery Owner',
-    email: 'recovery-owner@example.com',
+    username: 'recovery-owner',
     password: 'TestPass123',
     business_type: 'restaurant',
     setup_profile: 'empty',
@@ -66,7 +66,7 @@ async function run() {
 
     const retry = await request(app).post('/api/auth/setup/initialize').send({
       ...setupPayload,
-      email: 'second-owner@example.com',
+      username: 'second-owner',
     });
     assert.equal(retry.status, 403, 'setup cannot be replayed after local success');
 
