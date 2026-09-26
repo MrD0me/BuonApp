@@ -62,6 +62,10 @@ const CATEGORY_COLORS: { key: string; labelKey: ProductsKey; bg: string; text: s
 
 type TabType = 'products' | 'categories' | 'addons' | 'fixedMenus';
 
+/** The category filter's own values, beside the six-character category ids. */
+const ALL_CATEGORIES = 'all';
+const NO_CATEGORY = 'none';
+
 export default function ProductsPage() {
   const t = useTranslations('products');
   const tCommon = useTranslations('common');
@@ -75,6 +79,7 @@ export default function ProductsPage() {
   };
   const { currentTenant } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabType>('products');
+  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
   const [editingFixedMenu, setEditingFixedMenu] = useState<Product | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -117,6 +122,30 @@ export default function ProductsPage() {
   const fmt = useFormatCurrency();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
+
+  // The filter above the product list: every category with the dishes it
+  // holds, empty ones too, so a whole menu can be checked one course at a
+  // time. A product may have no category (the API and the CSV allow it); those
+  // get an entry of their own, listed only while there are some.
+  const categoryKeyOf = (product: Product): string => {
+    const id = product.category_id ?? product.category?.id;
+    return id != null && categories.some((c) => String(c.id) === String(id)) ? String(id) : NO_CATEGORY;
+  };
+  const categoryCounts = new Map<string, number>();
+  for (const product of products) {
+    const key = categoryKeyOf(product);
+    categoryCounts.set(key, (categoryCounts.get(key) ?? 0) + 1);
+  }
+  const categoryFilterOptions: { value: string; label: string; count: number }[] = [
+    { value: ALL_CATEGORIES, label: t('allCategories'), count: products.length },
+    ...categories.map((c) => ({ value: String(c.id), label: c.name, count: categoryCounts.get(String(c.id)) ?? 0 })),
+    ...(categoryCounts.has(NO_CATEGORY) ? [{ value: NO_CATEGORY, label: t('noCategory'), count: categoryCounts.get(NO_CATEGORY) ?? 0 }] : []),
+  ];
+  // A category deleted while it was the one on screen falls back to all.
+  const activeCategoryFilter = categoryFilterOptions.some((option) => option.value === categoryFilter) ? categoryFilter : ALL_CATEGORIES;
+  const visibleProducts = activeCategoryFilter === ALL_CATEGORIES
+    ? products
+    : products.filter((product) => categoryKeyOf(product) === activeCategoryFilter);
 
   const fetchData = async () => {
     try {
@@ -215,6 +244,10 @@ export default function ProductsPage() {
 
   const openCreate = () => {
     resetForm();
+    // Adding while looking at the primi is adding a primo.
+    if (activeCategoryFilter !== ALL_CATEGORIES && activeCategoryFilter !== NO_CATEGORY) {
+      setForm((prev) => ({ ...prev, category_id: activeCategoryFilter }));
+    }
     setShowForm(true);
   };
 
@@ -520,13 +553,34 @@ export default function ProductsPage() {
 
       {activeTab === 'products' && (
         <>
-          <div className="flex justify-end gap-2 mb-4">
-            <Button variant="outline" onClick={() => openCsvModal('products')}>
-              <FileSpreadsheet size={16} className="me-1" /> CSV
-            </Button>
-            <Button onClick={openCreate}>
-              <Plus size={16} className="me-1" /> {t('addProduct')}
-            </Button>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {/* A drop-down, not a chip per category: on the cash desk's
+                1024x690 the chips wrapped to four rows, six at 125 %, and
+                pushed the list below the fold. This sits in the row the
+                buttons already had. Outlined in brand while it filters, so
+                a short list is never mistaken for the whole menu. */}
+            {products.length > 0 && (
+              <select
+                value={activeCategoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                aria-label={t('filterByCategory')}
+                className={`h-touch max-w-full min-w-0 rounded-xl border bg-card px-3 text-base text-foreground outline-none focus:ring-2 focus:ring-brand ${
+                  activeCategoryFilter === ALL_CATEGORIES ? 'border-input' : 'border-brand ring-1 ring-brand'
+                }`}
+              >
+                {categoryFilterOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label} ({option.count})</option>
+                ))}
+              </select>
+            )}
+            <div className="ms-auto flex gap-2">
+              <Button variant="outline" onClick={() => openCsvModal('products')}>
+                <FileSpreadsheet size={16} className="me-1" /> CSV
+              </Button>
+              <Button onClick={openCreate}>
+                <Plus size={16} className="me-1" /> {t('addProduct')}
+              </Button>
+            </div>
           </div>
 
       {/* Product Table */}
@@ -545,7 +599,7 @@ export default function ProductsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {products.map((product) => {
+            {visibleProducts.map((product) => {
               const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
               const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
               return (
@@ -662,8 +716,10 @@ export default function ProductsPage() {
             })}
           </tbody>
         </table>
-        {products.length === 0 && (
+        {products.length === 0 ? (
           <p className="text-center text-gray-500 py-12">{t('empty')}</p>
+        ) : visibleProducts.length === 0 && (
+          <p className="text-center text-gray-500 py-12">{t('emptyInCategory')}</p>
         )}
       </div>
 
