@@ -33,6 +33,16 @@ dell'area di lavoro di uno schermo da 768 una volta che la barra delle applicazi
 striscia, quindi il fondo della finestra — la barra di stato, e la riga «Esci» della barra laterale —
 stava sotto la barra delle applicazioni senza modo di risalire.
 
+**Sugli schermi piccoli la pagina è rimpicciolita.** Con la finestra giusta restava un'interfaccia
+disegnata e provata su circa 1140×800: sulla cassa da 1024×768 tutto usciva di una taglia più
+grande, dai titoli ai bottoni alla barra laterale, e la sala e la griglia dei piatti prendevano gli
+avanzi. `createWindow()` imposta lo zoom della finestra (`webPreferences.zoomFactor`) su quanto
+manca all'area di lavoro per arrivare a quella misura, a passi del 5 % e mai sotto il 75 %: sulla
+cassa è il 90 %, come Ctrl e meno in un browser, e un bottone da 44 px resta a 40, il minimo che
+Windows chiede a un bersaglio touch. Con un'area di lavoro di circa 1140×800 o più resta al 100 %. Chromium tiene
+lo zoom per indirizzo e non per finestra, quindi lo seguono tutte le finestre su `localhost`; quella
+della cucina si apre sull'indirizzo di rete e resta al 100 %.
+
 ## Le fondamenta
 
 **Colori di stato in un posto solo.** Libero, occupato, prenotato, in sospeso, «da inviare», pagato
