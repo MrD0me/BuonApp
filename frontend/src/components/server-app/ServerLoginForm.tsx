@@ -4,25 +4,30 @@ import { useState, type FormEvent } from 'react';
 import { UserRound } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
+import { looksLikeEmail } from '@/lib/username';
 
 interface Props {
-  onLogin: (email: string, password: string, rememberMe: boolean) => Promise<void>;
+  onLogin: (username: string, password: string, rememberMe: boolean) => Promise<void>;
 }
 
 /** Pairing the phone: an account of the waiter role, and whether to stay in. */
 export function ServerLoginForm({ onLogin }: Props) {
   const t = useTranslations('serverApp');
   const tAuth = useTranslations('auth');
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (looksLikeEmail(username)) {
+      toast.error(tAuth('usernameNotEmail'));
+      return;
+    }
     setBusy(true);
     try {
-      await onLogin(email, password, rememberMe);
+      await onLogin(username, password, rememberMe);
     } catch {
       toast.error(t('signInFailed'));
     } finally {
@@ -39,7 +44,7 @@ export function ServerLoginForm({ onLogin }: Props) {
           <p className="mt-1 text-sm text-gray-500">{t('loginSubtitle')}</p>
         </div>
         <div className="space-y-3">
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" autoComplete="username" placeholder={t('emailPlaceholder')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+          <input value={username} onChange={(event) => setUsername(event.target.value)} type="text" dir="ltr" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder={tAuth('username')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
           <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" placeholder={tAuth('password')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
           <label className="flex items-center gap-2 text-sm text-gray-600">
             <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="rounded border-gray-300 text-brand focus:ring-brand" />

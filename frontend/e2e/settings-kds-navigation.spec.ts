@@ -14,7 +14,7 @@ const BASE = process.env.E2E_BASE_URL || 'http://localhost:3001';
  */
 test('the Settings tabs and the ?tab= deep link stay in step', async ({ page }) => {
   await page.goto(`${BASE}/auth/login`);
-  await page.getByLabel('Email').fill('manager@buonapp.local');
+  await page.getByLabel('Username').fill('manager');
   await page.getByLabel('Password').fill('E2ePass123!');
   await page.getByRole('button', { name: 'Sign In' }).click();
 

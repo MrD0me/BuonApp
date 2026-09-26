@@ -21,10 +21,17 @@ None of the three should ever be reachable from the public internet.
 ### POST `/api/auth/login`
 Authenticate user and receive JWT token.
 
+Accounts sign in with a username, not an email: BuonApp sends no mail, so an
+email was only ever an invented identifier (migration v96 turned each existing
+one into the part before the `@`). The username is matched regardless of case,
+surrounding spaces and accents. The KDS (`:3002`) and the Server App (`:3003`)
+take the same body on their own `POST /api/auth/login`, and
+`POST /api/auth/recover-password` identifies the owner the same way.
+
 **Request:**
 ```json
 {
-  "email": "chef1@buonapp.local",
+  "username": "chef1",
   "password": "chef123"
 }
 ```
@@ -38,7 +45,7 @@ Authenticate user and receive JWT token.
   "user": {
     "id": "chef-1",
     "name": "Chef One",
-    "email": "chef1@buonapp.local",
+    "username": "chef1",
     "role": "chef",
     "category_ids": ["cat-1", "cat-2"]
   }
@@ -67,7 +74,7 @@ List all users (owner/manager only).
     {
       "id": "user-1",
       "name": "Owner",
-      "email": "admin@buonapp.local",
+      "username": "admin",
       "role": "owner",
       "is_active": 1
     }
@@ -82,11 +89,18 @@ Create new user.
 
 **Headers:** `Authorization: Bearer <token>`
 
+`username` is required: 3 to 32 characters among `a-z`, `0-9`, `.`, `_` and
+`-`, starting and ending with a letter or a digit. It is stored lowercase with
+accents folded, so `Niccolò` is saved as `niccolo`. A missing, malformed or
+already used one answers `400` with `code` `username_required`,
+`username_invalid` or `username_taken`; an update checks it only when it
+changes.
+
 **Request:**
 ```json
 {
   "name": "Chef One",
-  "email": "chef1@buonapp.local",
+  "username": "chef1",
   "password": "chef123",
   "role": "chef",
   "category_ids": ["cat-1", "cat-2"]

@@ -116,12 +116,12 @@ function seedTestData() {
   managerUserId = 'mgr-test-001';
   const pinHash = bcrypt.hashSync(MANAGER_PIN, 10);
   db.prepare(
-    `INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    `INSERT INTO users (id, name, username, password, role, pin_hash, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     managerUserId,
     'Test Manager',
-    'mgr@test.local',
+    'mgr',
     bcrypt.hashSync('password', 10),
     'manager',
     pinHash,
@@ -227,7 +227,7 @@ async function main() {
 
   // Generate a valid JWT for test requests (manager role)
   const token = jwt.sign(
-    { userId: managerUserId, email: 'mgr@test.local', role: 'manager' },
+    { userId: managerUserId, username: 'mgr', role: 'manager' },
     getJWTSecret(),
     { expiresIn: '1h' }
   );

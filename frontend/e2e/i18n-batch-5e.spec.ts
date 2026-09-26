@@ -11,9 +11,9 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 import { WHATSAPP_AVAILABLE } from '../src/lib/features';
 
-async function login(page: Page, email: string): Promise<void> {
+async function login(page: Page, username: string): Promise<void> {
   await page.goto(`${BASE}/auth/login`);
-  await page.locator('#email').fill(email);
+  await page.locator('#username').fill(username);
   await page.locator('#password').fill(E2E_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/pos/**', { timeout: 20000 });
@@ -22,7 +22,7 @@ async function login(page: Page, email: string): Promise<void> {
 
 test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
   test('Batch 5E Pages render correctly in English, Spanish, and Persian with useTranslations and valid leaf keys', async ({ page }) => {
-    await login(page, 'owner@buonapp.local');
+    await login(page, 'owner');
 
     // ==========================================
     // 1. ENGLISH (EN) BASELINE

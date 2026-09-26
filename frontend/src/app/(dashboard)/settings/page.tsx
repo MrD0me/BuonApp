@@ -3031,8 +3031,8 @@ export default function SettingsPage() {
                   <p className="font-medium text-gray-900">{user?.name}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">{t('email')}</p>
-                  <p className="font-medium text-gray-900"><Ltr>{user?.email}</Ltr></p>
+                  <p className="text-sm text-gray-500">{t('username')}</p>
+                  <p className="font-medium text-gray-900"><Ltr data-testid="account-username">{user?.username}</Ltr></p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">{t('role')}</p>

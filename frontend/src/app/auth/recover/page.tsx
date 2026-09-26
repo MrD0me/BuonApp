@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
+import { looksLikeEmail } from '@/lib/username';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +17,7 @@ export default function RecoverAccessPage() {
   const t = useTranslations('auth');
   const tSetup = useTranslations('setup');
 
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [masterPin, setMasterPin] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -53,6 +54,10 @@ export default function RecoverAccessPage() {
     e.preventDefault();
     setFormError(null);
 
+    if (looksLikeEmail(username)) {
+      setFormError(t('usernameNotEmail'));
+      return;
+    }
     if (!/^\d{4}$/.test(masterPin)) {
       setFormError(t('recoverPinFormat'));
       return;
@@ -69,7 +74,7 @@ export default function RecoverAccessPage() {
     setLoading(true);
     try {
       await api.post('/auth/recover-password', {
-        email,
+        username,
         master_pin: masterPin,
         new_password: newPassword,
       });
@@ -130,14 +135,17 @@ export default function RecoverAccessPage() {
             ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="recover-email">{t('email')}</Label>
+                <Label htmlFor="recover-username">{t('username')}</Label>
                 <Input
-                  id="recover-email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t('emailPlaceholder')}
+                  id="recover-username"
+                  type="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder={t('usernamePlaceholder')}
                   dir="ltr"
                   required
                 />

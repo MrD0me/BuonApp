@@ -21,7 +21,7 @@ type Status = 'loading' | 'ready' | 'off' | 'failed';
  * Where a waiter's phone finds the handheld: a QR code and the address for
  * each network this PC is on, and the `buonapp.local` name Apple devices
  * resolve. The code is only the address — getting in still takes the waiter's
- * own email and password.
+ * own username and password.
  *
  * Two places show it: the Palmari window the sidebar opens, for everyone who
  * works the till, and the tableside ordering tab in Settings. It asks for the

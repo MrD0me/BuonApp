@@ -220,11 +220,11 @@ export default function AppSidebar() {
                   deliberately skips SidebarMenuButton's interactive/hover styling.
                   Collapsed, it centres its icon like the rows above (ROW). */}
               <div
-                title={user?.name || user?.email || t('user')}
+                title={user?.name || user?.username || t('user')}
                 className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:[&>span]:sr-only [&>span:last-child]:truncate [&>svg]:size-5 [&>svg]:shrink-0"
               >
                 <UserCircle />
-                <span className="truncate">{user?.name || user?.email || t('user')}</span>
+                <span className="truncate">{user?.name || user?.username || t('user')}</span>
               </div>
             </SidebarMenuItem>
             <SidebarMenuItem>

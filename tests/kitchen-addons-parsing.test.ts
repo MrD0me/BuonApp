@@ -109,10 +109,10 @@ function seedTestData() {
   // Owner user
   const ownerId = 'owner-addons-test';
   db.prepare(
-    `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    `INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    ownerId, 'Test Owner', 'owner@test.local',
+    ownerId, 'Test Owner', 'owner',
     bcrypt.hashSync('password', 10), 'owner', 1, now(), now()
   );
 
@@ -207,7 +207,7 @@ async function main() {
   const baseUrl = `http://127.0.0.1:${addr.port}`;
 
   const token = jwt.sign(
-    { userId: 'owner-addons-test', email: 'owner@test.local', role: 'owner' },
+    { userId: 'owner-addons-test', username: 'owner', role: 'owner' },
     getJWTSecret(),
     { expiresIn: '1h' }
   );

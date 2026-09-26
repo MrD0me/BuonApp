@@ -366,7 +366,6 @@ function tagParityErrors(enFlat: Record<string, string>, localeFlat: Record<stri
  * must be fixed (or added here with a comment explaining why it is shared).
  */
 const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
-  'auth.emailPlaceholder', // example email
   'common.appTitle', // brand
   'common.brandName', // brand
   'common.logoAlt', // brand
@@ -379,7 +378,6 @@ const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'printTest.paperWidth58', // measurement
   'printTest.paperWidth80', // measurement
   'products.addonSelectionRange', // pure format: {min} – {max}
-  'setup.ownerEmailPlaceholder', // example email
   'settings.apiKeyInputPlaceholder', // example API key
   'settings.connectionUsb', // technical acronym
   'settings.instagramPlaceholder', // example handle
@@ -393,7 +391,6 @@ const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'settings.portPlaceholder', // example port
   'settings.registrationEmailPlaceholder', // example email
   'settings.registrationLastError', // pure placeholder: {error}
-  'serverApp.emailPlaceholder', // example email
   'settings.revflo', // brand
   'settings.tabOrderflow', // brand
   'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX

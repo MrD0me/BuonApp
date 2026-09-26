@@ -65,7 +65,7 @@ try {
 const app = express();
 app.use(express.json());
 app.use((req: any, _res: any, next: any) => {
-  req.user = { userId: 'owner-1', email: 'owner@buonapp.local', role: 'owner' };
+  req.user = { userId: 'owner-1', username: 'owner', role: 'owner' };
   next();
 });
 app.use('/api/printers', printerRoutes);

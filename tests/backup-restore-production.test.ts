@@ -76,8 +76,8 @@ async function run() {
     const db = getDatabase();
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
       VALUES ('restore-station-current', 'Current Station', '[]', 1, datetime('now'), datetime('now'))`).run();
-    db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-      VALUES ('restore-station-chef', 'Station Chef', 'restore-station-chef@buonapp.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
+    db.prepare(`INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
+      VALUES ('restore-station-chef', 'Station Chef', 'restore-station-chef', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
     db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, datetime(\'now\'))')
       .run('restore-station-chef', 'restore-station-current');
     db.prepare(`
@@ -134,8 +134,8 @@ async function run() {
     assert.equal(getDatabase().prepare("SELECT value FROM settings WHERE key = 'mobile_pairing_code'").get(), undefined, 'restore discards backup mobile pairing codes');
     assert.equal(getDatabase().prepare("SELECT value FROM settings WHERE key = 'cloud_api_key'").get(), undefined, 'restore discards cloud credentials carried by an older backup');
     assert.equal((getDatabase().prepare('SELECT COUNT(*) AS count FROM kds_pairing_tokens').get() as { count: number }).count, 0, 'restore invalidates backup KDS pairing tokens');
-    getDatabase().prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-      VALUES ('restore-current-only-user', 'Current Only', 'restore-current-only@buonapp.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
+    getDatabase().prepare(`INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
+      VALUES ('restore-current-only-user', 'Current Only', 'restore-current-only', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
     const currentOnlyRestore = restoreBackup(enabledKdsBackup, true);
     assert.equal(currentOnlyRestore.success, true, 'restore succeeds with a current-only user');
     assert.equal((getDatabase().prepare('SELECT is_active FROM users WHERE id = ?').get('restore-current-only-user') as { is_active: number }).is_active, 1, 'current-only users survive restore');
@@ -176,8 +176,8 @@ async function run() {
     const backupOnlyUserDb = new Database(backupOnlyUserBackup);
     backupOnlyUserDb.pragma('foreign_keys = OFF');
     backupOnlyUserDb.prepare(`
-      INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-      VALUES ('restore-backup-only-chef', 'Backup Only Chef', 'backup-only-chef@buonapp.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))
+      INSERT INTO users (id, name, username, password, role, is_active, created_at, updated_at)
+      VALUES ('restore-backup-only-chef', 'Backup Only Chef', 'backup-only-chef', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))
     `).run();
     backupOnlyUserDb.close();
     const backupOnlyUserRestore = restoreBackup(backupOnlyUserBackup, true);
@@ -206,6 +206,35 @@ async function run() {
       'false',
       'data-only restore preserves the current disabled KDS setting',
     );
+    assertNoRestoreAttachment();
+
+    // A backup from before v96 still signs in by email, so no column the live
+    // database shares carries a username and the accounts come back without
+    // one. Current accounts get theirs back; one that only the backup knows is
+    // named from its name, and stays switched off.
+    const preUsernameBackup = path.join(testDir, 'pre-username-backup.db');
+    copyAndStamp(sameSchemaBackup, preUsernameBackup, currentVersion - 1);
+    const preUsernameDb = new Database(preUsernameBackup);
+    preUsernameDb.pragma('foreign_keys = OFF');
+    preUsernameDb.exec('ALTER TABLE users RENAME COLUMN username TO email');
+    preUsernameDb.prepare("UPDATE users SET email = 'station-chef@buonapp.local' WHERE id = 'restore-station-chef'").run();
+    preUsernameDb.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES ('restore-pre-username-only', 'Vecchio Cameriere', 'vecchio@buonapp.local', 'test-hash', 'server', 1, datetime('now'), datetime('now'))`).run();
+    preUsernameDb.close();
+    const liveUsernames = getDatabase().prepare('SELECT id, username FROM users ORDER BY id').all() as { id: string; username: string }[];
+    const preUsernameRestore = restoreBackup(preUsernameBackup, false);
+    assert.equal(preUsernameRestore.success, true, 'a backup from before usernames restores');
+    for (const { id, username } of liveUsernames) {
+      assert.equal(
+        (getDatabase().prepare('SELECT username FROM users WHERE id = ?').get(id) as { username: string }).username,
+        username,
+        `current account ${id} keeps its username`,
+      );
+    }
+    const backupOnlyAccount = getDatabase().prepare('SELECT username, is_active FROM users WHERE id = ?')
+      .get('restore-pre-username-only') as { username: string; is_active: number };
+    assert.equal(backupOnlyAccount.username, 'vecchio.cameriere', 'an account only the old backup knows is named from its name');
+    assert.equal(backupOnlyAccount.is_active, 0, 'and stays switched off');
     assertNoRestoreAttachment();
 
     // A failed restore must roll back and leave the connection reusable.
