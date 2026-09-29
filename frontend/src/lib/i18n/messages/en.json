@@ -1887,7 +1887,6 @@
     "tableReserveFailed": "Failed to reserve table",
     "tableUpdateFailed": "Failed to update",
     "tableUpdated": "Table updated",
-    "tablesMerged": "{count} tables joined to {name}",
     "takeOrder": "Take order",
     "title": "Tables",
     "unassignedBookings": "{count} to seat",

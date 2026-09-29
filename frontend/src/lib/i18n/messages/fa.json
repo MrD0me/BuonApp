@@ -1887,7 +1887,6 @@
     "tableReserveFailed": "رزرو میز انجام نشد",
     "tableUpdateFailed": "به‌روزرسانی انجام نشد",
     "tableUpdated": "میز به‌روزرسانی شد",
-    "tablesMerged": "{count} میز به {name} ادغام شد",
     "takeOrder": "ثبت سفارش",
     "title": "میزها",
     "unassignedBookings": "{count} بدون میز",

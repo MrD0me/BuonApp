@@ -1887,7 +1887,6 @@
     "tableReserveFailed": "Falha ao reservar a mesa",
     "tableUpdateFailed": "Falha ao atualizar",
     "tableUpdated": "Mesa atualizada",
-    "tablesMerged": "{count} mesas juntadas à {name}",
     "takeOrder": "Fazer pedido",
     "title": "Mesas",
     "unassignedBookings": "{count} para acomodar",

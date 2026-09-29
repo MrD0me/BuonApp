@@ -17,7 +17,7 @@ BuonApp UI is the user interface for the BuonApp point-of-sale system. It runs a
 - The dining room drawn as a floor map, one tab per room
 - Service mode (touch a table to open what it is doing) and edit mode (drag, add, delete)
 - Table shape, size, and horizontal/vertical orientation
-- Joined tables, saved floor plans, and a strip of reservations still to be placed
+- Saved floor plans, and a strip of reservations still to be placed
 - Per-table status colour, covers against capacity, running total, occupied-since, and a badge for courses still to send
 - **Send to kitchen** dispatches only the rows that have never been sent
 
@@ -95,7 +95,7 @@ src/
 ├── app/                    # App Router pages
 │   ├── (dashboard)/        # Authenticated app shell
 │   │   ├── pos/            # Point of Sale
-│   │   ├── tables/         # Floor map, rooms, joined tables, layouts
+│   │   ├── tables/         # Floor map, rooms, layouts
 │   │   ├── reservations/   # Reservation sheet for the current service day
 │   │   ├── service-days/   # Service day in progress, history, and close
 │   │   ├── orders/         # Order history and management

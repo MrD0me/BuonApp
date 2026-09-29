@@ -1887,7 +1887,6 @@
     "tableReserveFailed": "Impossibile prenotare il tavolo",
     "tableUpdateFailed": "Aggiornamento non riuscito",
     "tableUpdated": "Tavolo aggiornato",
-    "tablesMerged": "{count} tavoli uniti a {name}",
     "takeOrder": "Prendi ordine",
     "title": "Tavoli",
     "unassignedBookings": "{count} da sistemare",
