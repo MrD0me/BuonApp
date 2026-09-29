@@ -119,7 +119,7 @@ Non è una divisione per il gusto di dividere: le tre iconcine da 16 px su ogni 
 matita, storno) erano imprendibili col dito e indistinguibili a colpo d'occhio. Adesso **la riga si
 tocca** e si apre un foglio con tutto quello che le si può fare — uscita, prezzo, elimina, storna.
 Le quattro azioni della sala stanno fisse in fondo, e «Altro» tiene sconto, coperti, converti e
-annulla, più quello che la scheda del tavolo aggiunge (modifica tavolo, separa).
+annulla, più quello che la scheda del tavolo aggiunge (modifica tavolo).
 
 **Ordina.** Il tavolo è la testata della comanda, con «Cambia» accanto: non è più un pulsante
 arancione in cima alla pagina lontano da quello che descrive. Le tessere sono compatte (miniatura

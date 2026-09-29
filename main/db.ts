@@ -4662,6 +4662,38 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[DB] v96: ${changed} account(s) given a username from their email or name`);
     },
   },
+  {
+    version: 97,
+    name: 'remove_table_merging',
+    up: () => {
+      // Joining tables is gone from this fork. A party too big for one table
+      // is seated by changing the map in edit mode — a bigger table, more
+      // seats — rather than by folding tables into a leader, which gave the
+      // floor a second kind of table to reason about: one that took no order,
+      // no booking and no covers of its own.
+      //
+      // Groups still standing are broken up first. A member was set `held`
+      // when it was folded in, and goes back to `available` unless a parked
+      // cart is what holds it: `held` also means that, and stays.
+      if (!getColumns(db, 'tables').includes('merged_into')) return;
+
+      const stamp = now();
+      const released = db.prepare(`
+        UPDATE tables SET status = 'available', updated_at = ?
+        WHERE merged_into IS NOT NULL AND status = 'held'
+          AND id NOT IN (SELECT table_id FROM held_orders WHERE table_id IS NOT NULL)
+      `).run(stamp).changes;
+      const groups = (db.prepare(
+        'SELECT COUNT(DISTINCT merged_into) AS count FROM tables WHERE merged_into IS NOT NULL',
+      ).get() as { count: number }).count;
+      db.prepare('UPDATE tables SET merged_into = NULL WHERE merged_into IS NOT NULL').run();
+
+      // SQLite will not drop a column an index still covers.
+      db.exec('DROP INDEX IF EXISTS idx_tables_merged_into');
+      db.exec('ALTER TABLE tables DROP COLUMN merged_into');
+      console.log(`[DB] v97: table merging removed; ${groups} group(s) broken up, ${released} table(s) freed`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4987,9 +5019,6 @@ function createSchema(): void {
       width REAL,
       height REAL,
       shape TEXT DEFAULT 'rect',
-      -- Set on a table joined to another for one party: it points at the table
-      -- leading the group, which is where the order lives.
-      merged_into TEXT,
       kitchen_station_id TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,

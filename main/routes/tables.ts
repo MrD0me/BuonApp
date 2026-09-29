@@ -12,13 +12,12 @@ import {
 } from '../services/reservations';
 import {
   ACTIVE_ORDER_STATUS_SQL, tableRoomName, tableLabelSource, tableDeletionBlocker, deleteTableRow,
-  resolveRoomForNewTable, findFreeSlot, tableMergeBlocker, mergeTables, splitTableGroup, groupCapacity,
+  resolveRoomForNewTable, findFreeSlot,
 } from '../services/tables';
 import { getOrOpenServiceDay } from '../services/service-day';
 
 // Re-exported so existing importers of the table domain keep working.
 export { tableRoomName, tableLabelSource, tableDeletionBlocker, deleteTableRow, resolveRoomForNewTable, findFreeSlot };
-export { tableMergeBlocker, mergeTables, splitTableGroup, groupCapacity };
 export type { TableDeletionBlocker } from '../services/tables';
 
 const router = Router();
@@ -52,14 +51,6 @@ function tableShape(table: any, activeOrder?: any, reservation?: any) {
 const OPTIONAL_TABLE_FIELDS = [
   'capacity', 'section', 'room_id', 'position_x', 'position_y', 'width', 'height', 'shape', 'kitchen_station_id',
 ] as const;
-/** Why a table refused to be folded in, in words the floor can act on. */
-const MERGE_REASONS: Record<string, string> = {
-  table_has_open_order: 'is serving an order',
-  table_has_held_cart: 'has a held cart',
-  table_has_reservation: 'has a booking',
-  table_already_merged: 'is already part of a group',
-  table_leads_group: 'already leads a group',
-};
 
 /** Numeric map geometry, validated as finite and non-negative before it is written. */
 const NUMERIC_TABLE_FIELDS = new Set(['capacity', 'position_x', 'position_y', 'width', 'height']);
@@ -518,75 +509,6 @@ router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'serve
     const statusCode = error.status || 500;
     console.error('[API] Table move failed:', error);
     res.status(statusCode).json({ error: statusCode >= 500 ? 'Table move failed' : error.message });
-  }
-});
-
-/**
- * Join tables for one party. The table in the path leads the group and is where
- * the order goes; the others are folded into it until they are split off.
- */
-router.post('/:id/merge', requireRole('owner', 'manager'), (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const leaderId = req.params.id as string;
-    const requested: unknown = (req.body || {}).table_ids;
-    const childIds = Array.isArray(requested) ? requested.map(String).filter((id) => id && id !== leaderId) : [];
-    if (childIds.length === 0) {
-      return res.status(400).json({ error: 'table_ids must list at least one other table', code: 'merge_needs_tables' });
-    }
-
-    const merged = withTxn(() => {
-      const leader = db.prepare('SELECT * FROM tables WHERE id = ?').get(leaderId) as any;
-      if (!leader) throw Object.assign(new Error('Table not found'), { status: 404 });
-      if (leader.merged_into) {
-        throw Object.assign(new Error('This table is already part of a group. Split it first.'), {
-          status: 409, code: 'table_already_merged',
-        });
-      }
-
-      for (const childId of childIds) {
-        const child = db.prepare('SELECT * FROM tables WHERE id = ?').get(childId) as any;
-        if (!child) throw Object.assign(new Error(`Table ${childId} not found`), { status: 404 });
-        const blocker = tableMergeBlocker(db, childId);
-        if (blocker) {
-          throw Object.assign(new Error(`${child.number} ${MERGE_REASONS[blocker]}.`), { status: 409, code: blocker });
-        }
-      }
-
-      mergeTables(db, leaderId, childIds);
-      return db.prepare('SELECT * FROM tables WHERE id = ?').get(leaderId) as any;
-    });
-
-    res.json({
-      table: tableShape(merged, activeOrderForTable(db, leaderId), activeReservationForTable(db, leaderId)),
-      group_capacity: groupCapacity(db, leaderId),
-      merged: childIds.length,
-    });
-  } catch (error: any) {
-    const status = error.status || 500;
-    if (status >= 500) console.error('[API] Table merge failed:', error);
-    res.status(status).json({
-      error: status >= 500 ? 'Internal server error' : error.message,
-      ...(error.code ? { code: error.code } : {}),
-    });
-  }
-});
-
-/** Break a group up. Works from the leader or from any member. */
-router.post('/:id/split', requireRole('owner', 'manager'), (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
-    if (!table) return res.status(404).json({ error: 'Table not found' });
-
-    const released = withTxn(() => splitTableGroup(db, req.params.id as string));
-    if (released === 0) {
-      return res.status(400).json({ error: 'This table is not part of a group.', code: 'not_merged' });
-    }
-    res.json({ released });
-  } catch (error: any) {
-    console.error('[API] Table split failed:', error);
-    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

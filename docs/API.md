@@ -477,7 +477,7 @@ Give the booking a table, or take its table away with `{ "table_id": null }`. Ow
 Whatever was on the target table inherits what this booking had, so a swap is the same call as a
 plain assignment. The response carries `displaced` when another booking had to move.
 
-**Response (409):** `reservation_not_pending`, `table_has_open_order`, `table_is_merged`
+**Response (409):** `reservation_not_pending`, `table_has_open_order`
 
 ---
 
@@ -486,24 +486,6 @@ Close a pending booking, or put a seating made by mistake back on the sheet. Own
 Reopening returns the booking with no table, since the one it had is now busy.
 
 **Response (409):** `reservation_not_seated` when reopening something that was never seated.
-
----
-
-## Joined tables
-
-### POST `/api/tables/:id/merge`
-Push tables together for one party. Owner/manager. The table in the path leads the group and keeps
-the order; `table_ids` lists the ones folded into it.
-
-**Response (409):** `table_has_open_order`, `table_has_held_cart`, `table_has_reservation`,
-`table_already_merged`, `table_leads_group` — the message names the table in the way.
-
----
-
-### POST `/api/tables/:id/split`
-Break the group up. Owner/manager. Works from the leader or from any member.
-
-**Response (400):** `{ "code": "not_merged" }`
 
 ---
 

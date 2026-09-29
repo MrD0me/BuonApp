@@ -58,8 +58,8 @@ Real entity replacing the free-text `floor`: `id`, `name`, `sort_order`, `width`
 ### `tables` (extended)
 
 Stays the same table, becomes fully mutable and deletable. Phase 2 adds `room_id`, `shape`
-(rect/round), `width` and `height`; `position_x`/`position_y` finally get used. Phase 4 adds
-`merged_into` for joining tables.
+(rect/round), `width` and `height`; `position_x`/`position_y` finally get used. Phase 4 added
+`merged_into` for joining tables, and migration v97 took it away again (see below).
 
 **Amendment (phase 2):** the planned `rotation` and `notes` columns are not there.
 
@@ -256,12 +256,12 @@ close expires whoever did not turn up. The customer link is the only part that c
 business that switches the customer book off (`customers_enabled`) keeps booking exactly as before,
 because the booking carries its own name and phone.
 
-**Joining tables** (migration v77). `tables.merged_into` points a folded table at the one leading its
-group. Deliberately one level deep: a member can never itself lead, so there are no chains to walk
-and splitting is always one step. The leader keeps the order — `POST /orders` refuses a table that
-has been folded in and names the leader to use instead. Joining is refused for a table that is
-working, holding a cart, booked, or already in a group, and the refusal names the table in the way.
-Deleting a leader releases its members rather than stranding them.
+**Joining tables** (migration v77) — **removed** by migration v97. `tables.merged_into` pointed a
+folded table at the one leading its group, and the leader took the order. It gave the floor a second
+kind of table to reason about, one that took no order, no booking and no covers of its own. The owner
+seats a large party by changing the map in edit mode instead: a bigger table, more seats. v97 breaks
+up any group still standing — a member goes back to `available` unless a parked cart is what holds
+it — and drops the index and the column. `POST /tables/:id/merge` and `/split` are gone with it.
 
 **Saved floor plans** (migration v78). `table_layouts` stores rooms and tables under a name.
 Applying one rebuilds the floor in a single transaction, tearing the current tables down through the
@@ -274,9 +274,9 @@ wiped. That is the point: it is the answer to the daily tax the close ritual cre
 deletion, which had the route and the service importing each other in a circle. Services now hold
 the domain and routes only speak HTTP; there are no import cycles left in `main/`.
 
-Covered by `tests/reservations.test.ts` and `tests/table-merge-layouts.test.ts`.
+Covered by `tests/reservations.test.ts` and `tests/table-layouts.test.ts`.
 
-**Still open:** reserving and joining are owner/manager, the same as every other table write. A
+**Still open:** reserving is owner/manager, the same as every other table write. A
 cashier taking a booking at the till cannot, and widening that is a decision rather than an
 oversight. There is no booking agenda, by design.
 
@@ -295,12 +295,16 @@ the user cannot see reads as a bug.
 
 Moving is refused for a booking that is no longer `booked` — which is exactly the "only if no order
 has been placed" rule, since an order on a held table seats its booking. It is also refused onto a
-table that is serving, or one folded into a group.
+table that is serving.
 
-**Two surfaces, one operation.** The `/reservations` page lists the day by time with a single-row
+**Three surfaces, one operation.** The `/reservations` page lists the day by time with a single-row
 add — fifteen bookings off a paper list should be fifteen lines of typing — and a table picker that
 shows who currently holds each table. The map carries a strip of unseated bookings: tap one, tap a
-table.
+table. And the card of a booked table moves its booking, because a party asking for another table
+is an everyday thing: **Change table** picks the booking up so the next table tapped on the map
+takes it (a swap if that one is booked too; the strip says so, and Cancel drops it), and **Take off
+the table** sends it back to the strip. The sheet has a way back to the map, and the sidebar keeps
+the room lit while it is open.
 
 **`no_show`** is separate from `expired`: it frees a table during service, where `expired` is what
 the day close does to whatever is still pending.
@@ -319,6 +323,6 @@ Covered by `tests/reservation-sheet.test.ts`.
 | 1 | Full table CRUD: edit, real deletion, label snapshot on orders — **done** (migration v73, `tests/table-crud.test.ts`) |
 | 2 | Rooms as entities, graphical map, service/edit modes — **done** (migration v75, `tests/rooms-map.test.ts`) |
 | 3 | Service days: open/close, order stamping, closing report, day history — **done** (migration v74, `tests/service-days.test.ts`) |
-| 4 | Reservations, table merging, layout templates — **done** (migrations v76-v78, `tests/reservations.test.ts`, `tests/table-merge-layouts.test.ts`) |
+| 4 | Reservations, table merging (removed in v97), layout templates — **done** (migrations v76-v78, `tests/reservations.test.ts`, `tests/table-layouts.test.ts`) |
 
 All four phases are in. What the design set out to fix — a room that cannot be edited, a day that has no boundary, and a floor plan that has to be rebuilt by hand every morning — is done.

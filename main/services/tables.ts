@@ -70,10 +70,6 @@ export function deleteTableRow(db: ReturnType<typeof getDatabase>, table: any): 
   `).run(table.number, tableRoomName(db, table), table.id);
   db.prepare('UPDATE orders SET table_id = NULL, updated_at = ? WHERE table_id = ?').run(now(), table.id);
   releaseReservationsForTable(db, table.id);
-  // Members of a group led by this table would otherwise point at a row that no
-  // longer exists, and could never be split off again.
-  db.prepare("UPDATE tables SET merged_into = NULL, status = 'available', updated_at = ? WHERE merged_into = ?")
-    .run(now(), table.id);
   db.prepare('DELETE FROM tables WHERE id = ?').run(table.id);
 }
 
@@ -135,73 +131,4 @@ export function findFreeSlot(
   // Room is full at this size. Drop it in the corner rather than refusing to
   // create the table — the floor can drag it or make the room bigger.
   return { x: ROOM_MARGIN, y: ROOM_MARGIN };
-}
-
-export type TableMergeBlocker =
-  | TableDeletionBlocker
-  | 'table_has_reservation'
-  | 'table_already_merged'
-  | 'table_leads_group';
-
-/**
- * Why a table cannot be folded into another one. Joining is something you do to
- * an idle table before the party sits down, so anything already attached to it
- * — an order, a held cart, a booking, another group — has to be settled first.
- */
-export function tableMergeBlocker(
-  db: ReturnType<typeof getDatabase>,
-  tableId: string,
-): TableMergeBlocker | null {
-  const inUse = tableDeletionBlocker(db, tableId);
-  if (inUse) return inUse;
-  if (db.prepare("SELECT id FROM reservations WHERE table_id = ? AND status = 'booked'").get(tableId)) {
-    return 'table_has_reservation';
-  }
-  const row = db.prepare('SELECT merged_into FROM tables WHERE id = ?').get(tableId) as { merged_into?: string } | undefined;
-  if (row?.merged_into) return 'table_already_merged';
-  if (db.prepare('SELECT id FROM tables WHERE merged_into = ?').get(tableId)) return 'table_leads_group';
-  return null;
-}
-
-/**
- * Fold tables into one. The leader keeps its own identity and is where the
- * order goes; the others point at it until they are split off again. Deliberately
- * one level deep — a child can never itself lead a group, so there are no chains
- * to walk and splitting is always one step. Caller must be inside a transaction.
- */
-export function mergeTables(db: ReturnType<typeof getDatabase>, leaderId: string, childIds: string[]): void {
-  const stamp = now();
-  const update = db.prepare('UPDATE tables SET merged_into = ?, status = ?, updated_at = ? WHERE id = ?');
-  for (const childId of childIds) {
-    update.run(leaderId, 'held', stamp, childId);
-  }
-}
-
-/**
- * Break a group up. Accepts either the leader or one of its members, so the
- * floor does not have to remember which table was the leader.
- */
-export function splitTableGroup(db: ReturnType<typeof getDatabase>, tableId: string): number {
-  const row = db.prepare('SELECT id, merged_into FROM tables WHERE id = ?').get(tableId) as { id: string; merged_into: string | null } | undefined;
-  if (!row) return 0;
-  const leaderId = row.merged_into || row.id;
-  const stamp = now();
-  return db.prepare(
-    "UPDATE tables SET merged_into = NULL, status = 'available', updated_at = ? WHERE merged_into = ?",
-  ).run(stamp, leaderId).changes;
-}
-
-/** Seats a group offers: the leader plus everyone folded into it. */
-export function groupCapacity(db: ReturnType<typeof getDatabase>, leaderId: string): number {
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(capacity), 0) AS seats FROM tables
-    WHERE id = ? OR merged_into = ?
-  `).get(leaderId, leaderId) as { seats: number };
-  return Number(row?.seats || 0);
-}
-
-/** The table an order should actually be placed on: a member defers to its leader. */
-export function tableGroupLeader(db: ReturnType<typeof getDatabase>, tableId: string): string {
-  const row = db.prepare('SELECT merged_into FROM tables WHERE id = ?').get(tableId) as { merged_into?: string } | undefined;
-  return row?.merged_into || tableId;
 }

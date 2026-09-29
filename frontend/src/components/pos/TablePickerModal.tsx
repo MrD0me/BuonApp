@@ -50,7 +50,7 @@ export default function TablePickerModal({
       const customer = booking?.customer_id
         ? { id: booking.customer_id, name: booking.name, phone: booking.phone ?? '' }
         : null;
-      onSelectAvailable(table.id, customer, coversForNewOrder(table, tables));
+      onSelectAvailable(table.id, customer, coversForNewOrder(table));
       return;
     }
   };

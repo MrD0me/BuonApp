@@ -10,7 +10,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import { TABLE_STATUS_TONE, TONE_STYLES } from '@/lib/status-styles';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n/enums';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { CircleDollarSign, Link2, Users } from 'lucide-react';
+import { CircleDollarSign, Users } from 'lucide-react';
 
 /**
  * The dining room, drawn to scale (phase 2 of docs/table-management.md).
@@ -102,7 +102,6 @@ function TableTile({
   // A table being held shows who it is being held for; that is the whole point
   // of marking it reserved rather than just colouring it.
   const booking = !order ? table.reservation ?? null : null;
-  const isGroupMember = Boolean(table.merged_into);
   const round = table.shape === 'round';
 
   // The name is what the floor finds a table by, so it is never the part that
@@ -162,7 +161,6 @@ function TableTile({
         ${editing ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
         ${dragging ? 'shadow-lg ring-2 ring-brand z-10' : 'shadow-xs'}
         ${!table.is_active ? 'opacity-50' : ''}
-        ${isGroupMember ? 'border-dashed opacity-70' : ''}
         ${pendingOutline ? 'outline-2 -outline-offset-2 outline-pending' : ''}
         transition-shadow
       `}
@@ -182,10 +180,9 @@ function TableTile({
       {/* A round table centres its text: pushed to the bottom with mt-auto it
           ran off the curve. */}
       <div className={`flex flex-col gap-0.5 ${round ? 'items-center' : compact ? 'mt-auto ps-2 pe-0.5 pb-1' : 'mt-auto ps-3.5 pe-2 pb-2 pt-1'}`}>
-        {(isGroupMember || unpriced) && (
+        {unpriced && (
           <span className="flex items-center gap-1.5">
-            {isGroupMember && <Link2 size={14} className="shrink-0 text-muted-foreground" aria-label={tTables('mergedInto')} />}
-            {unpriced && <CircleDollarSign size={14} className="shrink-0 text-pending" aria-label={tTables('unpricedRow')} />}
+            <CircleDollarSign size={14} className="shrink-0 text-pending" aria-label={tTables('unpricedRow')} />
           </span>
         )}
         {/* Two short lines rather than one long one: a tile is as wide as the

@@ -42,8 +42,8 @@ Tre schermate, una dopo l'altra: la sala, un tavolo, l'ordine su quel tavolo.
 i tavoli come riquadri in ordine naturale (Tav 2 prima di Tav 10). Ogni riquadro dice lo stato due
 volte, con una banda colorata sul bordo e con una pillola scritta («Occupato», «Prenotato»), perché
 il puntino di prima non si vedeva passando; poi coperti e minuti da quando il tavolo è stato aperto,
-il badge arancione «N da inviare» se c'è un giro ancora da mandare in cucina, l'icona della catena
-se il tavolo è unito a un altro, il nome della prenotazione se è libero e prenotato. I colori sono
+il badge arancione «N da inviare» se c'è un giro ancora da mandare in cucina, il nome della
+prenotazione se è libero e prenotato. I colori sono
 quelli di `lib/status-styles.ts`, gli stessi della mappa sul PC. È un elenco e non la mappa: su uno
 schermo da sei pollici una stanza in scala si riduce a metà e scorre di lato, e al cameriere che sta
 in piedi accanto al tavolo non serve sapere dove sta.

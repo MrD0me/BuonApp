@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, UserX, RotateCcw, CalendarClock } from 'lucide-react';
+import { Plus, X, UserX, RotateCcw, CalendarClock, ArrowLeft } from 'lucide-react';
 import type { Reservation, Table, ServiceDay } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { PageToolbar } from '@/components/layout/PageToolbar';
@@ -122,6 +123,7 @@ function BookingRow({ booking, tables, holderByTable, busy, onAssign, onAction, 
 
 export default function ReservationsPage() {
   const t = useTranslations('reservations');
+  const tServerApp = useTranslations('serverApp');
 
   const [day, setDay] = useState<ServiceDay | null>(null);
   const [bookings, setBookings] = useState<Reservation[]>([]);
@@ -138,9 +140,7 @@ export default function ReservationsPage() {
     .then(([sheet, tableList]) => {
       setDay(sheet.data.day ?? null);
       setBookings(sheet.data.reservations || []);
-      // A table folded into a group is not seated on its own, so it is not
-      // something a booking can be put on.
-      setTables((tableList.data.tables || []).filter((table: Table) => !table.merged_into));
+      setTables(tableList.data.tables || []);
     })
     .catch(() => toast.error(t('loadFailed')))
     .finally(() => setLoading(false)),
@@ -199,9 +199,8 @@ export default function ReservationsPage() {
       const data = (error as { response?: { data?: { code?: string } } })?.response?.data;
       toast.error(
         data?.code === 'table_has_open_order' ? t('tableWorking')
-          : data?.code === 'table_is_merged' ? t('tableMerged')
-            : data?.code === 'reservation_not_pending' ? t('notPending')
-              : t('assignFailed'),
+          : data?.code === 'reservation_not_pending' ? t('notPending')
+            : t('assignFailed'),
       );
     } finally {
       setBusy(false);
@@ -240,6 +239,15 @@ export default function ReservationsPage() {
             {unassigned > 0 ? ` · ${t('unassignedCount', { count: unassigned })}` : ''}
           </Ltr>
         ) : undefined}
+        // The sheet is reached from the room, so the way back is where the
+        // room had the way in.
+        actions={(
+          <Button variant="outline" size="touch" asChild>
+            <Link href="/tables">
+              <ArrowLeft className="rtl-flip" /> {tServerApp('backToFloor')}
+            </Link>
+          </Button>
+        )}
       />
 
       <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2 mb-5 bg-white rounded-xl border border-gray-100 p-3">

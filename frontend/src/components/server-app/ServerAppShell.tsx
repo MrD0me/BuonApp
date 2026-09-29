@@ -213,7 +213,7 @@ export function ServerAppShell() {
       cart.setGuestCount(selectedOrder.guest_count || 1);
     } else {
       // A new order starts from the booking's party, or from the seats.
-      cart.setTableId(selectedTable.id, coversForNewOrder(selectedTable, allTables));
+      cart.setTableId(selectedTable.id, coversForNewOrder(selectedTable));
     }
     setView('ordina');
   };

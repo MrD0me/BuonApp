@@ -147,6 +147,15 @@ function main() {
     'and the split columns are gone from bills',
   );
   console.log('   ✓ upgrading removes split checks, setting and columns');
+  const tableColumns = (handle: typeof db) => (handle.prepare('PRAGMA table_info(tables)').all() as { name: string }[])
+    .map((column) => column.name);
+  assert.ok(!tableColumns(db).includes('merged_into'), 'upgrading takes table joining away, column and all');
+  assert.equal(
+    db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_tables_merged_into'").get(),
+    undefined,
+    'and the index that found a group goes with it',
+  );
+  console.log('   ✓ upgrading removes joined tables (v97)');
   assert.equal(
     (db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as { value: string }).value,
     'classic',
@@ -302,7 +311,31 @@ function main() {
   );
   assert.equal((getDatabase().prepare("SELECT username FROM users WHERE id = 'user-1'").get() as { username: string }).username, 'admin',
     'replaying the migrations, the v70 rebuild included, keeps the username');
+  assert.ok(!tableColumns(getDatabase()).includes('merged_into'),
+    'a rewound database walks v77 again, and v97 takes the column away again');
   console.log('   ✓ reopening is idempotent and preserves deliberate settings');
+
+  // ── v97 against a group still standing at upgrade ──────────────────────
+  // The group is broken up, not dropped with the column: a member is free
+  // again, unless a parked cart is what holds it.
+  const beforeV97 = getDatabase();
+  beforeV97.exec('ALTER TABLE tables ADD COLUMN merged_into TEXT');
+  const addTable = beforeV97.prepare('INSERT INTO tables (id, number, capacity, status, merged_into) VALUES (?, ?, ?, ?, ?)');
+  addTable.run('v97-lead', 'V97 Capotavola', 4, 'occupied', null);
+  addTable.run('v97-member', 'V97 Accostato', 4, 'held', 'v97-lead');
+  addTable.run('v97-parked', 'V97 Sospeso', 2, 'held', 'v97-lead');
+  beforeV97.prepare("INSERT INTO held_orders (id, table_id, items) VALUES ('v97-cart', 'v97-parked', '[]')").run();
+  beforeV97.pragma('user_version = 96');
+  closeDatabase();
+  initDatabase();
+  const afterV97 = getDatabase();
+  const statusOf = (id: string) => (afterV97.prepare('SELECT status FROM tables WHERE id = ?').get(id) as { status: string }).status;
+  assert.ok(!tableColumns(afterV97).includes('merged_into'), 'v97 drops the column under a standing group');
+  assert.equal(statusOf('v97-member'), 'available', 'the table folded into the group is free again');
+  assert.equal(statusOf('v97-parked'), 'held', 'a table holding a parked cart keeps holding it');
+  assert.equal(statusOf('v97-lead'), 'occupied', 'the table leading the group keeps its party');
+  assert.equal(runHealthCheck().findings.length, 0, 'and the schema matches a fresh install');
+  console.log('   ✓ v97 breaks up a group still standing, without touching a parked cart');
   closeDatabase();
 
   console.log('='.repeat(60));

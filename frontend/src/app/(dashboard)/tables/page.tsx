@@ -21,7 +21,6 @@ import { ReserveModal } from '@/components/tables/ReserveModal';
 import { TableFormModal, DeleteTableModal } from '@/components/tables/TableFormModal';
 import { RoomFormModal, DeleteRoomModal } from '@/components/tables/RoomFormModal';
 import { TableDetailModal } from '@/components/tables/TableDetailModal';
-import { MergeTablesModal } from '@/components/tables/MergeTablesModal';
 import { LayoutsModal } from '@/components/tables/LayoutsModal';
 import { normalizeDiscountMode, type DiscountMode } from '@/lib/discount-settings';
 
@@ -53,14 +52,14 @@ export default function TablesPage() {
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
   const [roomForm, setRoomForm] = useState<{ room: Room | null } | null>(null);
   const [deletingRoom, setDeletingRoom] = useState<Room | null>(null);
-  const [mergingTable, setMergingTable] = useState<Table | null>(null);
   const [showLayouts, setShowLayouts] = useState(false);
   const [unassigned, setUnassigned] = useState<Reservation[]>([]);
   // The order panel in the table card offers discounts, and those follow the
   // tenant's rules: read them once here rather than per opened table.
   const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
-  // A booking picked up from the strip, waiting for a table to be tapped.
+  // A booking waiting for a table to be tapped: picked up from the strip, or
+  // lifted off the table it had with "Change table".
   const [armedBooking, setArmedBooking] = useState<Reservation | null>(null);
 
   // Promise chains rather than await: state updates land in a microtask instead
@@ -145,12 +144,12 @@ export default function TablesPage() {
     }
   };
 
-  const allTables = rooms.flatMap((room) => room.tables ?? []);
-
   const assignArmed = async (table: Table) => {
     const booking = armedBooking;
     if (!booking) return;
     setArmedBooking(null);
+    // Tapping the table it is already on is changing your mind, not a move.
+    if (booking.table_id === table.id) return;
     try {
       const { data } = await api.post(`/reservations/${booking.id}/assign`, { table_id: table.id });
       toast.success(data.displaced
@@ -173,11 +172,7 @@ export default function TablesPage() {
       setTableForm({ table });
       return;
     }
-    // A table folded into a group is not its own thing any more: show the party.
-    const leader = table.merged_into
-      ? allTables.find((row) => row.id === table.merged_into) ?? table
-      : table;
-    setDetailTable(leader);
+    setDetailTable(table);
   };
 
   if (loading) {
@@ -226,7 +221,7 @@ export default function TablesPage() {
               </>
             )}
             {canEdit && (
-              <Button variant={editing ? 'default' : 'outline'} size="touch" onClick={() => setEditing((value) => !value)}>
+              <Button variant={editing ? 'default' : 'outline'} size="touch" onClick={() => { setArmedBooking(null); setEditing((value) => !value); }}>
                 {editing ? <><MapIcon /> {tTables('serviceMode')}</> : <><PenLine /> {tTables('editMode')}</>}
               </Button>
             )}
@@ -248,26 +243,40 @@ export default function TablesPage() {
         />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-4">
-          {!editing && unassigned.length > 0 && (
+          {/* Also up while a booking is being moved off its table, which has no
+              chip here: the line says what the next tap does, and Cancel is
+              the way out of it. */}
+          {!editing && (unassigned.length > 0 || armedBooking) && (
             <div className="rounded-2xl border border-table-reserved bg-table-reserved-soft p-3">
-              <p className="mb-2 text-sm font-semibold text-table-reserved">
-                {armedBooking ? tTables('pickTableFor', { name: armedBooking.name }) : tTables('unassignedBookings', { count: unassigned.length })}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {unassigned.map((booking) => (
-                  <button key={booking.id}
-                    type="button"
-                    aria-pressed={armedBooking?.id === booking.id}
-                    onClick={() => setArmedBooking(armedBooking?.id === booking.id ? null : booking)}
-                    className={`h-touch rounded-xl border-2 bg-card px-3 text-sm font-medium transition ${
-                      armedBooking?.id === booking.id
-                        ? 'border-brand text-brand'
-                        : 'border-table-reserved/40 text-foreground'
-                    }`}>
-                    {booking.booked_time ? `${booking.booked_time} · ` : ''}{booking.name} · {booking.guests}
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-table-reserved">
+                  {armedBooking
+                    ? tTables(armedBooking.table_id ? 'pickNewTableFor' : 'pickTableFor', { name: armedBooking.name })
+                    : tTables('unassignedBookings', { count: unassigned.length })}
+                </p>
+                {armedBooking && (
+                  <Button type="button" variant="outline" size="touch" onClick={() => setArmedBooking(null)}>
+                    {tTables('cancel')}
+                  </Button>
+                )}
               </div>
+              {unassigned.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {unassigned.map((booking) => (
+                    <button key={booking.id}
+                      type="button"
+                      aria-pressed={armedBooking?.id === booking.id}
+                      onClick={() => setArmedBooking(armedBooking?.id === booking.id ? null : booking)}
+                      className={`h-touch rounded-xl border-2 bg-card px-3 text-sm font-medium transition ${
+                        armedBooking?.id === booking.id
+                          ? 'border-brand text-brand'
+                          : 'border-table-reserved/40 text-foreground'
+                      }`}>
+                      {booking.booked_time ? `${booking.booked_time} · ` : ''}{booking.name} · {booking.guests}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -355,10 +364,9 @@ export default function TablesPage() {
           onChanged={reload}
           discountMode={discountMode}
           discountRequiresApproval={discountRequiresApproval}
-          groupMembers={allTables.filter((row) => row.merged_into === detailTable.id)}
           onEdit={() => { setTableForm({ table: detailTable }); setDetailTable(null); }}
           onReserve={() => { setReservingTable(detailTable); setDetailTable(null); }}
-          onMerge={() => { setMergingTable(detailTable); setDetailTable(null); }}
+          onMoveBooking={() => { setArmedBooking(detailTable.reservation ?? null); setDetailTable(null); }}
         />
       )}
 
@@ -402,15 +410,6 @@ export default function TablesPage() {
             if (roomId) setSelectedRoomId(roomId);
             loadMap();
           }}
-        />
-      )}
-
-      {mergingTable && (
-        <MergeTablesModal
-          leader={mergingTable}
-          tables={rooms.find((room) => room.id === mergingTable.room_id)?.tables ?? []}
-          onClose={() => setMergingTable(null)}
-          onMerged={() => { setMergingTable(null); reload(); }}
         />
       )}
 
