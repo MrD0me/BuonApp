@@ -87,8 +87,7 @@ riga.
 **I coperti partono dal tavolo (2026-09-17).** Un ordine nuovo partiva da un coperto su qualunque
 tavolo, e la sala correggeva il contatore a ogni ordine: un giro mandato prima di farlo contava — e
 faceva pagare — un coperto solo a un tavolo da quattro. Adesso il contatore parte dalle **persone della
-prenotazione** se il tavolo è prenotato, altrimenti dai **posti del tavolo**, sommati a quelli dei
-tavoli uniti a lui. Vale dalla mappa («Prendi ordine» passa `/pos?table=<id>&covers=<n>`), dal
+prenotazione** se il tavolo è prenotato, altrimenti dai **posti del tavolo**. Vale dalla mappa («Prendi ordine» passa `/pos?table=<id>&covers=<n>`), dal
 selettore dei tavoli in Ordina e dal palmare; la regola sta in un posto solo,
 `coversForNewOrder` (`frontend/src/lib/table-covers.ts`), sempre dentro 1–99 come vuole
 `POST /orders`.

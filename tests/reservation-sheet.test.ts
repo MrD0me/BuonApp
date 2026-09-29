@@ -16,10 +16,9 @@
  * F) assigning null takes the table back
  * G) a table serving an order cannot be assigned
  * H) a booking that is no longer pending cannot be moved
- * I) a table joined into a group cannot be assigned
- * J) a seating closed by mistake can be reopened
- * K) no-show frees the table during service
- * L) the sheet reads in the order the evening will run
+ * I) a seating closed by mistake can be reopened
+ * J) no-show frees the table during service
+ * K) the sheet reads in the order the evening will run
  *
  * Usage: node tests/run-electron-node-test.cjs tests/reservation-sheet.test.ts
  */
@@ -98,7 +97,7 @@ async function main() {
     assertEqual(sheet.data.reservations.length, 3, 'all three bookings are on it');
     assert(sheet.data.day, 'taking a booking opened the day');
 
-    console.log('\n─── Scenario L: the sheet reads in service order ───');
+    console.log('\n─── Scenario K: the sheet reads in service order ───');
     const names = sheet.data.reservations.map((r: any) => r.name);
     assertEqual(names[0], 'Rossi', '20:30 comes first');
     assertEqual(names[1], 'Bianchi', 'then 21:00');
@@ -163,7 +162,7 @@ async function main() {
     assertEqual(tableStatus(seven.id), 'available', 'and the table is free again');
 
     // ═══════════════════════════════════════════════════════════════════
-    // Scenario G + I: tables that cannot take a booking
+    // Scenario G: a table that cannot take a booking
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario G: a table already serving ───');
 
@@ -176,17 +175,8 @@ async function main() {
     assertEqual(busy.status, 409, 'assigning onto a working table is refused');
     assertEqual(busy.data.code, 'table_has_open_order', 'refusal carries a stable code');
 
-    console.log('\n─── Scenario I: a table joined into a group ───');
-    const lead = await createTable('Tavolo 9');
-    const member = await createTable('Tavolo 10');
-    await api(baseUrl, `/api/tables/${lead.id}/merge`, { method: 'POST', headers: authHeader, body: { table_ids: [member.id] } });
-    const joined = await assign(verdi.id, member.id);
-    assertEqual(joined.status, 409, 'assigning onto a folded table is refused');
-    assertEqual(joined.data.code, 'table_is_merged', 'refusal carries a stable code');
-    assertEqual(joined.data.leader_table_id, lead.id, 'and points at the table leading the group');
-
     // ═══════════════════════════════════════════════════════════════════
-    // Scenario H + J: a booking that is no longer pending
+    // Scenario H + I: a booking that is no longer pending
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario H: a seated booking cannot be moved ───');
 
@@ -203,7 +193,7 @@ async function main() {
     assertEqual(moveSeated.status, 409, 'a seated booking refuses to move');
     assertEqual(moveSeated.data.code, 'reservation_not_pending', 'refusal carries a stable code');
 
-    console.log('\n─── Scenario J: reopening a seating made by mistake ───');
+    console.log('\n─── Scenario I: reopening a seating made by mistake ───');
     const reopened = await api(baseUrl, `/api/reservations/${neri.id}/reopen`, { method: 'POST', headers: authHeader, body: {} });
     assertEqual(reopened.status, 200, 'the booking was reopened');
     assertEqual(reopened.data.reservation.status, 'booked', 'and is pending again');
@@ -213,9 +203,9 @@ async function main() {
     assertEqual(backOn.status, 200, 'and it can be given a different table');
 
     // ═══════════════════════════════════════════════════════════════════
-    // Scenario K: nobody came
+    // Scenario J: nobody came
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n─── Scenario K: no-show frees the table ───');
+    console.log('\n─── Scenario J: no-show frees the table ───');
 
     const noShow = await api(baseUrl, `/api/reservations/${neri.id}/no-show`, { method: 'POST', headers: authHeader, body: {} });
     assertEqual(noShow.status, 200, 'the booking was marked as a no-show');

@@ -6,7 +6,7 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
 import { resolveOrderTable } from './tables';
-import { tableLabelSource, tableGroupLeader } from '../services/tables';
+import { tableLabelSource } from '../services/tables';
 import { getOpenServiceDay, getOrOpenServiceDay } from '../services/service-day';
 import { cancelOrder } from '../services/orders';
 import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
@@ -519,18 +519,6 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
     // file a takeaway order in a place that does not do takeaway.
     if (!isOrderTypeAllowed(getSettingValue(ORDER_TYPES_SETTING_KEY), type)) {
       return res.status(400).json({ error: `Order type ${type} is disabled`, code: 'order_type_disabled' });
-    }
-    if (table_id) {
-      // A table folded into a group is not seated on its own: the party is on
-      // the leader, and that is the only place its order can live.
-      const leaderId = tableGroupLeader(getDatabase(), String(table_id));
-      if (leaderId !== String(table_id)) {
-        return res.status(409).json({
-          error: 'This table is joined to another one. Place the order on the table leading the group.',
-          code: 'table_is_merged',
-          leader_table_id: leaderId,
-        });
-      }
     }
     if (guest_count !== undefined && guest_count !== null && (!Number.isSafeInteger(guest_count) || guest_count < 1 || guest_count > 99)) {
       return res.status(400).json({ error: 'guest_count must be a whole number between 1 and 99' });

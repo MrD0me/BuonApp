@@ -50,6 +50,8 @@ interface NavItem {
   icon: LucideIcon;
   roles: string[];
   businessTypes: string[] | null;
+  /** Pages reached from this one rather than from the bar, which light it up too. */
+  alsoActiveOn?: string[];
 }
 
 /**
@@ -67,7 +69,7 @@ interface NavItem {
  * null businessTypes = show for all business types.
  */
 const ALL_NAV_ITEMS: NavItem[] = [
-  { href: '/tables', labelKey: 'tables', icon: Grid3X3, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
+  { href: '/tables', labelKey: 'tables', icon: Grid3X3, roles: ['owner', 'manager'], businessTypes: ['restaurant'], alsoActiveOn: ['/reservations'] },
   { href: '/pos', labelKey: 'pos', icon: ShoppingCart, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/orders', labelKey: 'orders', icon: ClipboardList, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/products', labelKey: 'products', icon: Package, roles: ['owner', 'manager'], businessTypes: null },
@@ -169,7 +171,8 @@ export default function AppSidebar() {
               <SidebarMenu className="gap-1">
                 {navItems.map((item) => {
                   const [hrefPath, hrefQuery] = item.href.split('?');
-                  const isActive = !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
+                  const isActive = !hrefQuery && [hrefPath, ...(item.alsoActiveOn ?? [])]
+                    .some((path) => pathname === path || pathname?.startsWith(path + '/'));
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild size="lg" isActive={isActive} tooltip={t(item.labelKey)} className={ROW}>

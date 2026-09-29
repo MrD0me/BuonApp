@@ -20,7 +20,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | Document | Description | Scope |
 | --- | --- | --- |
 | [API.md](API.md) | Endpoint and WebSocket reference for the local servers: Express API (`:3001`), KDS (`:3002`), and the tableside Server App (`:3003`). | CURRENT |
-| [table-management.md](table-management.md) | Table CRUD, the multi-room graphical map, service days with an explicit close ritual, reservations, joined tables, and saved floor plans. | CURRENT |
+| [table-management.md](table-management.md) | Table CRUD, the multi-room graphical map, service days with an explicit close ritual, reservations, and saved floor plans. | CURRENT |
 | [linux.md](linux.md) | Linux package formats (AppImage, deb, rpm, Snap) built from source, FUSE setup, CUPS printing, and system tray behavior. | CURRENT |
 | [printers.md](printers.md) | ESC/POS printer configuration, network/USB/OS-queue/WebUSB connection types, kitchen stations, kitchen-ticket layout, code pages, and troubleshooting. | CURRENT |
 | [google-drive-setup.md](google-drive-setup.md) | Maintainer setup for the optional Google Drive backup OAuth client. | CURRENT |

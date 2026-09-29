@@ -7,7 +7,7 @@
  * replaced by a table's own number.
  *
  * Checks:
- *  - the seats of the table, and of the tables joined to it;
+ *  - the seats of the table;
  *  - the booking's party over the seats;
  *  - what an order accepts (1-99), whatever the table says;
  *  - the cart: a table's number moves the counter until the floor touches it,
@@ -31,7 +31,7 @@ const { coversForNewOrder, validCovers } = require('../frontend/src/lib/table-co
 const { useCartStore } = require('../frontend/src/store/cart');
 
 function table(id: string, capacity: number, extra: Record<string, unknown> = {}) {
-  return { id, capacity, merged_into: null, reservation: null, ...extra };
+  return { id, capacity, reservation: null, ...extra };
 }
 
 function booking(guests: unknown) {
@@ -43,33 +43,18 @@ function main() {
   console.log('='.repeat(60));
 
   // ── The number a table starts from ─────────────────────────────────────
-  const t4 = table('t4', 4);
-  assert.equal(coversForNewOrder(t4, [t4]), 4, 'a free table starts from its seats');
-
-  const reserved = table('t6', 6, { reservation: booking(3) });
-  assert.equal(coversForNewOrder(reserved, [reserved]), 3, 'a booked table starts from the party, not the seats');
-
-  const unreadable = table('t5', 5, { reservation: booking('tanti') });
-  assert.equal(coversForNewOrder(unreadable, [unreadable]), 5, 'a booking with no usable head count falls back to the seats');
-
-  const leader = table('10', 4);
-  const joinedA = table('11', 2, { merged_into: '10' });
-  const joinedB = table('12', 6, { merged_into: 10 });
-  const elsewhere = table('13', 8, { merged_into: '99' });
+  assert.equal(coversForNewOrder(table('t4', 4)), 4, 'a free table starts from its seats');
+  assert.equal(coversForNewOrder(table('t6', 6, { reservation: booking(3) })), 3, 'a booked table starts from the party, not the seats');
+  assert.equal(coversForNewOrder(table('t2', 2, { reservation: booking(7) })), 7, 'a party larger than the table still counts in full');
   assert.equal(
-    coversForNewOrder(leader, [leader, joinedA, joinedB, elsewhere]),
-    12,
-    'a group leader counts the seats of every table joined to it, whatever type its id arrives as',
-  );
-  assert.equal(
-    coversForNewOrder(table('10', 4, { reservation: booking(7) }), [leader, joinedA, joinedB]),
-    7,
-    'a booked group starts from the party',
+    coversForNewOrder(table('t5', 5, { reservation: booking('tanti') })),
+    5,
+    'a booking with no usable head count falls back to the seats',
   );
 
-  assert.equal(coversForNewOrder(table('z', 0), []), 1, 'a table with no seats still starts at one');
-  assert.equal(coversForNewOrder(table('big', 120), []), 99, 'never above what an order accepts');
-  assert.equal(coversForNewOrder(table('n', null as unknown as number), []), 1, 'a table with no capacity at all starts at one');
+  assert.equal(coversForNewOrder(table('z', 0)), 1, 'a table with no seats still starts at one');
+  assert.equal(coversForNewOrder(table('big', 120)), 99, 'never above what an order accepts');
+  assert.equal(coversForNewOrder(table('n', null as unknown as number)), 1, 'a table with no capacity at all starts at one');
 
   assert.equal(validCovers('4'), 4, 'a count from the address bar is read');
   for (const refused of [null, undefined, '', '0', '100', '2.5', 'abc', -3]) {

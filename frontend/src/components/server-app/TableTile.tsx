@@ -1,6 +1,6 @@
 'use client';
 
-import { Link2, Users } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Order, Table } from '@/lib/types';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -41,22 +41,19 @@ export function TableTile({ table, order, onClick }: Props) {
   const style = TONE_STYLES[tone];
   const elapsed = order ? minutesSince(order.created_at) : null;
   const pending = order ? pendingDishCount(order.items || []) : 0;
-  const joined = Boolean(table.merged_into);
   const reservation = !order && table.reservation && table.reservation.status === 'booked' ? table.reservation : null;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-h-touch-xl flex-col gap-2.5 rounded-2xl border border-border border-s-4 bg-card p-3 ps-3.5 text-start shadow-xs transition active:scale-[0.98] ${style.band} ${joined ? 'border-dashed' : ''}`}
+      className={`flex min-h-touch-xl flex-col gap-2.5 rounded-2xl border border-border border-s-4 bg-card p-3 ps-3.5 text-start shadow-xs transition active:scale-[0.98] ${style.band}`}
     >
       <span className="flex items-start justify-between gap-2">
         <span className="min-w-0 truncate text-xl leading-tight font-bold text-foreground">{table.name}</span>
-        {pending > 0 ? (
+        {pending > 0 && (
           <StatusBadge tone="pending" size="sm" title={t('pendingKitchen')}>{t('pendingToSend', { count: pending })}</StatusBadge>
-        ) : joined ? (
-          <Link2 size={18} className="shrink-0 text-muted-foreground" aria-label={tTables('mergedInto')} />
-        ) : null}
+        )}
       </span>
       <span className="mt-auto flex flex-col items-start gap-1.5">
         <StatusBadge tone={tone} size="sm">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</StatusBadge>

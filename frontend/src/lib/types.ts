@@ -209,8 +209,6 @@ export interface Table {
   width: number | null;
   height: number | null;
   shape: TableShape;
-  /** Set when this table has been folded into another for one party; it names the leader. */
-  merged_into?: string | null;
   is_active: boolean;
   activeOrder?: Order | null;
   current_order?: Order | null;

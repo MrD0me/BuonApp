@@ -4662,6 +4662,97 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[DB] v96: ${changed} account(s) given a username from their email or name`);
     },
   },
+  {
+    version: 97,
+    name: 'remove_table_merging',
+    up: () => {
+      // Joining tables is gone from this fork. A party too big for one table
+      // is seated by changing the map in edit mode — a bigger table, more
+      // seats — rather than by folding tables into a leader, which gave the
+      // floor a second kind of table to reason about: one that took no order,
+      // no booking and no covers of its own.
+      //
+      // Groups still standing are broken up first. A member was set `held`
+      // when it was folded in, and goes back to `available` unless a parked
+      // cart is what holds it: `held` also means that, and stays.
+      if (!getColumns(db, 'tables').includes('merged_into')) return;
+
+      const stamp = now();
+      const released = db.prepare(`
+        UPDATE tables SET status = 'available', updated_at = ?
+        WHERE merged_into IS NOT NULL AND status = 'held'
+          AND id NOT IN (SELECT table_id FROM held_orders WHERE table_id IS NOT NULL)
+      `).run(stamp).changes;
+      const groups = (db.prepare(
+        'SELECT COUNT(DISTINCT merged_into) AS count FROM tables WHERE merged_into IS NOT NULL',
+      ).get() as { count: number }).count;
+      db.prepare('UPDATE tables SET merged_into = NULL WHERE merged_into IS NOT NULL').run();
+
+      // SQLite will not drop a column an index still covers.
+      db.exec('DROP INDEX IF EXISTS idx_tables_merged_into');
+      db.exec('ALTER TABLE tables DROP COLUMN merged_into');
+      console.log(`[DB] v97: table merging removed; ${groups} group(s) broken up, ${released} table(s) freed`);
+    },
+  },
+  {
+    version: 98,
+    name: 'remove_small_table_size',
+    up: () => {
+      // The small table size is gone: fitted to the till's screen, a table
+      // drawn at 110 units had no room under its name for who it was booked
+      // by and how many were coming. Tables still that size become medium —
+      // 150x110 lying down, 110x150 standing, 140 across if round — growing
+      // from the corner they are placed by. So do the ones in saved floor
+      // plans, or applying a plan would bring them back. A table with no size
+      // of its own is already drawn medium, and is left alone.
+      const stamp = now();
+      const rects = db.prepare(`
+        UPDATE tables SET
+          width = CASE WHEN height > width THEN 110 ELSE 150 END,
+          height = CASE WHEN height > width THEN 150 ELSE 110 END,
+          updated_at = ?
+        WHERE COALESCE(shape, 'rect') != 'round'
+          AND width IS NOT NULL AND height IS NOT NULL AND MAX(width, height) < 150
+      `).run(stamp).changes;
+      const rounds = db.prepare(`
+        UPDATE tables SET width = 140, height = 140, updated_at = ?
+        WHERE shape = 'round' AND width IS NOT NULL AND width < 140
+      `).run(stamp).changes;
+
+      let plans = 0;
+      const layouts = db.prepare('SELECT id, data FROM table_layouts').all() as { id: string; data: string }[];
+      for (const layout of layouts) {
+        let data: { tables?: { shape?: string; width?: number | null; height?: number | null }[] };
+        try {
+          data = JSON.parse(layout.data);
+        } catch {
+          continue;
+        }
+        let changed = false;
+        for (const table of data.tables || []) {
+          const width = Number(table.width);
+          const height = Number(table.height);
+          if (!table.width || !table.height || !Number.isFinite(width) || !Number.isFinite(height)) continue;
+          if (table.shape === 'round') {
+            if (width >= 140) continue;
+            table.width = 140;
+            table.height = 140;
+          } else {
+            if (Math.max(width, height) >= 150) continue;
+            const standing = height > width;
+            table.width = standing ? 110 : 150;
+            table.height = standing ? 150 : 110;
+          }
+          changed = true;
+        }
+        if (!changed) continue;
+        db.prepare('UPDATE table_layouts SET data = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(data), stamp, layout.id);
+        plans++;
+      }
+      console.log(`[DB] v98: small table size removed; ${rects + rounds} table(s) and ${plans} saved plan(s) made medium`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4987,9 +5078,6 @@ function createSchema(): void {
       width REAL,
       height REAL,
       shape TEXT DEFAULT 'rect',
-      -- Set on a table joined to another for one party: it points at the table
-      -- leading the group, which is where the order lives.
-      merged_into TEXT,
       kitchen_station_id TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,

@@ -24,20 +24,14 @@ export function validCovers(value: unknown): number | null {
  * How many covers a new order on this table starts from.
  *
  * The booking when there is one, because it names the party that is coming;
- * otherwise the seats the table was laid for, counting the tables joined to
- * it, since their party orders at this one. It is where the counter starts,
+ * otherwise the seats the table was laid for. It is where the counter starts,
  * not a decision: the floor corrects it for whoever actually sat down.
  *
  * Pure: mountable on the handheld unchanged.
  */
-export function coversForNewOrder(
-  table: Pick<Table, 'id' | 'capacity' | 'reservation'>,
-  tables: Pick<Table, 'capacity' | 'merged_into'>[],
-): number {
+export function coversForNewOrder(table: Pick<Table, 'capacity' | 'reservation'>): number {
   const booked = validCovers(table.reservation?.guests);
   if (booked !== null) return booked;
-  const seats = tables
-    .filter((other) => other.merged_into != null && String(other.merged_into) === String(table.id))
-    .reduce((sum, member) => sum + (Number(member.capacity) || 0), Number(table.capacity) || 0);
+  const seats = Number(table.capacity) || 0;
   return Math.min(MAX_COVERS, Math.max(MIN_COVERS, Math.floor(seats)));
 }

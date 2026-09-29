@@ -97,10 +97,6 @@ export function applyLayout(db: Db, data: LayoutData): ApplyLayoutResult {
     roomsCreated++;
   }
 
-  // Break every group first: a member whose leader is deleted before it would
-  // be left pointing at a row that is already gone.
-  db.prepare('UPDATE tables SET merged_into = NULL, updated_at = ? WHERE merged_into IS NOT NULL').run(stamp);
-
   let tablesRemoved = 0;
   for (const table of db.prepare('SELECT * FROM tables').all() as any[]) {
     deleteTableRow(db, table);

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Pencil, CalendarCheck, Link2, Unlink, Plus, ClipboardList } from 'lucide-react';
+import { Pencil, CalendarCheck, Plus, ClipboardList, ArrowLeftRight, Undo2 } from 'lucide-react';
 import type { Room, Table, Order } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -27,31 +27,31 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
  *
  * A panel beside the room rather than a dialog over it, so the floor stays
  * in view. With an order on the table it carries the order panel itself —
- * the table is where its order is worked — and the table's own actions
- * (edit, split, reserve) go behind the panel's "more" menu. Without one, the
- * panel offers the one thing the floor wants from a free table: an order.
+ * the table is where its order is worked — and editing the table goes behind
+ * the panel's "more" menu. Without one, the panel offers the one thing the
+ * floor wants from a free table: an order.
  */
 
 interface TableDetailModalProps {
   table: Table;
   room: Room | null;
   order: Order | null;
-  /** Tables folded into this one, if it leads a group. */
-  groupMembers: Table[];
   discountMode: DiscountMode;
   discountRequiresApproval: boolean;
   onClose: () => void;
   onChanged: () => void;
   onEdit: () => void;
   onReserve: () => void;
-  onMerge: () => void;
+  /** Pick the booking up so the next table tapped on the map becomes its table. */
+  onMoveBooking: () => void;
 }
 
 export function TableDetailModal({
-  table, room, order, groupMembers, discountMode, discountRequiresApproval,
-  onClose, onChanged, onEdit, onReserve, onMerge,
+  table, room, order, discountMode, discountRequiresApproval,
+  onClose, onChanged, onEdit, onReserve, onMoveBooking,
 }: TableDetailModalProps) {
   const tTables = useTranslations('tables');
+  const tReservations = useTranslations('reservations');
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
   const t = useTranslations('serverApp');
@@ -61,7 +61,6 @@ export function TableDetailModal({
   const [saving, setSaving] = useState(false);
 
   const booking = table.reservation ?? null;
-  const groupSeats = table.capacity + groupMembers.reduce((sum, member) => sum + member.capacity, 0);
   const tone = TABLE_STATUS_TONE[table.status] ?? 'free';
   const pending = order ? pendingDishCount(order.items || []) : 0;
 
@@ -79,20 +78,7 @@ export function TableDetailModal({
       if (!proceed) return;
     }
     cartStore.clearCart();
-    router.push(`/pos?table=${table.id}&covers=${coversForNewOrder(table, groupMembers)}`);
-  };
-
-  const splitGroup = async () => {
-    setSaving(true);
-    try {
-      await api.post(`/tables/${table.id}/split`);
-      toast.success(tTables('tablesSplit'));
-      onChanged();
-      onClose();
-    } catch {
-      toast.error(tTables('splitFailed'));
-      setSaving(false);
-    }
+    router.push(`/pos?table=${table.id}&covers=${coversForNewOrder(table)}`);
   };
 
   const cancelReservation = async () => {
@@ -104,6 +90,26 @@ export function TableDetailModal({
       onClose();
     } catch {
       toast.error(tTables('reservationCancelFailed'));
+      setSaving(false);
+    }
+  };
+
+  /**
+   * Takes the booking off this table without cancelling it: the party is still
+   * coming, just not here. It goes back to the strip above the map, where the
+   * next table it gets is picked.
+   */
+  const unassignBooking = async () => {
+    if (!booking) return;
+    setSaving(true);
+    try {
+      await api.post(`/reservations/${booking.id}/assign`, { table_id: null });
+      toast.success(tReservations('unassignedDone', { name: booking.name }));
+      onChanged();
+      onClose();
+    } catch (error: unknown) {
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      toast.error(code === 'reservation_not_pending' ? tReservations('notPending') : tReservations('assignFailed'));
       setSaving(false);
     }
   };
@@ -123,23 +129,8 @@ export function TableDetailModal({
 
   const description = [
     room?.name,
-    tTables('capacitySeats', { count: groupMembers.length > 0 ? groupSeats : table.capacity }),
-    groupMembers.length > 0 ? tTables('joinedWith', { names: groupMembers.map((member) => member.name).join(', ') }) : null,
+    tTables('capacitySeats', { count: table.capacity }),
   ].filter(Boolean).join(' · ');
-
-  /* What happens to the table itself, as opposed to its order. */
-  const tableMenu = (
-    <>
-      {groupMembers.length > 0 && (
-        <DropdownMenuItem onClick={splitGroup} disabled={saving}>
-          <Unlink className="me-2" /> {tTables('splitTables')}
-        </DropdownMenuItem>
-      )}
-      <DropdownMenuItem onClick={onEdit} disabled={saving}>
-        <Pencil className="me-2" /> {tTables('edit')}
-      </DropdownMenuItem>
-    </>
-  );
 
   return (
     <SidePanel open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -158,7 +149,11 @@ export function TableDetailModal({
           onChanged={onChanged}
           discountMode={discountMode}
           discountRequiresApproval={discountRequiresApproval}
-          extraMenu={tableMenu}
+          extraMenu={(
+            <DropdownMenuItem onClick={onEdit} disabled={saving}>
+              <Pencil className="me-2" /> {tTables('edit')}
+            </DropdownMenuItem>
+          )}
         />
       ) : (
         <>
@@ -177,6 +172,23 @@ export function TableDetailModal({
                   </Ltr>
                 </p>
                 {booking.notes && <p className="mt-1 text-sm text-table-reserved">{booking.notes}</p>}
+                {/* What happens to the booking, kept with the booking. A party
+                    that asks for another table is an everyday thing, so moving
+                    it comes first, and none of these touch the table itself. */}
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Button type="button" variant="outline" size="touch" onClick={onMoveBooking} disabled={saving}>
+                    <ArrowLeftRight /> {tTables('moveBooking')}
+                  </Button>
+                  <Button type="button" variant="outline" size="touch" onClick={unassignBooking} disabled={saving}>
+                    <Undo2 /> {tTables('unassignBooking')}
+                  </Button>
+                  <Button type="button" variant="outline" size="touch" onClick={onReserve} disabled={saving}>
+                    <Pencil /> {tTables('editReservation')}
+                  </Button>
+                  <Button type="button" variant="outline" size="touch" onClick={cancelReservation} disabled={saving} className="text-table-occupied">
+                    {tTables('cancelReservation')}
+                  </Button>
+                </div>
               </div>
             ) : (
               <EmptyState className="py-12" icon={<ClipboardList />} title={tTables('noActiveOrders')} />
@@ -184,15 +196,12 @@ export function TableDetailModal({
           </SidePanelBody>
           <SidePanelFooter className="flex-wrap">
             {/* A table with nobody's order on it: the one thing the floor wants
-                from it is to start one. A table folded into a group is not
-                seated on its own, so its party goes on the leader. */}
-            {!table.merged_into && (
-              <Button type="button" size="touch-lg" onClick={takeOrder} disabled={saving} className="flex-1">
-                <Plus /> {tTables('takeOrder')}
-              </Button>
-            )}
+                from it is to start one. */}
+            <Button type="button" size="touch-lg" onClick={takeOrder} disabled={saving} className="flex-1">
+              <Plus /> {tTables('takeOrder')}
+            </Button>
             {/* Only offered when the status has drifted: a table that is genuinely
-                working or being held has its own actions below. */}
+                working or being held has its own actions above. */}
             {table.status !== 'available' && !booking && (
               <Button type="button" variant="outline" size="touch-lg" onClick={() => setStatus('available')} disabled={saving}>
                 {tTables('markAvailable')}
@@ -201,25 +210,6 @@ export function TableDetailModal({
             {table.status === 'available' && (
               <Button type="button" variant="outline" size="touch-lg" onClick={onReserve} disabled={saving}>
                 <CalendarCheck /> {tTables('reserve')}
-              </Button>
-            )}
-            {booking && (
-              <>
-                <Button type="button" variant="outline" size="touch-lg" onClick={onReserve} disabled={saving}>
-                  <Pencil /> {tTables('editReservation')}
-                </Button>
-                <Button type="button" variant="outline" size="touch-lg" onClick={cancelReservation} disabled={saving} className="text-table-occupied">
-                  {tTables('cancelReservation')}
-                </Button>
-              </>
-            )}
-            {groupMembers.length > 0 ? (
-              <Button type="button" variant="outline" size="touch-lg" onClick={splitGroup} disabled={saving}>
-                <Unlink /> {tTables('splitTables')}
-              </Button>
-            ) : !table.merged_into && (
-              <Button type="button" variant="outline" size="touch-lg" onClick={onMerge} disabled={saving}>
-                <Link2 /> {tTables('mergeTables')}
               </Button>
             )}
             <Button type="button" variant="outline" size="touch-lg" onClick={onEdit} disabled={saving}>

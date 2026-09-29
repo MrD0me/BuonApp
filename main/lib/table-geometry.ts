@@ -24,15 +24,17 @@ export function isTableShape(value: unknown): value is TableShape {
 /**
  * How big a table should be drawn when nobody has said otherwise. Seats drive
  * it, because a map where a two-top and a table of ten are the same rectangle
- * tells the floor nothing.
+ * tells the floor nothing. A two-top is drawn medium, like a four: the small
+ * size is gone (migration v98), since on the till's screen it had no room for
+ * the booking written under its name.
  */
 export function defaultTableSize(capacity: unknown, shape: unknown): { width: number; height: number } {
   const seats = Number(capacity) || 4;
   if (shape === 'round') {
-    const side = seats <= 2 ? 110 : seats <= 4 ? 140 : seats <= 6 ? 170 : 200;
+    const side = seats <= 4 ? 140 : seats <= 6 ? 170 : 200;
     return { width: side, height: side };
   }
-  const width = seats <= 2 ? 110 : seats <= 4 ? 150 : seats <= 6 ? 190 : seats <= 8 ? 230 : 280;
+  const width = seats <= 4 ? 150 : seats <= 6 ? 190 : seats <= 8 ? 230 : 280;
   const height = seats <= 4 ? 110 : seats <= 8 ? 130 : 150;
   return { width, height };
 }

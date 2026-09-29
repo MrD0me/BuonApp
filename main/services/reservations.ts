@@ -194,13 +194,8 @@ export function assignReservation(db: Db, reservationId: string, tableId: string
     };
   }
 
-  const target = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId) as any;
+  const target = db.prepare('SELECT id FROM tables WHERE id = ?').get(tableId);
   if (!target) throw Object.assign(new Error('Table not found'), { status: 404 });
-  if (target.merged_into) {
-    throw Object.assign(new Error('This table is joined to another one. Book the table leading the group.'), {
-      status: 409, code: 'table_is_merged', leader_table_id: target.merged_into,
-    });
-  }
   const working = db.prepare(
     "SELECT id FROM orders WHERE table_id = ? AND status NOT IN ('completed', 'cancelled')",
   ).get(tableId);

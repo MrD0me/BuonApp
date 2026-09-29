@@ -108,8 +108,10 @@ diceva «Sala».
 la chiude, in Sala in sola lettura. Ha preso il posto della scheda che occupava un quinto della
 pagina Giornata.
 
-**Sala.** Stanze come selettore, una legenda dei colori, tessere con banda di stato, etichetta
-scritta e badge «N da inviare». Il pannello del tavolo è un `SidePanel` largo 672 px (`max-w-2xl`):
+**Sala.** Stanze come selettore, una legenda dei colori (che lascia il posto alle prenotazioni da
+sistemare, quando ce ne sono), tessere con banda di stato, etichetta scritta e badge «N da inviare».
+Un tavolo prenotato scrive il nome della prenotazione e, sotto, persone su posti: vedi «On the
+till's screen» in `table-management.md`. Il pannello del tavolo è un `SidePanel` largo 672 px (`max-w-2xl`):
 su uno schermo largo la sala resta visibile accanto, a 1024 px ne resta una striscia sotto
 l'ombra — lì è una finestra, e vale la pena saperlo invece di prometterlo.
 
@@ -119,7 +121,7 @@ Non è una divisione per il gusto di dividere: le tre iconcine da 16 px su ogni 
 matita, storno) erano imprendibili col dito e indistinguibili a colpo d'occhio. Adesso **la riga si
 tocca** e si apre un foglio con tutto quello che le si può fare — uscita, prezzo, elimina, storna.
 Le quattro azioni della sala stanno fisse in fondo, e «Altro» tiene sconto, coperti, converti e
-annulla, più quello che la scheda del tavolo aggiunge (modifica tavolo, separa).
+annulla, più quello che la scheda del tavolo aggiunge (modifica tavolo).
 
 **Ordina.** Il tavolo è la testata della comanda, con «Cambia» accanto: non è più un pulsante
 arancione in cima alla pagina lontano da quello che descrive. Le tessere sono compatte (miniatura

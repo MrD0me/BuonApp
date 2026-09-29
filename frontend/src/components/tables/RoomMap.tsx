@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import type { Room, Table, Order } from '@/lib/types';
+import type { Room, Table, Order, Reservation } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -10,7 +10,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import { TABLE_STATUS_TONE, TONE_STYLES } from '@/lib/status-styles';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n/enums';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { CircleDollarSign, Link2, Users } from 'lucide-react';
+import { CircleDollarSign, Users } from 'lucide-react';
 
 /**
  * The dining room, drawn to scale (phase 2 of docs/table-management.md).
@@ -20,11 +20,18 @@ import { CircleDollarSign, Link2, Users } from 'lucide-react';
  * Scaled to the width alone, a room on the till's 1024x768 ran off the bottom
  * and the floor had to scroll the map to find a table. Only a frame too small
  * to hold anything legible falls back to scrolling.
+ *
+ * In service it is the tables that are fitted, not the walls: the empty
+ * margins a room is drawn with shrank every table with them, and on the
+ * till's screen that decided whether a booking's name fitted on its table.
+ * Editing shows the whole room, because that is where tables get dragged to.
  */
 
 /** Dragged positions land on this grid, so a hand-arranged room still lines up. */
 const SNAP = 10;
 const MIN_SCALE = 0.3;
+/** Room units kept around the tables when service fits the map to them. */
+const SERVICE_MARGIN = 40;
 
 /**
  * A bold character's advance, in ems. Generous, so that a name sized by it
@@ -32,6 +39,99 @@ const MIN_SCALE = 0.3;
  */
 const NAME_EM = 0.55;
 const MIN_NAME_PX = 10;
+/**
+ * The same for the booking written under the name, only where it cannot be
+ * measured (see textWidth). In Geist "Bianchi" runs 0.5 em a character and
+ * "Colombo", in bold, 0.63: a count of letters is a guess, not a width.
+ */
+const TEXT_EM = 0.6;
+/** Line height of the tile's text (`leading-tight`), and the gap between its lower lines (`gap-0.5`). */
+const LEADING = 1.25;
+const LINE_GAP = 2;
+
+let measureContext: CanvasRenderingContext2D | null | undefined;
+let measureFamily = '';
+
+/**
+ * How wide a text is drawn, in the page's own font. Measured on a canvas:
+ * whether a booking's name fits its table is a matter of a few pixels, and
+ * letters are not all as wide as each other. Estimated from its length only
+ * where there is no document to measure in.
+ */
+function textWidth(text: string, px: number, weight: number): number {
+  if (measureContext === undefined) {
+    measureContext = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d');
+    if (measureContext) measureFamily = getComputedStyle(document.body).fontFamily;
+  }
+  if (!measureContext) return text.length * TEXT_EM * px;
+  measureContext.font = `${weight} ${px}px ${measureFamily}`;
+  return measureContext.measureText(text).width;
+}
+
+/** The smallest the table's own name is set to make room for its booking. */
+const BOOKED_NAME_MIN_PX = 11;
+
+interface BookingLayout {
+  /** Font size of the table's name above the booking. */
+  namePx: number;
+  /** Font size of the booking's two lines. */
+  px: number;
+}
+
+/**
+ * How big a booking is written on its table: the name on one line, and under
+ * it the party against the seats, as a tile gives its seats.
+ *
+ * A booked table that only turned orange said it was taken but not by whom,
+ * and on the till's screen that was every booked table in the room: the name
+ * showed only on tiles bigger than the room ever drew them. The two lines are
+ * now fitted from the largest text down — the table's name, then the
+ * booking's — and the first size at which the whole name fits wins. Where
+ * none does, the largest that holds the two lines, with the name cut at its
+ * end. Null only on a tile too small for two lines at all.
+ */
+function layOutBooking(
+  booking: Reservation,
+  width: number,
+  linesRoom: (namePx: number) => number,
+  namePxMax: number,
+  basePx: number,
+): BookingLayout | null {
+  let fallback: BookingLayout | null = null;
+  for (let namePx = namePxMax; namePx >= Math.min(namePxMax, BOOKED_NAME_MIN_PX); namePx--) {
+    for (const px of [basePx, MIN_NAME_PX]) {
+      if (linesRoom(namePx) < 2 * px * LEADING + LINE_GAP) continue;
+      // The name is set semibold.
+      if (textWidth(booking.name, px, 600) <= width) return { namePx, px };
+      fallback ??= { namePx, px };
+    }
+  }
+  return fallback;
+}
+
+/** The part of a room its tables stand in, plus a margin: what service fits to the frame. */
+function tablesView(tables: Table[], maxWidth: number, maxHeight: number) {
+  let left = Infinity;
+  let top = Infinity;
+  let right = 0;
+  let bottom = 0;
+  for (const table of tables) {
+    const x = table.position_x ?? 0;
+    const y = table.position_y ?? 0;
+    left = Math.min(left, x);
+    top = Math.min(top, y);
+    right = Math.max(right, x + (table.width ?? 150));
+    bottom = Math.max(bottom, y + (table.height ?? 110));
+  }
+  const x = Math.max(0, left - SERVICE_MARGIN);
+  const y = Math.max(0, top - SERVICE_MARGIN);
+  return {
+    x,
+    y,
+    width: Math.min(maxWidth, right + SERVICE_MARGIN) - x,
+    height: Math.min(maxHeight, bottom + SERVICE_MARGIN) - y,
+  };
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -90,19 +190,20 @@ function TableTile({
   const drawnHeight = height * scale;
   const drawnWidth = width * scale;
   const showDetail = drawnHeight >= 60 && drawnWidth >= 72;
+  // A table being held shows who it is being held for; that is the whole point
+  // of marking it reserved rather than just colouring it.
+  const booking = !order ? table.reservation ?? null : null;
   // Anything smaller tightens up, with a smaller name and less padding, and
   // gives its seats as an icon and a number, as the handheld does. A big room
   // fitted to the till's screen draws most tables under that size: at full size
   // a small table's name was down to its first letter, and only the long
   // tables said how many they seat, which is what a party is walked to a
-  // table by.
-  const compact = !showDetail;
+  // table by. A booked table stays tight until it is tall enough for two
+  // lines under a full-size name: just past 60 px, the roomier padding left it
+  // one, and a table showed less of its booking than a smaller one did.
+  const compact = !showDetail || (booking !== null && drawnHeight < 76);
   const showSeats = compact && drawnHeight >= (table.shape === 'round' ? 42 : 36);
   const showSecondLine = drawnHeight >= (table.shape === 'round' ? 96 : 76);
-  // A table being held shows who it is being held for; that is the whole point
-  // of marking it reserved rather than just colouring it.
-  const booking = !order ? table.reservation ?? null : null;
-  const isGroupMember = Boolean(table.merged_into);
   const round = table.shape === 'round';
 
   // The name is what the floor finds a table by, so it is never the part that
@@ -129,6 +230,15 @@ function TableTile({
   const besideName = badgeLabel !== null && !round ? badgeWidth(badgeLabel) : 0;
   const namePx = clamp(Math.floor((nameRoom - besideName) / nameEms), MIN_NAME_PX, nameMaxPx);
 
+  // What the lines under the name have to fit in: the tile, less its padding
+  // and the name's own line. A round tile keeps its text off the curve.
+  const linesRoom = (px: number) => (round ? drawnHeight * 0.7 : drawnHeight - (compact ? 8 : 20)) - px * LEADING;
+  const bookingLayout = booking ? layOutBooking(booking, nameRoom, linesRoom, namePx, compact ? 11 : 12) : null;
+  const tileNamePx = bookingLayout?.namePx ?? namePx;
+  const bookingWords = booking
+    ? `${booking.name} · ${tTables('reservationGuestsShort', { count: booking.guests })}`
+    : null;
+
   // The state is the colour, and the legend above the map says what the
   // colours mean. A pill saying "Disponibile" as well was the same fact twice,
   // and on a tile as wide as the table the floor actually drew it got cut in
@@ -140,9 +250,9 @@ function TableTile({
     <div
       role="button"
       tabIndex={0}
-      aria-label={[table.name, statusWord, pending > 0 ? t('pendingToSend', { count: pending }) : null]
+      aria-label={[table.name, statusWord, bookingWords, pending > 0 ? t('pendingToSend', { count: pending }) : null]
         .filter(Boolean).join(' · ')}
-      title={statusWord}
+      title={bookingWords ? `${statusWord} · ${bookingWords}` : statusWord}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -162,7 +272,6 @@ function TableTile({
         ${editing ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
         ${dragging ? 'shadow-lg ring-2 ring-brand z-10' : 'shadow-xs'}
         ${!table.is_active ? 'opacity-50' : ''}
-        ${isGroupMember ? 'border-dashed opacity-70' : ''}
         ${pendingOutline ? 'outline-2 -outline-offset-2 outline-pending' : ''}
         transition-shadow
       `}
@@ -172,7 +281,7 @@ function TableTile({
           read as a crescent stuck to the side of the table. */}
       {!round && <span aria-hidden="true" className={`absolute inset-y-0 start-0 w-1.5 ${style.dot}`} />}
       <div className={`flex items-start justify-between gap-1 ${round ? 'flex-col items-center' : compact ? 'ps-2 pe-0.5 pt-1' : 'ps-3.5 pe-2 pt-2'}`}>
-        <span className="truncate font-bold leading-tight text-foreground" style={{ fontSize: namePx }}>{table.name}</span>
+        <span className="truncate font-bold leading-tight text-foreground" style={{ fontSize: tileNamePx }}>{table.name}</span>
         {badgeLabel !== null && (
           <StatusBadge tone="pending" size="sm" title={tTables('kotPending')}>
             {badgeLabel === longBadge ? longBadge : <Ltr>{badgeLabel}</Ltr>}
@@ -182,28 +291,29 @@ function TableTile({
       {/* A round table centres its text: pushed to the bottom with mt-auto it
           ran off the curve. */}
       <div className={`flex flex-col gap-0.5 ${round ? 'items-center' : compact ? 'mt-auto ps-2 pe-0.5 pb-1' : 'mt-auto ps-3.5 pe-2 pb-2 pt-1'}`}>
-        {(isGroupMember || unpriced) && (
+        {unpriced && (
           <span className="flex items-center gap-1.5">
-            {isGroupMember && <Link2 size={14} className="shrink-0 text-muted-foreground" aria-label={tTables('mergedInto')} />}
-            {unpriced && <CircleDollarSign size={14} className="shrink-0 text-pending" aria-label={tTables('unpricedRow')} />}
+            <CircleDollarSign size={14} className="shrink-0 text-pending" aria-label={tTables('unpricedRow')} />
           </span>
+        )}
+        {/* Who the table is held for, and under it how many are coming against
+            the seats it has — at every size, see layOutBooking. */}
+        {bookingLayout && booking && (
+          <>
+            <span className="max-w-full truncate font-semibold leading-tight text-table-reserved" style={{ fontSize: bookingLayout.px }}>
+              {booking.name}
+            </span>
+            <span className="flex items-center gap-0.5 leading-tight text-table-reserved" style={{ fontSize: bookingLayout.px }}>
+              <Users size={bookingLayout.px + 1} className="shrink-0" aria-hidden="true" />
+              <Ltr>{`${booking.guests}/${table.capacity}`}</Ltr>
+            </span>
+          </>
         )}
         {/* Two short lines rather than one long one: a tile is as wide as the
             table somebody drew, and a single line carrying covers, money and
             minutes ended in an ellipsis on every one of them. */}
-        {showDetail && (
-          booking ? (
-            <>
-              <span className="truncate text-xs font-medium text-table-reserved">
-                <Ltr>{booking.booked_time ? `${booking.booked_time} · ` : ''}</Ltr>{booking.name}
-              </span>
-              {showSecondLine && (
-                <span className="truncate text-xs text-table-reserved">
-                  <Ltr>{tTables('reservationGuestsShort', { count: booking.guests })}</Ltr>
-                </span>
-              )}
-            </>
-          ) : order ? (
+        {showDetail && !booking && (
+          order ? (
             <>
               <span className={`truncate text-xs ${elapsed !== null && elapsed >= 90 ? 'font-semibold text-table-occupied' : 'text-muted-foreground'}`}>
                 <Ltr>{`${order.guest_count ?? 1}/${table.capacity}${elapsed !== null ? ` · ${tTables('elapsedMinutes', { count: elapsed })}` : ''}`}</Ltr>
@@ -219,8 +329,9 @@ function TableTile({
           )
         )}
         {/* Who is there out of how many it seats, as on the full tile: a
-            booking or an open order puts its party in front of the seats. */}
-        {showSeats && (
+            booking or an open order puts its party in front of the seats. A
+            booking only lands here on a tile too small to write it out. */}
+        {showSeats && !bookingLayout && (
           <span className={`flex items-center gap-0.5 text-xs leading-none ${booking ? 'text-table-reserved' : 'text-muted-foreground'}`}>
             <Users size={12} className="shrink-0" aria-hidden="true" />
             <Ltr>{order
@@ -278,14 +389,21 @@ export function RoomMap({ room, tables, ordersByTable, editing, onSelect, onMove
     extentWidth = Math.max(extentWidth, (table.position_x ?? 0) + (table.width ?? 150));
     extentHeight = Math.max(extentHeight, (table.position_y ?? 0) + (table.height ?? 110));
   }
+  // What is drawn: in service the part of the room the tables stand in, in
+  // edit all of it (see the note at the top of the file).
+  const view = !editing && tables.length > 0
+    ? tablesView(tables, extentWidth, extentHeight)
+    : { x: 0, y: 0, width: extentWidth, height: extentHeight };
   const fit = Math.min(
     1,
-    available.width > 0 ? available.width / extentWidth : 1,
-    available.height > 0 ? available.height / extentHeight : 1,
+    available.width > 0 ? available.width / view.width : 1,
+    available.height > 0 ? available.height / view.height : 1,
   );
   // Rounded down to a thousandth: a canvas a fraction of a pixel too big for
   // its frame brings back the scrollbars this is here to remove.
   const scale = Math.max(MIN_SCALE, Math.floor(fit * 1000) / 1000);
+  const canvasWidth = editing ? roomWidth : view.width;
+  const canvasHeight = editing ? roomHeight : view.height;
 
   // The live drag lives in a ref, not in state: a flick where the move and the
   // release land in the same frame would otherwise read a stale position at
@@ -296,8 +414,8 @@ export function RoomMap({ room, tables, ordersByTable, editing, onSelect, onMove
   const pointerToRoom = useCallback((clientX: number, clientY: number) => {
     const bounds = canvasRef.current?.getBoundingClientRect();
     if (!bounds) return { x: 0, y: 0 };
-    return { x: (clientX - bounds.left) / scale, y: (clientY - bounds.top) / scale };
-  }, [scale]);
+    return { x: (clientX - bounds.left) / scale + view.x, y: (clientY - bounds.top) / scale + view.y };
+  }, [scale, view.x, view.y]);
 
   const handlePointerDown = (table: Table) => (event: React.PointerEvent<HTMLDivElement>) => {
     if (!editing) return;
@@ -359,7 +477,7 @@ export function RoomMap({ room, tables, ordersByTable, editing, onSelect, onMove
     <div ref={measureRef} className="min-h-0 w-full flex-1 overflow-auto">
       <div
         ref={canvasRef}
-        style={{ width: roomWidth * scale, height: roomHeight * scale }}
+        style={{ width: canvasWidth * scale, height: canvasHeight * scale }}
         className={`relative rounded-xl border-2 border-dashed ${
           editing ? 'border-brand/40 bg-brand-light/20' : 'border-border bg-muted/40'
         }`}
@@ -379,7 +497,10 @@ export function RoomMap({ room, tables, ordersByTable, editing, onSelect, onMove
               scale={scale}
               editing={editing}
               dragging={live !== null}
-              position={live ?? { x: table.position_x ?? 0, y: table.position_y ?? 0 }}
+              position={{
+                x: (live?.x ?? table.position_x ?? 0) - view.x,
+                y: (live?.y ?? table.position_y ?? 0) - view.y,
+              }}
               onPointerDown={handlePointerDown(table)}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp(table)}
