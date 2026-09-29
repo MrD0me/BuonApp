@@ -4,6 +4,32 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.5.0] - 2026-09-29
+
+On the till's screen a booked table only turned orange: it now says who it is
+held for and how many are coming, at every size. A booking that asks for
+another table moves from the table's own card, and the booking sheet has a way
+back to the floor. Joined tables and the small table size are gone: a large
+party is seated by changing the map, and a two-top is drawn medium. Two
+database migrations: v97 breaks up any joined tables and drops the column, v98
+makes small tables medium, those of saved floor plans included.
+
+### Added
+
+- **A booking moves from its table's card.** A party asking for another table is an everyday thing, and the table card only offered to edit or cancel the booking: moving it meant going to the booking sheet. The booking's box in the card now has **Change table**, which picks the booking up so that the next table tapped on the map takes it — a swap when that table is booked too, with the row above the map saying *Tap the new table for Rossi* and **Cancel** as the way out, while a tap on its own table changes nothing — and **Take off this table**, which sends it back to the bookings still to seat. **Edit booking** and **Cancel booking** moved into the same box; the foot of the card keeps what concerns the table itself. Both go through the sheet's own `POST /api/reservations/:id/assign`.
+- **The booking sheet has a way back to the floor.** *Back to the floor* sits where the floor has *Bookings*, and the sidebar keeps *Floor* lit while the sheet is open.
+
+### Changed
+
+- **A booked table says whose it is and how many are coming.** Fitted to the till's 1024x768, every table of the restaurant's 1800x1100 room was drawn below the size at which a tile wrote its booking, so a booked table showed its colour and its seats and nothing else. Every booked table now writes the booking's name, and under it the party against the seats (`5/6`, with the people icon), at every size. The text shrinks first — the table's name down to 11 px, the booking down to 10 — and only then is the name cut at its end; widths are measured in the page's own font rather than guessed from the number of letters. The time is on the booking sheet and no longer on the map.
+- **Bookings still to seat take the legend's place.** They had a band of their own over the map, which cost it 113 px on the till exactly while bookings were being placed. They now sit in the rooms row, where the colour legend is, on one line that scrolls sideways, and the legend comes back once they are all seated. The chips read *Verdi · 3*, and the row says *2 to seat*.
+- **In service the map is fitted to the tables, not to the walls.** The empty edges of a room shrank every table with them. Service now frames where the tables stand, plus a margin, and the restaurant's room is drawn about a fifth bigger; edit mode still shows the whole room, where tables get dragged to.
+
+### Removed
+
+- **Joined tables (migration v97).** Folding tables into a leader gave the floor a second kind of table, one that took no order, no booking and no covers of its own; a large party is seated by changing the map in edit mode. The migration breaks up any group still standing — a folded table goes back to available, unless a parked cart is what holds it — and drops `tables.merged_into` with its index. `POST /api/tables/:id/merge` and `/split` are gone, and so are the `table_is_merged` refusals on orders and bookings, the *Join tables* window, *Split apart*, and the chain icon on the map and on the handheld. A new order starts its covers from the booking, or else from the table's own seats.
+- **The small table size (migration v98).** A table drawn at 110 units had no room on the till for its booking under its name. The size picker offers *Medium*, *Large* and *Banquet*, and a two-top is drawn medium unless told otherwise. The migration makes the tables still that size medium — 150x110 lying down, 110x150 standing, 140 across if round — growing from the corner they are placed by, and does the same to the tables of saved floor plans, so that applying one cannot bring a small table back.
+
 ## [6.4.0] - 2026-09-29
 
 On the kitchen ticket every line drawn inside a service run, the dashed rule

@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.5.0" date="2026-09-29">
+      <description>
+        <p>On the till's screen a booked table only turned orange: it now says who it is held for and how many are coming, at every size. A booking that asks for another table moves from the table's own card, and the booking sheet has a way back to the floor. Joined tables and the small table size are gone: a large party is seated by changing the map, and a two-top is drawn medium. Two database migrations: v97 breaks up any joined tables and drops the column, v98 makes small tables medium, those of saved floor plans included.</p>
+      </description>
+    </release>
     <release version="6.4.0" date="2026-09-29">
       <description>
         <p>On the kitchen ticket every line drawn inside a service run, the dashed rule between dishes and the rule naming the category, was read in service as the start of the next run. Both are gone, and the run's own rule now spans the paper. The covers print large under the table, where the ticket number used to be, and the table's note comes before the dishes instead of after them. No database migration.</p>
