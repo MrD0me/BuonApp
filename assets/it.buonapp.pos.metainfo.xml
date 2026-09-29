@@ -18,7 +18,7 @@
     </p>
     <p>Features include:</p>
     <ul>
-      <li>A graphical floor map with rooms, joined tables, and saved layouts</li>
+      <li>A graphical floor map with rooms and saved layouts</li>
       <li>Service days with an explicit close and a printed end-of-day report</li>
       <li>Reservations for the service in progress, assigned straight onto the map</li>
       <li>Kitchen tickets printed by round, sectioned by service run, and routed to per-category stations</li>

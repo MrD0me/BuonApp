@@ -118,7 +118,7 @@ ordine fallito.
 
 - **Niente cassa.** Preconto, incasso, storni, sconti e prezzi di riga si fanno dal PC centrale,
   dove sta il registratore di cassa. Le rotte relative non sono inoltrate dal proxy.
-- **Niente scritture sui tavoli.** Stato, prenotazioni, unioni e mappa si toccano solo dal PC
+- **Niente scritture sui tavoli.** Stato, prenotazioni e mappa si toccano solo dal PC
   (invariante di [table-management.md](table-management.md)); il palmare legge `GET /tables` e
   `GET /rooms`.
 - **Niente clienti.** I campi nome e telefono sul biglietto sono spariti, con i tre inoltri
