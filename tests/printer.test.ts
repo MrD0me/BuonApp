@@ -548,7 +548,7 @@ console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
   const text = buf.toString('utf8');
 
   assert('leads with the table, in the largest type on the ticket', text.includes('TABLE T3'));
-  assert('renders KOT header', text.includes('KITCHEN TICKET'));
+  assert('names the ticket in the condensed line', text.includes('Kitchen ticket - Main Kitchen'));
   assert('renders station name', text.includes('Main Kitchen'));
   assert('renders order number in the footer', text.includes('ORD-20260421-0001'));
   assert('renders each item with a quantity column', text.includes(' 2  CHEESEBURGER'));
@@ -580,10 +580,21 @@ console.log('\n✅ Test 6b: KOT groups dishes by category and keeps accents');
   assert('accented dish name survives the code page', codePageText.includes('RAVIOLI AL RAG\u00D9'));
   assert('a second accented dish survives too', codePageText.includes('PUR\u00C8 DI PATATE'));
 
-  // A ticket covering several categories separates them with a labelled rule.
-  assert('category rule for the first category', codePageText.includes('== ANTIPASTI ='));
-  assert('category rule for the second category', codePageText.includes('== PRIMI ='));
-  assert('category rule for the third category', codePageText.includes('== CONTORNI ='));
+  // The kitchen has no use for the category's name: no rule carries it, and
+  // no rule separates one dish from the next either.
+  assert('no category rule on a ticket spanning several categories', !/== [A-Z]/.test(codePageText));
+  assert('no thin rule between dishes', !codePageText.includes('-'.repeat(48)));
+
+  // The grouping itself stays: dishes of one category still sit together, in
+  // the order their categories first appear, whatever order they were added in.
+  const interleaved = formatKOT(order, [
+    groupedItems[0],
+    groupedItems[1],
+    { quantity: 1, product_name: 'Caprese', category_id: 'c1', category_name: 'Antipasti', addons: [] },
+  ], 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 2, 'it', false, 16).toString('latin1');
+  assert('dishes of one category still sit together',
+    interleaved.indexOf('BRUSCHETTE MISTE') < interleaved.indexOf('CAPRESE')
+      && interleaved.indexOf('CAPRESE') < interleaved.indexOf('RAVIOLI AL RAGÙ'));
 
   // Without a declared code page nothing is dropped: accents transliterate.
   const noCodePageWarnings: Array<{ field: string; text: string; message: string }> = [];
@@ -593,11 +604,32 @@ console.log('\n✅ Test 6b: KOT groups dishes by category and keeps accents');
   assert('transliterated ticket keeps every dish', asciiText.includes('PURE DI PATATE') && asciiText.includes('BRUSCHETTE MISTE'));
   assert('transliteration is not reported as an unprintable line', noCodePageWarnings.length === 0);
 
-  // One category means nothing to separate, so the headers stay off.
   const singleCategory = groupedItems.filter((item) => item.category_id === 'c2');
   const singleText = formatKOT(order, singleCategory, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 2, 'it', false, 16).toString('latin1');
-  assert('no category rule on a single-category ticket', !singleText.includes('== PRIMI ='));
-  assert('single-category ticket still lists its dish', singleText.includes('RAVIOLI AL RAG\u00D9'));
+  assert('single-category ticket lists its dish', singleText.includes('RAVIOLI AL RAG\u00D9'));
+
+  // Table, then covers, both large; the ticket number drops to the condensed
+  // line with the time and the station.
+  const covered = formatKOT({ ...order, guest_count: 6 }, singleCategory, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 2, 'it', false, 16);
+  const coveredText = covered.toString('latin1');
+  assert('the covers print under the table', coveredText.indexOf('TAVOLO 7') < coveredText.indexOf('6 COPERTI'));
+  assert('in double height, centred', bytesContain(covered, [ESC, 0x61, 0x01, ESC, 0x21, 0x10, ...Buffer.from('6 COPERTI', 'latin1')]));
+  assert('the ticket number is in the condensed line', coveredText.includes('Comanda n. 2 - Cucina'));
+  assert('and the covers are not repeated there', !coveredText.includes('coperti - Cucina'));
+  assert('one guest is one cover',
+    formatKOT({ ...order, guest_count: 1 }, singleCategory, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 2, 'it', false, 16)
+      .toString('latin1').includes('1 COPERTO'));
+  assert('no covers, no covers line', !singleText.includes('COPERT'));
+
+  // The table's note is read first: right under the header, before any dish.
+  const noted = formatKOT(
+    { ...order, guest_count: 3, special_instructions: 'Un celiaco al tavolo: tutto senza glutine' },
+    groupedItems, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 2, 'it', false, 16,
+  ).toString('latin1');
+  assert('the table note prints under the header', noted.indexOf('Comanda n. 2 - Cucina') < noted.indexOf('NOTA TAVOLO'));
+  assert('and above the first dish', noted.indexOf('NOTA TAVOLO') < noted.indexOf('BRUSCHETTE MISTE'));
+  assert('with its text, before the dishes too', noted.indexOf('tutto senza glutine') < noted.indexOf('BRUSCHETTE MISTE'));
+  assert('no note, no note heading', !singleText.includes('NOTA TAVOLO'));
 
   // A re-print has to be obvious on paper.
   const reprint = formatKOT(order, singleCategory, 'Cucina', 48, false, 'full', 'it-IT', undefined, [], false, 2, 'it', true, 16).toString('latin1');
@@ -635,10 +667,11 @@ console.log('\n✅ Test 6c: KOT sections the ticket by service run');
   assert('waves print in order however the rows arrived', twoRuns.indexOf('1\u00AA USCITA') < twoRuns.indexOf('2\u00AA USCITA'));
   assert('a dish moved to the second wave leaves the first', twoRuns.indexOf('TAGLIATA') > twoRuns.indexOf('2\u00AA USCITA'));
 
-  // Categories still separate dishes, but the decision is made inside each
-  // wave: the second one is all mains and needs no rule.
-  assert('the mixed wave keeps its category rules', twoRuns.includes('== ANTIPASTI =') && twoRuns.includes('== PRIMI ='));
-  assert('the single-category wave gets none', !twoRuns.includes('== SECONDI ='));
+  // The run heading is the only line drawn inside the ticket, and it runs the
+  // full width of the paper: it prints in double height, not double width.
+  const runRule = twoRuns.split('\n').find((line) => line.includes('1ª USCITA')) || '';
+  assert('the run rule spans the full width', runRule.replace(/^[\s\S]*?(## )/, '$1').length === 48);
+  assert('the mixed wave carries no category rule', !/== [A-Z]/.test(twoRuns));
 
   // English says it in English; anything else falls back to English rather
   // than printing half-translated, as the rest of the ticket already does.
@@ -677,7 +710,11 @@ console.log('\n✅ Test 6d: KOT folds identical dishes into one line');
   const sixMenus = print([dish(), dish(), dish(), dish(), dish(), dish()]);
   assert('six identical rows print as one line of six', sixMenus.includes(' 6  LASAGNE'));
   assert('and not as a line of one', !sixMenus.includes(' 1  LASAGNE'));
-  assert('the footer counts the lines on the paper, not the rows of the check', sixMenus.includes('1 righe - 6 pezzi'));
+  assert('the footer counts the lines on the paper, not the rows of the check', sixMenus.includes('1 riga - 6 pezzi'));
+  assert('and says one piece in the singular', print([dish()]).includes('1 riga - 1 pezzo'));
+  assert('the English footer too',
+    formatKOT(order, [dish()], 'Kitchen', 48, false, 'full', 'en-US', undefined, [], false, 1, 'en', false, 16)
+      .toString('latin1').includes('1 line - 1 item'));
 
   // Quantities add up rather than being counted again.
   assert('rows already carrying a quantity add up', print([dish({ quantity: 2 }), dish({ quantity: 3 })]).includes(' 5  LASAGNE'));
@@ -715,6 +752,27 @@ console.log('\n✅ Test 6d: KOT folds identical dishes into one line');
   // Different dishes are still different dishes.
   const mixed = print([dish(), dish({ product_id: 'p-tagliatelle', product_name: 'Tagliatelle' }), dish()]);
   assert('unlike dishes keep their own lines', mixed.includes(' 2  LASAGNE') && mixed.includes(' 1  TAGLIATELLE'));
+
+  // A "10" widens the quantity column for the whole ticket, so every name,
+  // add-on and note still starts in the same column.
+  const wide = print([
+    dish({ quantity: 6 }), dish({ quantity: 4 }),
+    dish({ product_id: 'p-tagliatelle', product_name: 'Tagliatelle', special_instructions: 'senza sale', addons: [{ name: 'Extra ragu' }] }),
+  ]);
+  assert('the two-digit quantity keeps the name column', wide.includes(' 10  LASAGNE'));
+  assert('the one-digit quantity lines up under it', wide.includes('  1  TAGLIATELLE'));
+  assert('add-ons and notes move with the name column', wide.includes('     + Extra ragu') && wide.includes('     >> senza sale'));
+  const narrow = print([dish({ quantity: 9 })]);
+  assert('an all-single-digit ticket keeps the narrow column', narrow.includes(' 9  LASAGNE') && !narrow.includes('  9  LASAGNE'));
+
+  // Dishes no station claims print on the default printer, named in the
+  // ticket's language rather than always in English.
+  assert('the default printer is Cucina on an Italian ticket',
+    formatKOT(order, [dish()], '', 48, false, 'full', 'it-IT', undefined, [], false, 1, 'it', false, 16).toString('latin1').includes('Comanda n. 1 - Cucina'));
+  assert('and Kitchen on an English one',
+    formatKOT(order, [dish()], '', 48, false, 'full', 'en-US', undefined, [], false, 1, 'en', false, 16).toString('latin1').includes('Ticket no. 1 - Kitchen'));
+  assert('a station keeps its own name',
+    formatKOT(order, [dish()], 'Kitchen', 48, false, 'full', 'it-IT', undefined, [], false, 1, 'it', false, 16).toString('latin1').includes('Comanda n. 1 - Kitchen'));
 
   const tagliata = { quantity: 1, product_id: 'p-tagliata', product_name: 'Tagliata', category_id: 'c3', category_name: 'Secondi', addons: [] };
   console.log('\n   — Compacted KOT —');

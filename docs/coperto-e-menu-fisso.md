@@ -290,7 +290,8 @@ singola riga con un tocco, prima e dopo l'invio.
   scrive righe vere. E lì si ferma: dentro un menu l'uscita non si sposta più a mano (vedi il menu
   a conteggio), perché l'ordine delle uscite è il menu stesso.
 - **La comanda si sezione per uscita, e dentro l'uscita per categoria.** L'uscita dice *quando* e
-  va sopra; la categoria dice *cosa* e resta sotto. Con tutto in uscita 1 il codice prende lo
+  va sopra; la categoria dice *cosa* e resta sotto. Dal 2026-09-29 la categoria non stampa più la
+  sua riga `== SECONDI ==`: in cucina non serve, i piatti restano solo raggruppati. Con tutto in uscita 1 il codice prende lo
   stesso ramo di prima e la comanda esce identica — asserito byte per byte in `test:printer`.
 - **Le uscite sono etichette, non cancelli.** Si preme Invia e parte tutto il pendente, come
   sempre. Nessun "manda solo la prima uscita": sarebbe un secondo stato da tenere allineato con

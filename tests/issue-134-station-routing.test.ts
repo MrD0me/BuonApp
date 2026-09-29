@@ -54,6 +54,7 @@ function main() {
     const groups = routeItemsToStations(db, items);
     assertEqual(groups.length, 1, 'A: exactly one group');
     assertEqual(groups[0].stationName, 'Kitchen', 'A: falls back to the generic Kitchen label');
+    assertEqual(groups[0].isDefault, true, 'A: flagged as the default printer, so the ticket names it in its own language');
     assert(groups[0].printer === null, 'A: printer is null (caller falls back to default printer)');
     assertEqual(groups[0].items.length, 2, 'A: both items stay in the one ticket');
   }
@@ -77,6 +78,8 @@ function main() {
     assert(!!kitchen, 'B: unmatched food item still lands on a fallback Kitchen ticket');
     assertEqual(kitchen.items.length, 1, 'B: Kitchen group has just the food item');
     assert(kitchen.printer === null, 'B: fallback Kitchen group uses the default printer');
+    assertEqual(kitchen.isDefault, true, 'B: fallback Kitchen group is flagged as the default printer');
+    assert(!bar.isDefault, 'B: a real station is not');
   }
 
   console.log('\n─── Scenario C: two fully-covered stations — everything routed, no fallback ───');
@@ -91,6 +94,7 @@ function main() {
 
     const kitchenGroup = groups.find((g: any) => g.stationName === 'Kitchen');
     assertEqual(kitchenGroup.items.length, 2, 'C: Kitchen group has food + dessert');
+    assert(!kitchenGroup.isDefault, 'C: a station the owner named Kitchen keeps its name, it is not the default printer');
     const barGroup = groups.find((g: any) => g.stationName === 'Bar');
     assertEqual(barGroup.items.length, 1, 'C: Bar group has just the beverage');
   }

@@ -549,8 +549,9 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
 // Groups order items across active, fully-configured kitchen stations (has both
 // a category allowlist and a linked printer). Items whose category isn't claimed
 // by any station fall back to the default printer under the generic 'Kitchen'
-// label — this is also what happens for the whole order when no station is
-// configured at all, so stores not using stations see no behavior change.
+// label, flagged `isDefault` so the ticket can name it in its own language —
+// this is also what happens for the whole order when no station is configured
+// at all, so stores not using stations see no behavior change.
 /**
  * Drops the rows nobody cooks: the package line of a fixed menu, which is a
  * price, not a dish. Its courses were written as real rows of their own and go
@@ -584,7 +585,9 @@ function withMenuPackages(itemIds: number[], allItems: any[]): number[] {
   return [...released];
 }
 
-export function routeItemsToStations(db: any, orderItems: any[]): { stationName: string; printer: any; items: any[] }[] {
+type StationGroup = { stationName: string; printer: any; items: any[]; isDefault?: boolean };
+
+export function routeItemsToStations(db: any, orderItems: any[]): StationGroup[] {
   const rawStations = db.prepare(
     `SELECT * FROM kitchen_stations WHERE is_active = 1 AND printer_id IS NOT NULL AND category_ids IS NOT NULL AND category_ids != ''`
   ).all() as any[];
@@ -606,10 +609,10 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
     .filter((s) => s.categoryIds.length > 0 && s.printer);
 
   if (stations.length === 0) {
-    return [{ stationName: 'Kitchen', printer: null, items: cookableItems(orderItems) }];
+    return [{ stationName: 'Kitchen', printer: null, items: cookableItems(orderItems), isDefault: true }];
   }
 
-  const groups = new Map<string, { stationName: string; printer: any; items: any[] }>();
+  const groups = new Map<string, StationGroup>();
   const unrouted: any[] = [];
 
   for (const item of cookableItems(orderItems)) {
@@ -626,9 +629,9 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
     }
   }
 
-  const result = Array.from(groups.values());
+  const result: StationGroup[] = Array.from(groups.values());
   if (unrouted.length > 0) {
-    result.push({ stationName: 'Kitchen', printer: null, items: unrouted });
+    result.push({ stationName: 'Kitchen', printer: null, items: unrouted, isDefault: true });
   }
   return result;
 }
@@ -693,8 +696,8 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier', 'server'), 
 
     if (stationName || items) {
       const kotItems = cookableItems(items || getEffectiveOrderItems(db, orderId));
-      const station = stationName || 'Kitchen';
-      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req), batch);
+      // No station name prints as the default printer, in the ticket's language.
+      const result = await printKOTDetailed(order, kotItems, stationName || '', useUnicode, undefined, getHttpRequestSignal(req), batch);
       success = result.ok;
       failure = result.ok ? null : result;
       warnings.push(...(result.warnings || []));
@@ -725,7 +728,8 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier', 'server'), 
     const groups = routeItemsToStations(db, kotItems).filter((g) => g.items.length > 0);
     const undelivered: number[] = [];
     for (const group of groups) {
-      const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req), ticketBatch, isReprint);
+      const station = group.isDefault ? '' : group.stationName;
+      const result = await printKOTDetailed(order, group.items, station, useUnicode, group.printer || undefined, getHttpRequestSignal(req), ticketBatch, isReprint);
       success = success && result.ok;
       warnings.push(...(result.warnings || []));
       if (!result.ok) {

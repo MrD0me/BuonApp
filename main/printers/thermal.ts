@@ -1428,7 +1428,8 @@ interface KotLabels {
   covers: (n: number) => string;
   reprint: string;
   orderNote: string;
-  other: string;
+  /** The default printer, for dishes whose category no station claims. */
+  defaultStation: string;
   serviceRun: (n: number) => string;
   summary: (lines: number, pieces: number) => string;
 }
@@ -1437,26 +1438,26 @@ const KOT_LABELS: Record<string, KotLabels> = {
   en: {
     table: 'TABLE',
     takeaway: 'TAKEAWAY',
-    ticket: 'KITCHEN TICKET',
-    round: (n) => `KITCHEN TICKET NO. ${n}`,
-    covers: (n) => `${n} covers`,
+    ticket: 'Kitchen ticket',
+    round: (n) => `Ticket no. ${n}`,
+    covers: (n) => (n === 1 ? '1 cover' : `${n} covers`),
     reprint: '*** RE-PRINT ***',
     orderNote: 'ORDER NOTE',
-    other: 'OTHER',
+    defaultStation: 'Kitchen',
     serviceRun: (n) => `RUN ${n}`,
-    summary: (lines, pieces) => `${lines} lines - ${pieces} items`,
+    summary: (lines, pieces) => `${lines} ${lines === 1 ? 'line' : 'lines'} - ${pieces} ${pieces === 1 ? 'item' : 'items'}`,
   },
   it: {
     table: 'TAVOLO',
     takeaway: 'ASPORTO',
-    ticket: 'COMANDA',
-    round: (n) => `COMANDA N. ${n}`,
-    covers: (n) => `${n} coperti`,
+    ticket: 'Comanda',
+    round: (n) => `Comanda n. ${n}`,
+    covers: (n) => (n === 1 ? '1 coperto' : `${n} coperti`),
     reprint: '*** RISTAMPA ***',
     orderNote: 'NOTA TAVOLO',
-    other: 'ALTRO',
+    defaultStation: 'Cucina',
     serviceRun: (n) => `${n}ª USCITA`,
-    summary: (lines, pieces) => `${lines} righe - ${pieces} pezzi`,
+    summary: (lines, pieces) => `${lines} ${lines === 1 ? 'riga' : 'righe'} - ${pieces} ${pieces === 1 ? 'pezzo' : 'pezzi'}`,
   },
 };
 
@@ -1466,8 +1467,8 @@ function kotLabels(language: string): KotLabels {
 
 /**
  * A horizontal rule carrying a label at its left edge, e.g.
- * `== ANTIPASTI ==================================`. Used to mark where one
- * category ends and the next begins on a station that cooks more than one.
+ * `## 2ª USCITA ##################################`. Used to mark where one
+ * service run ends and the next begins.
  */
 function labelledRule(label: string, cols: number, char: string): string {
   const head = `${char.repeat(2)} ${truncate(label, Math.max(1, cols - 6))} `;
@@ -1528,8 +1529,8 @@ function kotItemIdentity(item: any): string {
  * pass, where it arrives as a ticket repeating "1 LASAGNA" six times down a
  * foot of paper. The rows stay as they are; only the paper is compacted.
  *
- * Called per category of a run, so dishes that go out in different waves - or
- * under different section rules - are never folded together.
+ * Called per category of a run, so dishes that go out in different waves are
+ * never folded together.
  */
 function compactKotItems(items: any[]): any[] {
   const compacted: any[] = [];
@@ -1550,12 +1551,13 @@ function compactKotItems(items: any[]): any[] {
 /**
  * A detail line under a dish - an add-on or a note. The marker only appears on
  * the first line; continuations align under the text, so a long note reads as
- * one block instead of a list of fragments. wrapText() collapses leading
+ * one block instead of a list of fragments. The marker sits in the dish-name
+ * column, so the gutter is the dish's. wrapText() collapses leading
  * whitespace, which is why the indent is reapplied per line rather than baked
  * into the string handed to it.
  */
-function pushKotDetail(lines: string[], marker: string, text: string, cols: number, bold: boolean): void {
-  const indent = '    ';
+function pushKotDetail(lines: string[], marker: string, text: string, cols: number, bold: boolean, gutter: number): void {
+  const indent = ' '.repeat(gutter);
   const width = Math.max(1, cols - indent.length - marker.length - 1);
   wrapText(text, width).forEach((part, index) => {
     const prefix = index === 0 ? marker : ' '.repeat(marker.length);
@@ -1570,9 +1572,8 @@ function pushKotDetail(lines: string[], marker: string, text: string, cols: numb
  * hang under the name column rather than restarting at the margin, which keeps
  * the quantity column unambiguous.
  */
-function pushKotItemName(lines: string[], quantity: unknown, name: string, cols: number): void {
+function pushKotItemName(lines: string[], quantity: unknown, name: string, cols: number, gutter: number): void {
   const qty = String(Number(quantity) || 0);
-  const gutter = Math.max(4, qty.length + 3);
   const indent = ' '.repeat(gutter);
   const wrapped = wrapText(name.toUpperCase(), Math.max(1, cols - gutter));
   const first = `${qty.padStart(gutter - 2, ' ')}  ${wrapped[0] ?? ''}`;
@@ -1582,91 +1583,55 @@ function pushKotItemName(lines: string[], quantity: unknown, name: string, cols:
   }
 }
 
+/**
+ * Width of the quantity column plus the space before the name, the same for
+ * every dish on the ticket: sized per dish, a "10" pushed its own name one
+ * column right of all the others.
+ */
+function kotGutter(quantities: unknown[]): number {
+  const widest = quantities.reduce<number>((max, quantity) => Math.max(max, String(Number(quantity) || 0).length), 1);
+  return Math.max(4, widest + 3);
+}
+
 export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[], arabicShaping: boolean = false, batch?: number, language: string = 'en', isReprint: boolean = false, codePage?: number): Buffer {
   const lines: string[] = [];
   const L = kotLabels(language);
   const rule = '='.repeat(cols);
-  const thinRule = '-'.repeat(cols);
   // Double width halves how many characters fit on a line.
   const wideCols = Math.max(1, Math.floor(cols / 2));
 
   lines.push('{INIT}');
 
   // The table is what the cook and the runner match food against, so it gets
-  // the largest type on the ticket and the top of the paper.
+  // the largest type on the ticket and the top of the paper. The covers come
+  // right under it: the floor calls a table by its number and its party size
+  // together ("the twelve, six of them"), so the kitchen reads the two as one.
+  // A takeaway, or a table whose covers were never set, simply has no second
+  // line.
   const headline = order.table?.name ? `${L.table} ${order.table.name}` : L.takeaway;
   lines.push(`{CENTER}{DOUBLE_WIDTH}{DOUBLE_HEIGHT}{BOLD}${truncate(headline.toUpperCase(), wideCols)}{/BOLD}{/DOUBLE_HEIGHT}{/DOUBLE_WIDTH}{/CENTER}`);
-  lines.push(`{CENTER}{DOUBLE_HEIGHT}${truncate(batch ? L.round(batch) : L.ticket, wideCols)}{/DOUBLE_HEIGHT}{/CENTER}`);
+  if (order.guest_count) {
+    lines.push(`{CENTER}{DOUBLE_HEIGHT}${truncate(L.covers(order.guest_count).toUpperCase(), cols)}{/DOUBLE_HEIGHT}{/CENTER}`);
+  }
   if (isReprint) {
     lines.push(`{CENTER}{BOLD}${L.reprint}{/BOLD}{/CENTER}`);
   }
 
   // Everything the kitchen rarely needs collapses into one condensed line:
   // the send time (not the order's creation time - on a later round the two
-  // are far apart), the covers, and which station this paper came out of.
+  // are far apart), the ticket number, and which station this paper came out
+  // of. No station name means the default printer, which takes whatever no
+  // station claims; it is named in the ticket's own language.
   const sentAt = new Date().toLocaleTimeString(`${locale}-u-nu-latn`, { hour: '2-digit', minute: '2-digit', ...(tzOptions || {}) });
-  const meta = [sentAt, order.guest_count ? L.covers(order.guest_count) : '', stationName]
+  const meta = [sentAt, batch ? L.round(batch) : L.ticket, stationName || L.defaultStation]
     .filter((part) => Boolean(part))
     .join(' - ');
   lines.push(`{CENTER}{FONT_B}${truncate(meta, cols)}{/FONT_B}{/CENTER}`);
   lines.push(rule);
 
-  // Two levels, and the run is the outer one: it says *when* the food leaves,
-  // which the cook has to act on, while the category only says what kind of
-  // thing it is. Runs go in numerical order; categories keep the order they
-  // first appear in, as they always have.
-  //
-  // A house that never touches a run has every row on run 1, so there is one
-  // run, no run header, and the ticket below is the one that printed before
-  // any of this existed.
-  const runs = groupItemsByServiceRun(items);
-  const showRunHeaders = runs.length > 1;
-  // Counted while printing rather than from `items`: once identical dishes are
-  // folded together the rows of the check and the lines on the paper are no
-  // longer the same number, and the pass checks the ticket in its hand.
-  let printedRows = 0;
-
-  runs.forEach((run, runIndex) => {
-    if (showRunHeaders) {
-      if (runIndex > 0) lines.push('');
-      // Louder than a category rule, in both the character and the type: of
-      // the two headings this is the one that must not be skimmed past.
-      lines.push(`{DOUBLE_HEIGHT}{BOLD}${labelledRule(L.serviceRun(run.run), wideCols, '#')}{/BOLD}{/DOUBLE_HEIGHT}`);
-    }
-
-    const groups = groupKotItemsByCategory(run.items);
-    // A single-category ticket needs no headers - they would only add noise.
-    // Decided per run: a wave that is all mains reads better without one.
-    const showCategoryHeaders = groups.length > 1;
-
-    groups.forEach((group, groupIndex) => {
-      if (showCategoryHeaders) {
-        if (groupIndex > 0) lines.push('');
-        lines.push(`{BOLD}${labelledRule((group.name || L.other).toUpperCase(), cols, '=')}{/BOLD}`);
-      }
-      const rows = compactKotItems(group.items);
-      printedRows += rows.length;
-      rows.forEach((item, itemIndex) => {
-        // A thin rule between dishes: without it a dish carrying two lines of
-        // notes runs straight into the next one.
-        if (itemIndex > 0) lines.push(thinRule);
-        pushKotItemName(lines, item.quantity, String(item.product_name ?? ''), cols);
-        for (const addon of parseAddons(item.addons)) {
-          if (addon?.name) {
-            pushKotDetail(lines, '+', String(addon.name), cols, false);
-          }
-        }
-        if (item.special_instructions) {
-          // Notes carry a different marker from add-ons and are bold: they are
-          // the line a cook cannot afford to skim past.
-          pushKotDetail(lines, '>>', String(item.special_instructions), cols, true);
-        }
-      });
-    });
-  });
-
-  lines.push(rule);
-
+  // The table's own note comes before the dishes, on every station's paper:
+  // an allergy at the table, or a child whose pasta goes first, has to be read
+  // before anything is cooked, not found under the last dish.
   if (order.special_instructions) {
     lines.push(`{BOLD}${L.orderNote}{/BOLD}`);
     for (const noteLine of wrapText(String(order.special_instructions), cols)) {
@@ -1674,6 +1639,60 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
     }
     lines.push(rule);
   }
+
+  // Two levels, and the run is the outer one: it says *when* the food leaves,
+  // which the cook has to act on, while the category only decides which
+  // dishes sit together. Runs go in numerical order; categories keep the order
+  // they first appear in, as they always have.
+  //
+  // A house that never touches a run has every row on run 1, so there is one
+  // run, no run header, and the ticket below is the one that printed before
+  // any of this existed.
+  //
+  // Dishes of one category still sit together, in the order the categories
+  // first appear, but nothing is printed between them: what kind of dish it is
+  // means nothing at the pass, and every line drawn across a run was being
+  // read as the start of the next one. For the same reason there is no rule
+  // between one dish and the next - the double-height name is enough to find
+  // where a dish starts.
+  const runs = groupItemsByServiceRun(items).map((run) => ({
+    run: run.run,
+    rows: groupKotItemsByCategory(run.items).flatMap((group) => compactKotItems(group.items)),
+  }));
+  const showRunHeaders = runs.length > 1;
+  // Sized once the dishes are folded, since folding is what makes a "10".
+  const gutter = kotGutter(runs.flatMap((run) => run.rows.map((row) => row.quantity)));
+  // Counted from the printed lines rather than from `items`: once identical
+  // dishes are folded together the rows of the check and the lines on the
+  // paper are no longer the same number, and the pass checks the ticket in its
+  // hand.
+  const printedRows = runs.reduce((total, run) => total + run.rows.length, 0);
+
+  runs.forEach((run, runIndex) => {
+    if (showRunHeaders) {
+      if (runIndex > 0) lines.push('');
+      // Double height only, so the rule runs the full normal width of the
+      // paper: it is the one heading on the ticket, and it must not be
+      // skimmed past.
+      lines.push(`{DOUBLE_HEIGHT}{BOLD}${labelledRule(L.serviceRun(run.run), cols, '#')}{/BOLD}{/DOUBLE_HEIGHT}`);
+    }
+
+    for (const item of run.rows) {
+      pushKotItemName(lines, item.quantity, String(item.product_name ?? ''), cols, gutter);
+      for (const addon of parseAddons(item.addons)) {
+        if (addon?.name) {
+          pushKotDetail(lines, '+', String(addon.name), cols, false, gutter);
+        }
+      }
+      if (item.special_instructions) {
+        // Notes carry a different marker from add-ons and are bold: they are
+        // the line a cook cannot afford to skim past.
+        pushKotDetail(lines, '>>', String(item.special_instructions), cols, true, gutter);
+      }
+    }
+  });
+
+  lines.push(rule);
 
   // A closing count so the pass can check at a glance that nothing is missing,
   // plus the order number: too rarely needed to earn large type, too useful for
