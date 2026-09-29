@@ -14,7 +14,7 @@ Set the paper width to match the printer: 58 mm or 80 mm. The first configured p
 
 ## Kitchen printing
 
-BuonApp can print kitchen order tickets to the default printer or route items to configured kitchen stations. A station needs an active printer and the product categories it handles. Items without a matching station fall back to the default kitchen route.
+BuonApp can print kitchen order tickets to the default printer or route items to configured kitchen stations. A station needs an active printer and the product categories it handles. Items without a matching station fall back to the default printer, which the ticket names in its own language (*Cucina* on an Italian ticket, *Kitchen* on an English one).
 
 Each send carries only the order rows that have not been to the kitchen yet, numbered as a sequential round on the ticket header. Adding a course to an open table and sending again prints that course alone, never the whole check a second time. Rows still waiting are marked in the table sheet, where **Send to kitchen** dispatches them. If a print fails, the rows stay queued so the send can be repeated.
 
@@ -26,7 +26,7 @@ KOT printing can be disabled for the business. When it is disabled, neither auto
 
 ### What a kitchen ticket looks like
 
-Tickets lead with the table in the largest type the paper allows, then the round number, then a single condensed line carrying the send time, the covers, and the station. Dishes follow with the quantity in its own column and the name in double height; add-ons are marked `+`, item notes `>>` and printed in bold. Identical dishes are folded into one line with the quantity summed: two rows are the same dish when the product, the add-ons (in any order they were ticked), the note and the variant selections all match, so a plate carrying an instruction is never folded into the plates without one, and dishes on different service runs are never folded together. A thin rule separates one dish from the next, and where a station cooks more than one category the dishes are grouped under a labelled rule per category. The ticket closes with a line and piece count plus the order number, so the pass can check nothing is missing and the ticket can still be traced back to its order.
+Tickets lead with the table in the largest type the paper allows, then the covers in double height, since the floor calls a table by its number and its party size together; a takeaway, or a table with no covers set, has no covers line. A single condensed line follows, carrying the send time, the round number, and the station. A note written on the order rather than on a dish comes next, in bold before the first dish, so that an allergy at the table is read before anything is cooked; it prints on every station's ticket. Dishes follow with the quantity in its own column, one width for the whole ticket so that a `10` does not push its name out of line with the others, and the name in double height; add-ons are marked `+`, item notes `>>` and printed in bold. Identical dishes are folded into one line with the quantity summed: two rows are the same dish when the product, the add-ons (in any order they were ticked), the note and the variant selections all match, so a plate carrying an instruction is never folded into the plates without one, and dishes on different service runs are never folded together. Where a station cooks more than one category, the dishes of each category sit together, in the order the categories first appear, with nothing printed between them: the category means nothing at the pass. Nor is there a rule between one dish and the next. In service, every line drawn across a run was read as the start of the next run, and the double-height name is enough to find where a dish starts. The ticket closes with a line and piece count plus the order number, so the pass can check nothing is missing and the ticket can still be traced back to its order.
 
 ### Service runs
 
@@ -34,7 +34,7 @@ A run says when a dish should leave the kitchen — the starters, then the pasta
 
 Each dish takes its run from its category (**Menu → Categories → Goes out in**), so on an ordinary table nobody touches it. The floor moves a single row from the cart or the order panel, before or after the ticket has printed; moving a row already on paper reprints nothing, and the chip goes quiet to say the kitchen's copy is out of date.
 
-Where a ticket spans more than one run it is split under a heavier `#` rule per run, in numerical order, with the category rules nested inside each one. A house that never touches a run has everything on the first, and its ticket is byte-for-byte the one it printed before runs existed.
+Where a ticket spans more than one run it is split under a `#` rule per run, in numerical order, printed in bold double height across the full width of the paper; it is the only line drawn inside the list of dishes. A house that never touches a run has everything on the first, and its ticket is byte-for-byte the one it printed before runs existed.
 
 Runs are labels, not gates: **Send to kitchen** still sends everything waiting, whatever run it is on. There is no way to send one run and hold the rest — that would be a second thing to keep in step with the round, and a run left in the queue after service.
 

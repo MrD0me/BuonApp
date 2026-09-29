@@ -4,6 +4,28 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.4.0] - 2026-09-29
+
+On the kitchen ticket every line drawn inside a service run, the dashed rule
+between dishes and the rule naming the category, was read in service as the
+start of the next run. Both are gone, and the run's own rule now spans the
+paper. The covers print large under the table, where the ticket number used to
+be, and the table's note comes before the dishes instead of after them. No
+database migration.
+
+### Changed
+
+- **Nothing is drawn between dishes inside a run.** The dashed rule between one dish and the next, and the `== SECONDI ==` rule that a station cooking more than one category got between them, were both read at the pass as the start of the next run, and the category's name means nothing to a cook. Dishes of one category still sit together, in the order the categories first appear, with no line and no blank row between them. The only line inside the list of dishes is the run's.
+- **The run rule spans the paper.** `## 2ª USCITA ##…` was cut at 24 characters, as if it printed in double width, while it prints in double height only, so it stopped halfway across. It now runs all 48 columns.
+- **The covers print under the table.** The floor calls a table by its number and its party size together, so `6 COPERTI` takes the double-height line under the table that `COMANDA N. 1` had, and the ticket number moves to the condensed line: `20:35 - Comanda n. 1 - Cucina`. A takeaway, or a table with no covers set, has no covers line; one guest prints `1 COPERTO`.
+- **The table's note comes first.** A note written on the order rather than on a dish printed under the last dish, where a cook reading from the top found it last. It now prints right under the header, before the first dish, on every station's ticket, so an allergy at the table is read before anything is cooked.
+
+### Fixed
+
+- **A two-digit quantity pushed its dish out of line.** The quantity column was sized dish by dish, so a `10` moved its name, add-ons and note one column right of every other dish. It is now one width for the whole ticket.
+- **The ticket footer said `1 righe - 1 pezzi`.** It now says `1 riga - 1 pezzo`, and `1 line - 1 item` in English.
+- **Dishes no station claims printed under the name `Kitchen` on an Italian ticket.** The default printer is now named in the ticket's language, *Cucina* in Italian. A station the owner actually called *Kitchen* keeps its name.
+
 ## [6.3.0] - 2026-09-27
 
 On the till's 1024x768 screen the whole interface came out a size too large,

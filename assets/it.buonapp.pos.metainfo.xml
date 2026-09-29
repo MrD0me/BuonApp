@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.4.0" date="2026-09-29">
+      <description>
+        <p>On the kitchen ticket every line drawn inside a service run, the dashed rule between dishes and the rule naming the category, was read in service as the start of the next run. Both are gone, and the run's own rule now spans the paper. The covers print large under the table, where the ticket number used to be, and the table's note comes before the dishes instead of after them. No database migration.</p>
+      </description>
+    </release>
     <release version="6.3.0" date="2026-09-27">
       <description>
         <p>On the till's 1024x768 screen the whole interface came out a size too large, titles, buttons and sidebar alike, and the floor map and the dish grid got what was left. The main window now opens zoomed to fit, 90% on that till, and the floor map keeps its size when the room is being edited. The Products tab of the Menu filters by category. No database migration.</p>
