@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.5.1" date="2026-09-29">
+      <description>
+        <p>A discount on the check is usually a round figure, "it's 53.40, call it 50", and it had to be worked out by hand and typed as an amount. The discount window now opens on New total: type what the table pays, or tap one of the round figures it offers, and the discount is worked out for you and printed on the pre-bill as before. Each way to discount is switched on or off on its own in the settings, and a discount can now be taken off. One database migration: v99 turns the old discount mode into the list of methods switched on.</p>
+      </description>
+    </release>
     <release version="6.5.0" date="2026-09-29">
       <description>
         <p>On the till's screen a booked table only turned orange: it now says who it is held for and how many are coming, at every size. A booking that asks for another table moves from the table's own card, and the booking sheet has a way back to the floor. Joined tables and the small table size are gone: a large party is seated by changing the map, and a two-top is drawn medium. Two database migrations: v97 breaks up any joined tables and drops the column, v98 makes small tables medium, those of saved floor plans included.</p>

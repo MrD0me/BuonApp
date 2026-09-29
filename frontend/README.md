@@ -10,7 +10,7 @@ BuonApp UI is the user interface for the BuonApp point-of-sale system. It runs a
 - Fast order entry with product search, categories, and a cart
 - Dine-in, counter, takeaway, and delivery order types
 - Held orders shared across devices
-- Per-item and per-order discounts, with manager PIN overrides for voids
+- Per-item and per-order discounts, an order discount given as a new total too, with manager PIN overrides for voids
 - One bill per order, payable with more than one method
 
 ### Tables

@@ -4,6 +4,28 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.5.1] - 2026-09-29
+
+A discount on the check is usually a round figure, "it's 53.40, call it 50",
+and it had to be worked out by hand and typed as an amount. The discount window
+now opens on New total: type what the table pays, or tap one of the round
+figures it offers, and the discount is worked out for you and printed on the
+pre-bill as before. Each way to discount is switched on or off on its own in
+the settings, and a discount can now be taken off. One database migration: v99
+turns the old discount mode into the list of methods switched on.
+
+### Added
+
+- **A discount can be given as the new total.** The window's first button, and the one it opens on, is *New total*: the total the table pays, cover included. The server works out the discount that gets there against the order as it stands inside the transaction, so a coffee a handheld adds while the window is open moves the discount, never the total that was typed. It is worked from the check without any discount, so rounding a second time replaces the first rounding. The total cannot go below the cover and the other charges, since a discount only comes off the food, and it has to go below what the check says now. The euro limit and the manager PIN apply as they do to an amount. The pre-bill prints the usual *Sconto* line, the figure keyed into the till. `PATCH /api/orders/:id/discount` takes `{ discount_type: "total", target_total }`; the order keeps `discount_type: "total"` and, as `discount_value`, the euros the discount came to.
+- **Round figures ready to tap.** Under the total without discount the window offers up to three figures just below it: the cents dropped, down to the five and down to the ten. On 53.40 they are 53.00 and 50.00. Only figures below the check and not below the cover are offered.
+- **A discount can be taken off.** The window had no way to remove a discount given by mistake; *Remove discount* now sits at its foot whenever the order has one.
+
+### Changed
+
+- **Each way to discount is switched on on its own (migration v99).** Settings → Discounts has three switches, *New total*, *Percentage* and *Flat amount*, instead of the drop-down between both, percentage only and flat only. The last one on cannot be switched off. The maximum percentage shows with the percentage, and the maximum amount with the flat amount or the new total, and applies to both. The migration keeps what the old choice allowed and switches the new total on everywhere: percentage only becomes new total and percentage, the factory setting; flat only becomes new total and flat amount; both becomes all three. `GET` and `PUT /api/settings/discount` answer and take `discount_methods`, a list in button order, instead of `discount_mode`. Prepaid checkout keeps percentage and flat amount, whichever of the two is on.
+- **The discount window.** It opens on the first method switched on and hides the selector when only one is. The value accepts a comma, as the row price does. It closes with the X, Escape or a tap outside, and has no *Cancel* at its foot: at 1024x690 three buttons there did not fit.
+- **A discount in euros stays what was agreed when the check changes.** Correcting a row's price scaled the order's discount with the subtotal, euros included, so the discount of "call it 50" changed at every correction. Every place that adds a check up again now uses one rule: a percentage is worked out again on the food, a discount in euros, an amount or a new total, stays what was agreed, never more than the food left on the check, and comes back up if the food does.
+
 ## [6.5.0] - 2026-09-29
 
 On the till's screen a booked table only turned orange: it now says who it is
