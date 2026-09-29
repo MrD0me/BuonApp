@@ -13,10 +13,9 @@ import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { roundMoney } from '@/lib/utils';
 import {
-  defaultDiscountTypeForMode,
-  isDiscountTypeAllowed,
-  normalizeDiscountMode,
-  type DiscountMode,
+  DEFAULT_DISCOUNT_METHODS,
+  normalizeDiscountMethods,
+  type DiscountMethods,
   type DiscountType,
 } from '@/lib/discount-settings';
 
@@ -92,7 +91,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const [discountType, setDiscountType] = useState<DiscountType>('percentage');
   const [discountValue, setDiscountValue] = useState('');
   const [discountReason, setDiscountReason] = useState('');
-  const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
+  const [discountMethods, setDiscountMethods] = useState<DiscountMethods>(DEFAULT_DISCOUNT_METHODS);
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
 
@@ -113,8 +112,12 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   // auto-rescaling payment splits (e.g. on discount edits) so we don't clobber their entry.
   const [paymentsTouched, setPaymentsTouched] = useState(false);
 
-  if (!isDiscountTypeAllowed(discountMode, discountType)) {
-    setDiscountType(defaultDiscountTypeForMode(discountMode));
+  // The new total is a way to round a table's check, and this is the counter
+  // paying before it eats: here the discount is a percentage or an amount,
+  // whichever of the two the house has switched on — or none at all.
+  const prepaidTypes: DiscountType[] = discountMethods.filter((type) => type !== 'total');
+  if (prepaidTypes.length > 0 && !prepaidTypes.includes(discountType)) {
+    setDiscountType(prepaidTypes[0]);
     setDiscountValue('');
     setDiscountReason('');
     setDiscountPin('');
@@ -127,7 +130,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       .catch(() => {});
     api.get('/settings/discount')
       .then((res) => {
-        setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
+        setDiscountMethods(normalizeDiscountMethods(res.data.discount_methods));
         setDiscountRequiresApproval(!!res.data.discount_requires_approval);
       })
       .catch(() => {});
@@ -264,7 +267,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       toast.error(t('managerPinRequired'));
       return;
     }
-    if (preview.discountAmount > 0 && !isDiscountTypeAllowed(discountMode, discountType)) {
+    if (preview.discountAmount > 0 && !prepaidTypes.includes(discountType)) {
       toast.error(t('discountInvalid'));
       return;
     }
@@ -367,80 +370,82 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
           )}
 
           {/* Discount */}
-          <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <button type="button" onClick={() => setDiscountOpen((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 text-start">
-              <span className="text-sm font-medium text-gray-700">
-                {preview?.discountAmount ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}` : t('applyDiscount')}
-              </span>
-              <ChevronDown size={16} className={`text-gray-400 transition-transform ${discountOpen ? 'rotate-180' : ''}`} />
-            </button>
+          {prepaidTypes.length > 0 && (
+            <div className="rounded-xl border border-gray-200 overflow-hidden">
+              <button type="button" onClick={() => setDiscountOpen((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 text-start">
+                <span className="text-sm font-medium text-gray-700">
+                  {preview?.discountAmount ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}` : t('applyDiscount')}
+                </span>
+                <ChevronDown size={16} className={`text-gray-400 transition-transform ${discountOpen ? 'rotate-180' : ''}`} />
+              </button>
 
-            {discountOpen && (
-              <div className="bg-purple-50 border-t border-purple-200 p-3 space-y-2">
-                <div className="flex rounded-lg overflow-hidden border border-purple-200">
-                  {isDiscountTypeAllowed(discountMode, 'percentage') && (
-                    <button
-                      onClick={() => setDiscountType('percentage')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                    >
-                      <Percent size={14} />
-                      {t('percentage')}
-                    </button>
-                  )}
-                  {isDiscountTypeAllowed(discountMode, 'amount') && (
-                    <button
-                      onClick={() => setDiscountType('amount')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                    >
-                      {t('flatAmount')}
-                    </button>
-                  )}
-                </div>
-                <div className="relative">
-                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                    {discountType === 'percentage' ? '%' : inputCurrencyLabel}
-                  </span>
+              {discountOpen && (
+                <div className="bg-purple-50 border-t border-purple-200 p-3 space-y-2">
+                  <div className="flex rounded-lg overflow-hidden border border-purple-200">
+                    {prepaidTypes.includes('percentage') && (
+                      <button
+                        onClick={() => setDiscountType('percentage')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                      >
+                        <Percent size={14} />
+                        {t('percentage')}
+                      </button>
+                    )}
+                    {prepaidTypes.includes('amount') && (
+                      <button
+                        onClick={() => setDiscountType('amount')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                      >
+                        {t('flatAmount')}
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      {discountType === 'percentage' ? '%' : inputCurrencyLabel}
+                    </span>
+                    <input
+                      type="number"
+                      value={discountValue}
+                      onChange={(e) => setDiscountValue(e.target.value)}
+                      placeholder={discountType === 'percentage' ? '0' : '0.00'}
+                      min="0"
+                      max={discountType === 'percentage' ? 100 : (preview ? toDisplayUnit(preview.subtotal) : undefined)}
+                      step={discountType === 'percentage' ? 1 : inputCurrencyStep}
+                      className="w-full ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+                    />
+                  </div>
                   <input
-                    type="number"
-                    value={discountValue}
-                    onChange={(e) => setDiscountValue(e.target.value)}
-                    placeholder={discountType === 'percentage' ? '0' : '0.00'}
-                    min="0"
-                    max={discountType === 'percentage' ? 100 : (preview ? toDisplayUnit(preview.subtotal) : undefined)}
-                    step={discountType === 'percentage' ? 1 : inputCurrencyStep}
-                    className="w-full ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
-                  />
-                </div>
-                <input
-                  type="text"
-                  value={discountReason}
-                  onChange={(e) => setDiscountReason(e.target.value)}
-                  placeholder={t('discountReasonPlaceholder')}
-                  className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
-                />
-                {discountRequiresApproval && parseFloat(discountValue) > 0 && (
-                  <input
-                    type="password"
-                    value={discountPin}
-                    onChange={(e) => setDiscountPin(e.target.value)}
-                    placeholder={t('managerPin')}
-                    maxLength={6}
+                    type="text"
+                    value={discountReason}
+                    onChange={(e) => setDiscountReason(e.target.value)}
+                    placeholder={t('discountReasonPlaceholder')}
                     className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
                   />
-                )}
-                {discountValue && (
-                  <Button variant="outline" size="sm" className="w-full" onClick={() => {
-                    setDiscountValue('');
-                    setDiscountReason('');
-                    setDiscountPin('');
-                    setPaymentsTouched(false);
-                  }}>
-                    {t('remove')}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+                  {discountRequiresApproval && parseFloat(discountValue) > 0 && (
+                    <input
+                      type="password"
+                      value={discountPin}
+                      onChange={(e) => setDiscountPin(e.target.value)}
+                      placeholder={t('managerPin')}
+                      maxLength={6}
+                      className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+                    />
+                  )}
+                  {discountValue && (
+                    <Button variant="outline" size="sm" className="w-full" onClick={() => {
+                      setDiscountValue('');
+                      setDiscountReason('');
+                      setDiscountPin('');
+                      setPaymentsTouched(false);
+                    }}>
+                      {t('remove')}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Every method has one compact amount row; clicking its label fills the unallocated balance. */}
           <div className="space-y-2">

@@ -16,7 +16,7 @@ import { OrderPanel } from '@/components/orders/OrderPanel';
 import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
-import type { DiscountMode } from '@/lib/discount-settings';
+import type { DiscountMethods } from '@/lib/discount-settings';
 import { SidePanel, SidePanelBody, SidePanelDescription, SidePanelFooter, SidePanelHeader, SidePanelTitle } from '@/components/ui/side-panel';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -36,7 +36,7 @@ interface TableDetailModalProps {
   table: Table;
   room: Room | null;
   order: Order | null;
-  discountMode: DiscountMode;
+  discountMethods: DiscountMethods;
   discountRequiresApproval: boolean;
   onClose: () => void;
   onChanged: () => void;
@@ -47,7 +47,7 @@ interface TableDetailModalProps {
 }
 
 export function TableDetailModal({
-  table, room, order, discountMode, discountRequiresApproval,
+  table, room, order, discountMethods, discountRequiresApproval,
   onClose, onChanged, onEdit, onReserve, onMoveBooking,
 }: TableDetailModalProps) {
   const tTables = useTranslations('tables');
@@ -147,7 +147,7 @@ export function TableDetailModal({
         <OrderPanel
           order={order}
           onChanged={onChanged}
-          discountMode={discountMode}
+          discountMethods={discountMethods}
           discountRequiresApproval={discountRequiresApproval}
           extraMenu={(
             <DropdownMenuItem onClick={onEdit} disabled={saving}>

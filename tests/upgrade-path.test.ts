@@ -369,6 +369,31 @@ function main() {
   assert.equal(`${plan.tables[1].width}x${plan.tables[1].height}`, '190x120', 'and its larger tables are left as they are');
   assert.equal(runHealthCheck().findings.length, 0, 'and the schema still matches a fresh install');
   console.log('   ✓ v98 makes small tables medium, saved plans included');
+
+  // ── v99: discount methods switched on one by one ───────────────────────
+  // The old single choice becomes a list, the new total always on: a house
+  // that only gave discounts in euros keeps them and gains the new total.
+  const settingOf = (handle: typeof afterV98, key: string) =>
+    (handle.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+  const rewindToV98 = (mode: string | null) => {
+    const handle = getDatabase();
+    handle.prepare("DELETE FROM settings WHERE key IN ('discount_mode', 'discount_methods')").run();
+    if (mode !== null) {
+      handle.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('discount_mode', ?, datetime('now'))").run(mode);
+    }
+    handle.pragma('user_version = 98');
+    closeDatabase();
+    initDatabase();
+    return getDatabase();
+  };
+  assert.equal(settingOf(afterV98, 'discount_methods'), 'total,percentage', 'the percentage-only default becomes new total and percentage');
+  assert.equal(settingOf(afterV98, 'discount_mode'), undefined, 'and the old mode is gone');
+  for (const [mode, methods] of [['flat', 'total,amount'], ['both', 'total,percentage,amount'], [null, 'total,percentage']] as const) {
+    const afterV99 = rewindToV98(mode);
+    assert.equal(settingOf(afterV99, 'discount_methods'), methods, `discount mode ${mode ?? 'unset'} becomes ${methods}`);
+    assert.equal(settingOf(afterV99, 'discount_mode'), undefined, `and mode ${mode ?? 'unset'} is gone`);
+  }
+  console.log('   ✓ v99 turns the discount mode into switched-on methods');
   closeDatabase();
 
   console.log('='.repeat(60));

@@ -24,7 +24,7 @@ import { TableFormModal, DeleteTableModal } from '@/components/tables/TableFormM
 import { RoomFormModal, DeleteRoomModal } from '@/components/tables/RoomFormModal';
 import { TableDetailModal } from '@/components/tables/TableDetailModal';
 import { LayoutsModal } from '@/components/tables/LayoutsModal';
-import { normalizeDiscountMode, type DiscountMode } from '@/lib/discount-settings';
+import { DEFAULT_DISCOUNT_METHODS, normalizeDiscountMethods, type DiscountMethods } from '@/lib/discount-settings';
 
 /**
  * The dining room as a map (phase 2 of docs/table-management.md).
@@ -58,7 +58,7 @@ export default function TablesPage() {
   const [unassigned, setUnassigned] = useState<Reservation[]>([]);
   // The order panel in the table card offers discounts, and those follow the
   // tenant's rules: read them once here rather than per opened table.
-  const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
+  const [discountMethods, setDiscountMethods] = useState<DiscountMethods>(DEFAULT_DISCOUNT_METHODS);
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   // A booking waiting for a table to be tapped: picked up from the strip, or
   // lifted off the table it had with "Change table".
@@ -120,7 +120,7 @@ export default function TablesPage() {
   useEffect(() => {
     api.get('/settings/discount')
       .then((res) => {
-        setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
+        setDiscountMethods(normalizeDiscountMethods(res.data.discount_methods));
         setDiscountRequiresApproval(!!res.data.discount_requires_approval);
       })
       .catch(() => { /* the panel falls back to percentage-only */ });
@@ -368,7 +368,7 @@ export default function TablesPage() {
           order={ordersByTable.get(detailTable.id) ?? null}
           onClose={() => setDetailTable(null)}
           onChanged={reload}
-          discountMode={discountMode}
+          discountMethods={discountMethods}
           discountRequiresApproval={discountRequiresApproval}
           onEdit={() => { setTableForm({ table: detailTable }); setDetailTable(null); }}
           onReserve={() => { setReservingTable(detailTable); setDetailTable(null); }}

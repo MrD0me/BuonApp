@@ -987,7 +987,7 @@ async function main() {
     const flatGroup = rowsOf(flatId).find((row) => row.menu_role === 'package').menu_group_id;
     // The house has to allow discounts in euros before one can be given.
     const allowFlat = await api(baseUrl, '/api/settings/discount', {
-      method: 'PUT', headers: authHeader, body: { discount_mode: 'both' },
+      method: 'PUT', headers: authHeader, body: { discount_methods: ['total', 'percentage', 'amount'] },
     });
     assertEqual(allowFlat.status, 200, 'the house allows discounts in euros too');
     const orderDiscount = await api(baseUrl, `/api/orders/${flatId}/discount`, {

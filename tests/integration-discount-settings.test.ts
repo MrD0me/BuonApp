@@ -4,7 +4,7 @@
  * Verifies:
  * 1. GET /api/settings/discount returns defaults
  * 2. PUT /api/settings/discount validates and persists
- * 3. discount_mode enforcement (percentage/flat/both)
+ * 3. discount_methods — which ways to discount are switched on
  * 4. discount_requires_approval PIN gate
  *
  * Uses Electron runtime (via run-electron-node-test.cjs) because
@@ -119,7 +119,7 @@ async function seedTestData(db: any) {
   const settings = [
     ['discount_max_percentage', '25'],
     ['discount_max_amount', '0'],
-    ['discount_mode', 'percentage'],
+    ['discount_methods', 'total,percentage'],
     ['discount_requires_approval', '0'],
   ];
   for (const [key, value] of settings) {
@@ -196,7 +196,8 @@ async function main() {
       assertEqual(res.status, 200, 'returns 200');
       assertEqual(res.data.discount_max_percentage, 25, 'default max percentage is 25');
       assertEqual(res.data.discount_max_amount, 0, 'default max amount is no limit');
-      assertEqual(res.data.discount_mode, 'percentage', 'default mode is percentage');
+      assertEqual(JSON.stringify(res.data.discount_methods), '["total","percentage"]', 'new total and percentage are on by default');
+      assert(!('discount_mode' in res.data), 'the old mode is not answered any more');
       assertEqual(res.data.discount_requires_approval, false, 'default approval is false');
     }
 
@@ -208,14 +209,14 @@ async function main() {
         body: JSON.stringify({
           discount_max_percentage: 30,
           discount_max_amount: 200,
-          discount_mode: 'flat',
+          discount_methods: ['amount', 'total', 'amount'],
           discount_requires_approval: true,
         }),
       });
       assertEqual(res.status, 200, 'returns 200');
       assertEqual(res.data.discount_max_percentage, 30, 'max percentage updated to 30');
       assertEqual(res.data.discount_max_amount, 200, 'max amount updated to 200');
-      assertEqual(res.data.discount_mode, 'flat', 'mode updated to flat');
+      assertEqual(JSON.stringify(res.data.discount_methods), '["total","amount"]', 'methods saved in button order, without repeats');
       assertEqual(res.data.discount_requires_approval, true, 'approval enabled');
     }
 
@@ -237,9 +238,21 @@ async function main() {
 
       const res3 = await request(baseUrl, '/api/settings/discount', {
         method: 'PUT',
-        body: JSON.stringify({ discount_mode: 'invalid' }),
+        body: JSON.stringify({ discount_methods: ['total', 'invalid'] }),
       });
-      assertEqual(res3.status, 400, 'rejects invalid mode');
+      assertEqual(res3.status, 400, 'rejects a method that does not exist');
+
+      const res4 = await request(baseUrl, '/api/settings/discount', {
+        method: 'PUT',
+        body: JSON.stringify({ discount_methods: [] }),
+      });
+      assertEqual(res4.status, 400, 'rejects switching every method off');
+
+      const res5 = await request(baseUrl, '/api/settings/discount', {
+        method: 'PUT',
+        body: JSON.stringify({ discount_methods: 'total' }),
+      });
+      assertEqual(res5.status, 400, 'rejects a list that is not a list');
     }
 
     // ── Test 4: GET after PUT — values persisted ──
@@ -249,6 +262,7 @@ async function main() {
       assertEqual(res.status, 200, 'returns 200');
       assertEqual(res.data.discount_max_percentage, 30, 'max percentage is 30');
       assertEqual(res.data.discount_max_amount, 200, 'max amount is 200');
+      assertEqual(JSON.stringify(res.data.discount_methods), '["total","amount"]', 'the refused writes left the methods alone');
     }
 
     // Reset for next tests
@@ -257,7 +271,7 @@ async function main() {
       body: JSON.stringify({
         discount_max_percentage: 25,
         discount_max_amount: 0,
-        discount_mode: 'percentage',
+        discount_methods: ['total', 'percentage'],
         discount_requires_approval: false,
       }),
     });

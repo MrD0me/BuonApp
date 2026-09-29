@@ -18,6 +18,7 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { requireRole } from '../middleware/security';
 import { orderCharges, roundMoney } from '../money';
+import { enabledDiscountMethods } from '../services/discounts';
 
 const router = Router();
 
@@ -853,13 +854,9 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
       }
     }
 
-    // Check discount mode
-    const discountMode = getSettingValue('discount_mode') || 'percentage';
-    if (discountMode === 'flat' && type === 'percentage') {
-      return res.status(400).json({ error: 'Percentage discounts are disabled' });
-    }
-    if (discountMode === 'percentage' && type === 'amount') {
-      return res.status(400).json({ error: 'Flat amount discounts are disabled' });
+    // Check the method is switched on
+    if (!enabledDiscountMethods().includes(type)) {
+      return res.status(400).json({ error: type === 'percentage' ? 'Percentage discounts are disabled' : 'Flat amount discounts are disabled' });
     }
 
     // Check against limits from settings (0 = no limit)

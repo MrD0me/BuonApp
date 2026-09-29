@@ -4753,6 +4753,32 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[DB] v98: small table size removed; ${rects + rounds} table(s) and ${plans} saved plan(s) made medium`);
     },
   },
+  {
+    version: 99,
+    name: 'discount_methods',
+    up: () => {
+      // The discount window gains a third way in — the new total, the one a
+      // table is usually told ("it's 53.40, call it 50") — and each way is
+      // switched on or off on its own, instead of the one choice between
+      // "percentage", "flat" and "both". The new total comes on everywhere,
+      // since it is the one the window opens on; the other two stay as the
+      // old choice had them. A literal list rather than an import of
+      // services/discounts, which reads settings through this module.
+      if (db.prepare(`SELECT 1 FROM settings WHERE key = 'discount_methods'`).get()) {
+        db.prepare(`DELETE FROM settings WHERE key = 'discount_mode'`).run();
+        return;
+      }
+      const row = db.prepare(`SELECT value FROM settings WHERE key = 'discount_mode'`).get() as { value: string } | undefined;
+      const methods = row?.value === 'flat'
+        ? 'total,amount'
+        : row?.value === 'both'
+          ? 'total,percentage,amount'
+          : 'total,percentage';
+      insertSettingIfMissing('discount_methods', methods);
+      db.prepare(`DELETE FROM settings WHERE key = 'discount_mode'`).run();
+      console.log(`[DB] v99: discount mode "${row?.value ?? 'unset'}" became methods ${methods}`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

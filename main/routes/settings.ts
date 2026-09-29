@@ -16,6 +16,12 @@ import {
   validateOrderTypes,
 } from '../lib/order-types';
 import { COVER_CHARGE_SETTING_KEY, parseCoverChargeAmount } from '../money';
+import {
+  DISCOUNT_METHODS_SETTING_KEY,
+  isDiscountMethod,
+  normalizeDiscountMethods,
+  parseDiscountMethods,
+} from '../services/discounts';
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -278,15 +284,19 @@ router.put('/loyalty', requireRole('owner', 'manager'), (req: Request, res: Resp
 
 // ─── Discount settings ──────────────────────────────────────────────────────
 
+/** What both discount routes answer with: the limits and which ways in are on. */
+function discountSettingsBody(s: Record<string, string>) {
+  return {
+    discount_max_percentage: parseFloat(s.discount_max_percentage || '25'),
+    discount_max_amount: parseFloat(s.discount_max_amount || '0'),
+    discount_methods: parseDiscountMethods(s[DISCOUNT_METHODS_SETTING_KEY]),
+    discount_requires_approval: s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
+  };
+}
+
 router.get('/discount', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
-    const s = getAllSettings(getDatabase());
-    res.json({
-      discount_max_percentage: parseFloat(s.discount_max_percentage || '25'),
-      discount_max_amount: parseFloat(s.discount_max_amount || '0'),
-      discount_mode: s.discount_mode || 'percentage',
-      discount_requires_approval: s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
-    });
+    res.json(discountSettingsBody(getAllSettings(getDatabase())));
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -298,7 +308,7 @@ router.put('/discount', requireRole('owner', 'manager'), (req: Request, res: Res
     const {
       discount_max_percentage,
       discount_max_amount,
-      discount_mode,
+      discount_methods,
       discount_requires_approval,
     } = req.body;
 
@@ -315,24 +325,26 @@ router.put('/discount', requireRole('owner', 'manager'), (req: Request, res: Res
         return res.status(400).json({ error: 'discount_max_amount must be a number between 0 and 999999' });
       }
     }
-    if (discount_mode !== undefined && !['percentage', 'flat', 'both'].includes(discount_mode)) {
-      return res.status(400).json({ error: 'discount_mode must be "percentage", "flat", or "both"' });
+    // At least one way to discount stays on, and nothing that is not one:
+    // a typo must not quietly switch every discount off.
+    if (discount_methods !== undefined && (
+      !Array.isArray(discount_methods)
+      || discount_methods.length === 0
+      || !discount_methods.every(isDiscountMethod)
+    )) {
+      return res.status(400).json({ error: 'discount_methods must be a non-empty list of "total", "percentage", "amount"' });
     }
 
     const db = getDatabase();
     upsertSettings(db, {
       discount_max_percentage,
       discount_max_amount,
-      discount_mode,
+      [DISCOUNT_METHODS_SETTING_KEY]: discount_methods === undefined
+        ? undefined
+        : normalizeDiscountMethods(discount_methods)!.join(','),
       discount_requires_approval: discount_requires_approval === true || discount_requires_approval === 'true' ? 'true' : 'false',
     });
-    const s = getAllSettings(db);
-    res.json({
-      discount_max_percentage: parseFloat(s.discount_max_percentage || '25'),
-      discount_max_amount: parseFloat(s.discount_max_amount || '0'),
-      discount_mode: s.discount_mode || 'percentage',
-      discount_requires_approval: s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
-    });
+    res.json(discountSettingsBody(getAllSettings(db)));
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

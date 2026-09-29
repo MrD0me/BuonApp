@@ -7,6 +7,9 @@
  * 3. PATCH /api/orders/:id/discount calculates discount and updates totals
  * 4. PATCH /api/orders/:id/items/:itemId/discount validates and updates item
  * 5. Returns 404 for missing order/item
+ * 6. A new total ("it's 53.40, call it 50") becomes the discount that gets
+ *    there, within the cover, the limits and the methods switched on, and
+ *    stays the agreed euros when a row price changes afterwards
  *
  * Uses Electron runtime (via run-electron-node-test.cjs) because
  * better-sqlite3 is built for Electron's Node ABI.
@@ -123,7 +126,8 @@ function isNativeAbiMismatch(error: any): boolean {
 // ── Expected discount settings ────────────────────────────────────────────────
 
 const EXPECTED_DISCOUNT_SETTINGS: Record<string, string> = {
-  discount_mode: 'percentage',
+  // v99 turned the old "percentage" mode into the new total plus percentage.
+  discount_methods: 'total,percentage',
   discount_requires_approval: '0',
   discount_max_percentage: '25',
   discount_max_amount: '0',
@@ -204,6 +208,8 @@ async function main() {
           assertEqual(row.value, expectedValue, `setting "${key}" has value "${expectedValue}"`);
         }
       }
+      const legacy = db.prepare(`SELECT value FROM settings WHERE key = 'discount_mode'`).get();
+      assert(legacy === undefined, 'the old discount_mode setting is gone');
     }
 
     // ── Test 2: Order-level percentage discount ──────────────────────────
@@ -228,7 +234,7 @@ async function main() {
     // the legacy flat-discount behavior checks below.
     {
       const db = getDatabase();
-      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('both', 'discount_mode');
+      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('total,percentage,amount', 'discount_methods');
       db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('100', 'discount_max_amount');
     }
 
@@ -394,6 +400,102 @@ async function main() {
         }),
       });
       assertEqual(res.status, 200, 'returns 200 (zero removes discount)');
+    }
+
+    // ── New total ─────────────────────────────────────────────────────────
+    // A table of four with a cover of 2.00 a head: 30.00 + 15.40 of food and
+    // 8.00 of cover make 53.40, and the table is told 50.
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('cover_charge_amount', '2', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(now());
+    db.prepare(
+      `INSERT INTO orders (order_number, table_id, type, status, guest_count, subtotal, tax_amount, cover_charge, total, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('ORD-DISC-TOT', null, 'dine_in', 'pending', 4, 45.4, 0, 8, 53.4, now(), now());
+    const tableOrderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-DISC-TOT') as any).id;
+    const insertRow = db.prepare(
+      `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    insertRow.run(tableOrderId, 'prod-disc', 'Pizza', 30, 1, 30, 0, 30, 'pending', now(), now());
+    insertRow.run(tableOrderId, 'prod-disc', 'Vino', 15.4, 1, 15.4, 0, 15.4, 'pending', now(), now());
+    const wineRowId = (db.prepare("SELECT id FROM order_items WHERE order_id = ? AND product_name = 'Vino'").get(tableOrderId) as any).id;
+    const setTotal = (body: Record<string, unknown>) => request(baseUrl, `/api/orders/${tableOrderId}/discount`, {
+      method: 'PATCH',
+      body: JSON.stringify({ discount_type: 'total', ...body }),
+    });
+
+    console.log('\n14. PATCH /api/orders/:id/discount — new total');
+    {
+      const res = await setTotal({ target_total: 50, discount_reason: 'Arrotondamento' });
+      assertEqual(res.status, 200, 'returns 200');
+      assertEqual(res.data.order.discount_type, 'total', 'discount_type is total');
+      assertEqual(res.data.order.discount_amount, 3.4, 'the discount is what gets to 50: 3.40');
+      assertEqual(res.data.order.discount_value, 3.4, 'and the euros are what is kept');
+      assertEqual(res.data.order.total, 50, 'total is 50');
+    }
+
+    console.log('\n15. A second rounding replaces the first');
+    {
+      const res = await setTotal({ target_total: 48 });
+      assertEqual(res.status, 200, 'returns 200');
+      assertEqual(res.data.order.discount_amount, 5.4, 'worked from 53.40, not from 50');
+      assertEqual(res.data.order.total, 48, 'total is 48');
+    }
+
+    console.log('\n16. What a new total refuses');
+    {
+      const belowCover = await setTotal({ target_total: 7 });
+      assertEqual(belowCover.status, 400, 'below the cover');
+      assertIncludes(belowCover.data.error, 'cover', 'error mentions the cover');
+      assertEqual((await setTotal({ target_total: 53.4 })).status, 400, 'the total as it already is');
+      assertEqual((await setTotal({ target_total: 60 })).status, 400, 'a total above the check');
+      assertEqual((await setTotal({ target_total: 'cinquanta' })).status, 400, 'a total that is not a number');
+      assertEqual((await setTotal({ target_total: -1 })).status, 400, 'a negative total');
+      assertEqual((await setTotal({})).status, 400, 'no total at all');
+
+      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('5', 'discount_max_amount');
+      const overLimit = await setTotal({ target_total: 40 });
+      assertEqual(overLimit.status, 400, 'a discount over the euro limit');
+      assertIncludes(overLimit.data.error, 'maximum', 'error mentions maximum');
+      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('100', 'discount_max_amount');
+
+      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('percentage,amount', 'discount_methods');
+      const switchedOff = await setTotal({ target_total: 45 });
+      assertEqual(switchedOff.status, 400, 'the method switched off');
+      assertIncludes(switchedOff.data.error, 'disabled', 'error says it is disabled');
+      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('total,percentage,amount', 'discount_methods');
+
+      const unchanged = db.prepare('SELECT discount_amount, total FROM orders WHERE id = ?').get(tableOrderId) as any;
+      assertEqual(unchanged.discount_amount, 5.4, 'a refusal leaves the agreed discount alone');
+      assertEqual(unchanged.total, 48, 'and the total');
+    }
+
+    console.log('\n17. The agreed euros survive a row price change');
+    {
+      const res = await request(baseUrl, `/api/orders/${tableOrderId}/items/${wineRowId}/price`, {
+        method: 'PATCH',
+        body: JSON.stringify({ unit_price: 10 }),
+      });
+      assertEqual(res.status, 200, 'the wine is repriced');
+      const order = db.prepare('SELECT subtotal, discount_amount, total FROM orders WHERE id = ?').get(tableOrderId) as any;
+      assertEqual(order.subtotal, 40, 'the food comes to 40');
+      assertEqual(order.discount_amount, 5.4, 'the discount is still 5.40, not scaled down');
+      assertEqual(order.total, 42.6, '40 - 5.40 + 8 of cover');
+    }
+
+    console.log('\n18. Zero takes a new-total discount off');
+    {
+      const res = await request(baseUrl, `/api/orders/${tableOrderId}/discount`, {
+        method: 'PATCH',
+        body: JSON.stringify({ discount_type: 'total', discount_value: 0 }),
+      });
+      assertEqual(res.status, 200, 'returns 200');
+      assertEqual(res.data.order.discount_amount, 0, 'no discount left');
+      assertEqual(res.data.order.discount_type, null, 'and no type');
+      assertEqual(res.data.order.total, 48, 'the check is back to 40 + 8');
     }
   } finally {
     server.close();
