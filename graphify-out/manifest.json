@@ -1464,10 +1464,10 @@
     "semantic_hash": "16aae07b8302770e23f6027b7f2f4ea4"
   },
   "main/printers/thermal.ts": {
-    "mtime": 1790443798.41567,
-    "seen": 1790455186.4067223,
-    "ast_hash": "00d9c83cdec8800323e87e784b6e8a97",
-    "semantic_hash": "00d9c83cdec8800323e87e784b6e8a97"
+    "mtime": 1790679417.5890455,
+    "seen": 1790680606.8792143,
+    "ast_hash": "65da61cb5f568244d4151240d6565df0",
+    "semantic_hash": "65da61cb5f568244d4151240d6565df0"
   },
   "main/routes/addon-groups.ts": {
     "mtime": 1788361662.4011936,
@@ -1590,10 +1590,10 @@
     "semantic_hash": "d2ceffd62ff2a55ee0b0c52f4844b0c8"
   },
   "main/routes/printers.ts": {
-    "mtime": 1789660338.8537755,
-    "seen": 1790455186.406734,
-    "ast_hash": "82e376510e68b569f1e4a38916b59b58",
-    "semantic_hash": "82e376510e68b569f1e4a38916b59b58"
+    "mtime": 1790679417.5890455,
+    "seen": 1790680606.8807123,
+    "ast_hash": "04bc627f70c7e0b046b862702117a932",
+    "semantic_hash": "04bc627f70c7e0b046b862702117a932"
   },
   "main/routes/products.ts": {
     "mtime": 1788529119.4460678,
@@ -1788,10 +1788,10 @@
     "semantic_hash": "b2789c6ef8bdc5a51ab639b3d4a34ae2"
   },
   "package.json": {
-    "mtime": 1790462869.3694856,
-    "seen": 1790463600.8443727,
-    "ast_hash": "ad201a50d82bf47f3b3653124af72abe",
-    "semantic_hash": "ad201a50d82bf47f3b3653124af72abe"
+    "mtime": 1790679417.5920682,
+    "seen": 1790680606.8830879,
+    "ast_hash": "3b1959edbb54c506350a6a68522f6b9f",
+    "semantic_hash": "3b1959edbb54c506350a6a68522f6b9f"
   },
   "scripts/afterPack.js": {
     "mtime": 1788361662.4226933,
@@ -2184,10 +2184,10 @@
     "semantic_hash": "3ca5ad2e939b548f286742eefaa2c354"
   },
   "tests/issue-134-station-routing.test.ts": {
-    "mtime": 1788361662.463204,
-    "seen": 1790455186.4067974,
-    "ast_hash": "55cd912904d7a259a193f3d9263e310e",
-    "semantic_hash": "55cd912904d7a259a193f3d9263e310e"
+    "mtime": 1790679417.5920682,
+    "seen": 1790680606.8880699,
+    "ast_hash": "f6ffd410e06a53dcc08f6724249af654",
+    "semantic_hash": "f6ffd410e06a53dcc08f6724249af654"
   },
   "tests/issue-137-barcode.test.ts": {
     "mtime": 1788361662.463204,
@@ -2526,10 +2526,10 @@
     "semantic_hash": "4e0c5ff5c7137326cd6b34a55de91898"
   },
   "tests/printer.test.ts": {
-    "mtime": 1790443798.4371004,
-    "seen": 1790455186.406833,
-    "ast_hash": "dd5e4bd1f219492c664a1d2344a19740",
-    "semantic_hash": "dd5e4bd1f219492c664a1d2344a19740"
+    "mtime": 1790679417.5920682,
+    "seen": 1790680606.8922787,
+    "ast_hash": "7bfcd1cbb2531f18bc5e4b13bbc521b3",
+    "semantic_hash": "7bfcd1cbb2531f18bc5e4b13bbc521b3"
   },
   "tests/product-images.test.ts": {
     "mtime": 1788361662.494456,
@@ -2886,10 +2886,10 @@
     "semantic_hash": "e37bede3da91c3a6ad37a29790e2b41f"
   },
   "CHANGELOG.md": {
-    "mtime": 1790462863.8381221,
-    "seen": 1790463600.8445168,
-    "ast_hash": "e297b4e3c417cb87766316679a9d9064",
-    "semantic_hash": "e297b4e3c417cb87766316679a9d9064"
+    "mtime": 1790679417.5833893,
+    "seen": 1790680606.8958795,
+    "ast_hash": "1c481b460588a67106354696c674d8df",
+    "semantic_hash": "1c481b460588a67106354696c674d8df"
   },
   "CLAUDE.md": {
     "mtime": 1788361662.1811635,
@@ -2934,10 +2934,10 @@
     "semantic_hash": "cea17df1ac3c4f3837d9f6887c773fc2"
   },
   "docs/coperto-e-menu-fisso.md": {
-    "mtime": 1790443798.3748624,
-    "seen": 1790455186.406872,
-    "ast_hash": "64bb4b33b5d3dcc87572b247b8d1c3d9",
-    "semantic_hash": "64bb4b33b5d3dcc87572b247b8d1c3d9"
+    "mtime": 1790679417.5890455,
+    "seen": 1790680606.8958805,
+    "ast_hash": "8f2cd2ca1656c1171cf0debe1a56c6fe",
+    "semantic_hash": "8f2cd2ca1656c1171cf0debe1a56c6fe"
   },
   "docs/google-drive-setup.md": {
     "mtime": 1788361662.2870934,
@@ -2970,10 +2970,10 @@
     "semantic_hash": "7a848ba1be1108c369993f3c87e4e968"
   },
   "docs/printers.md": {
-    "mtime": 1789927794.278804,
-    "seen": 1790455186.4068758,
-    "ast_hash": "49ea10852d8e4c879e758c70b77f22a2",
-    "semantic_hash": "49ea10852d8e4c879e758c70b77f22a2"
+    "mtime": 1790679417.5890455,
+    "seen": 1790680606.8958814,
+    "ast_hash": "57a8c3ebe982bc78557ef2b31b23be69",
+    "semantic_hash": "57a8c3ebe982bc78557ef2b31b23be69"
   },
   "docs/rifacimento-grafica.md": {
     "mtime": 1790462622.2527199,
