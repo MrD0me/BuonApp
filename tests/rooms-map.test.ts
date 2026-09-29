@@ -111,8 +111,10 @@ async function main() {
     const first = await createTable({ number: 'Tavolo 1', capacity: 2 });
     assertEqual(first.room_id, inside.id, 'a table with no room joins the first room');
     assertEqual(first.shape, 'rect', 'tables are rectangular unless told otherwise');
-    assertEqual(first.width, 110, 'a two-top is drawn small');
-    assertEqual(first.height, 110, 'a two-top is drawn small');
+    // Medium is the smallest size since v98: a table drawn smaller had no room
+    // on the till's screen for the booking written under its name.
+    assertEqual(first.width, 150, 'a two-top is drawn medium, like a four');
+    assertEqual(first.height, 110, 'a two-top is drawn medium, like a four');
     assert(first.position_x !== null && first.position_y !== null, 'the table was given a position');
 
     const big = await createTable({ number: 'Tavolata', capacity: 12, room_id: inside.id });

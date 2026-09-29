@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { Plus, Pencil, Trash2, Map as MapIcon, PenLine, LayoutGrid, CalendarCheck } from 'lucide-react';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import { SegmentedControl } from '@/components/ui/segmented-control';
+import { SegmentedControl, useScrollEdges, edgeFadeMask } from '@/components/ui/segmented-control';
 import { StatusDot } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ServiceDayChip } from '@/components/service-days/ServiceDayChip';
@@ -15,6 +15,8 @@ import { TABLE_STATUS_TONE } from '@/lib/status-styles';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n/enums';
 import type { Room, Table, Order, Reservation } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
+import { usePosSettingsStore } from '@/store/pos-settings';
+import { getLanguageDirection } from '@/lib/i18n';
 import { useTranslations } from 'use-intl';
 import { RoomMap } from '@/components/tables/RoomMap';
 import { ReserveModal } from '@/components/tables/ReserveModal';
@@ -127,6 +129,12 @@ export default function TablesPage() {
   // Derived rather than synced: no effect has to chase the room list.
   const activeRoom = rooms.find((room) => room.id === selectedRoomId) ?? rooms[0] ?? null;
   const activeTables = activeRoom?.tables ?? [];
+
+  const language = usePosSettingsStore((state) => state.language);
+  const bookingsWaiting = !editing && (unassigned.length > 0 || armedBooking !== null);
+  const { ref: waitingRef, edges: waitingEdges } = useScrollEdges(
+    bookingsWaiting, getLanguageDirection(language) === 'rtl', unassigned,
+  );
 
   const handleMove = async (table: Table, x: number, y: number) => {
     // Optimistic, so the tile stays under the finger; a failure reloads the truth.
@@ -243,43 +251,6 @@ export default function TablesPage() {
         />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-4">
-          {/* Also up while a booking is being moved off its table, which has no
-              chip here: the line says what the next tap does, and Cancel is
-              the way out of it. */}
-          {!editing && (unassigned.length > 0 || armedBooking) && (
-            <div className="rounded-2xl border border-table-reserved bg-table-reserved-soft p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-table-reserved">
-                  {armedBooking
-                    ? tTables(armedBooking.table_id ? 'pickNewTableFor' : 'pickTableFor', { name: armedBooking.name })
-                    : tTables('unassignedBookings', { count: unassigned.length })}
-                </p>
-                {armedBooking && (
-                  <Button type="button" variant="outline" size="touch" onClick={() => setArmedBooking(null)}>
-                    {tTables('cancel')}
-                  </Button>
-                )}
-              </div>
-              {unassigned.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {unassigned.map((booking) => (
-                    <button key={booking.id}
-                      type="button"
-                      aria-pressed={armedBooking?.id === booking.id}
-                      onClick={() => setArmedBooking(armedBooking?.id === booking.id ? null : booking)}
-                      className={`h-touch rounded-xl border-2 bg-card px-3 text-sm font-medium transition ${
-                        armedBooking?.id === booking.id
-                          ? 'border-brand text-brand'
-                          : 'border-table-reserved/40 text-foreground'
-                      }`}>
-                      {booking.booked_time ? `${booking.booked_time} · ` : ''}{booking.name} · {booking.guests}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <SegmentedControl
@@ -306,6 +277,41 @@ export default function TablesPage() {
                 beside the rooms rather than dropping to a line of its own. */}
             {editing ? (
               <p className="min-w-48 flex-1 basis-0 text-end text-sm text-muted-foreground">{tTables('editModeHint')}</p>
+            ) : bookingsWaiting ? (
+              /* Bookings still to seat take the legend's place rather than a
+                 band of their own over the map. The band cost the map 113 px
+                 on the till's screen exactly while bookings were being placed,
+                 and at that size no booked table had room for its name. One
+                 row that scrolls sideways, however many are waiting; also up
+                 while a booking is being moved off its table, which has no
+                 chip here, with Cancel as the way out. */
+              <div className="flex min-w-0 flex-1 basis-80 items-center gap-2 rounded-2xl border border-table-reserved bg-table-reserved-soft py-[3px] ps-3 pe-[3px]">
+                <p className="min-w-0 truncate text-sm font-semibold text-table-reserved">
+                  {armedBooking
+                    ? tTables(armedBooking.table_id ? 'pickNewTableFor' : 'pickTableFor', { name: armedBooking.name })
+                    : tTables('unassignedBookings', { count: unassigned.length })}
+                </p>
+                <div ref={waitingRef} style={edgeFadeMask(waitingEdges)} className="flex min-w-0 flex-1 basis-0 gap-2 overflow-x-auto [scrollbar-width:none]">
+                  {unassigned.map((booking) => (
+                    <button key={booking.id}
+                      type="button"
+                      aria-pressed={armedBooking?.id === booking.id}
+                      onClick={() => setArmedBooking(armedBooking?.id === booking.id ? null : booking)}
+                      className={`h-touch shrink-0 whitespace-nowrap rounded-xl border-2 bg-card px-3 text-sm font-medium transition ${
+                        armedBooking?.id === booking.id
+                          ? 'border-brand text-brand'
+                          : 'border-table-reserved/40 text-foreground'
+                      }`}>
+                      {booking.name} · {booking.guests}
+                    </button>
+                  ))}
+                </div>
+                {armedBooking && (
+                  <Button type="button" variant="outline" size="touch" className="shrink-0" onClick={() => setArmedBooking(null)}>
+                    {tTables('cancel')}
+                  </Button>
+                )}
+              </div>
             ) : (
               // What the colours mean, once, instead of a dot the eye has to decode.
               <div className="hidden flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground md:flex">

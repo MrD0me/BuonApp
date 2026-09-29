@@ -49,6 +49,16 @@ function useScrollEdges(enabled: boolean, rtl: boolean, items: unknown) {
 }
 
 /**
+ * The mask that fades a scrolling row out on each side that has more behind
+ * it, from `useScrollEdges`. A row that fits is left alone.
+ */
+function edgeFadeMask(edges: { left: boolean; right: boolean }): React.CSSProperties | undefined {
+  if (!edges.left && !edges.right) return undefined
+  const fade = `linear-gradient(to right, ${edges.left ? `transparent 0, #000 ${EDGE_FADE_PX}px` : "#000 0"}, ${edges.right ? `#000 calc(100% - ${EDGE_FADE_PX}px), transparent 100%` : "#000 100%"})`
+  return { maskImage: fade, WebkitMaskImage: fade }
+}
+
+/**
  * One choice among a few, all visible: the rooms of the floor, the filters of
  * the day, the wave a dish goes out in. Radix ToggleGroup in single mode,
  * which gives `aria-pressed` and arrow-key movement for free.
@@ -100,9 +110,6 @@ function SegmentedControl({
   // phone the categories past the edge are simply not there, and the floor
   // reports them missing. The fade appears only on a side that has something
   // behind it, so a row that fits is left alone.
-  const fade = edges.left || edges.right
-    ? `linear-gradient(to right, ${edges.left ? `transparent 0, #000 ${EDGE_FADE_PX}px` : "#000 0"}, ${edges.right ? `#000 calc(100% - ${EDGE_FADE_PX}px), transparent 100%` : "#000 100%"})`
-    : undefined
   return (
     <ToggleGroupPrimitive.Root
       ref={ref}
@@ -112,7 +119,7 @@ function SegmentedControl({
       dir={direction}
       data-slot="segmented-control"
       aria-label={props["aria-label"]}
-      style={fade ? { maskImage: fade, WebkitMaskImage: fade } : undefined}
+      style={edgeFadeMask(edges)}
       className={cn(
         "bg-muted flex gap-1 rounded-xl p-1",
         // By default the row sizes to its content and refuses to be squeezed
@@ -157,4 +164,4 @@ function SegmentedControl({
   )
 }
 
-export { SegmentedControl }
+export { SegmentedControl, useScrollEdges, edgeFadeMask }

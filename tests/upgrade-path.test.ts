@@ -336,6 +336,39 @@ function main() {
   assert.equal(statusOf('v97-lead'), 'occupied', 'the table leading the group keeps its party');
   assert.equal(runHealthCheck().findings.length, 0, 'and the schema matches a fresh install');
   console.log('   ✓ v97 breaks up a group still standing, without touching a parked cart');
+
+  // ── v98: the small table size is gone ──────────────────────────────────
+  // A table still small becomes medium, lying down or standing as it was, and
+  // so do the tables of a saved floor plan, which would otherwise bring one back.
+  const addSized = afterV97.prepare("INSERT INTO tables (id, number, capacity, status, shape, width, height) VALUES (?, ?, 2, 'available', ?, ?, ?)");
+  addSized.run('v98-square', 'V98 Quadrato', 'rect', 110, 110);
+  addSized.run('v98-narrow', 'V98 Stretto', 'rect', 100, 140);
+  addSized.run('v98-round', 'V98 Tondo', 'round', 110, 110);
+  addSized.run('v98-medium', 'V98 Medio', 'rect', 110, 150);
+  afterV97.prepare('INSERT INTO table_layouts (id, name, data) VALUES (?, ?, ?)').run('v98-plan', 'V98 Pianta', JSON.stringify({
+    rooms: [],
+    tables: [
+      { number: 'P1', capacity: 2, room: '', section: null, position_x: 0, position_y: 0, width: 110, height: 110, shape: 'rect' },
+      { number: 'P2', capacity: 6, room: '', section: null, position_x: 0, position_y: 0, width: 190, height: 120, shape: 'rect' },
+    ],
+  }));
+  afterV97.pragma('user_version = 97');
+  closeDatabase();
+  initDatabase();
+  const afterV98 = getDatabase();
+  const sizeOf = (id: string) => {
+    const row = afterV98.prepare('SELECT width, height FROM tables WHERE id = ?').get(id) as { width: number; height: number };
+    return `${row.width}x${row.height}`;
+  };
+  assert.equal(sizeOf('v98-square'), '150x110', 'a small table becomes medium, lying down');
+  assert.equal(sizeOf('v98-narrow'), '110x150', 'a small table standing up stays standing');
+  assert.equal(sizeOf('v98-round'), '140x140', 'a small round table becomes the medium round one');
+  assert.equal(sizeOf('v98-medium'), '110x150', 'a medium table is left as it is');
+  const plan = JSON.parse((afterV98.prepare("SELECT data FROM table_layouts WHERE id = 'v98-plan'").get() as { data: string }).data);
+  assert.equal(`${plan.tables[0].width}x${plan.tables[0].height}`, '150x110', 'a saved plan cannot bring a small table back');
+  assert.equal(`${plan.tables[1].width}x${plan.tables[1].height}`, '190x120', 'and its larger tables are left as they are');
+  assert.equal(runHealthCheck().findings.length, 0, 'and the schema still matches a fresh install');
+  console.log('   ✓ v98 makes small tables medium, saved plans included');
   closeDatabase();
 
   console.log('='.repeat(60));

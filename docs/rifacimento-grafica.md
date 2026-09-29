@@ -108,8 +108,10 @@ diceva «Sala».
 la chiude, in Sala in sola lettura. Ha preso il posto della scheda che occupava un quinto della
 pagina Giornata.
 
-**Sala.** Stanze come selettore, una legenda dei colori, tessere con banda di stato, etichetta
-scritta e badge «N da inviare». Il pannello del tavolo è un `SidePanel` largo 672 px (`max-w-2xl`):
+**Sala.** Stanze come selettore, una legenda dei colori (che lascia il posto alle prenotazioni da
+sistemare, quando ce ne sono), tessere con banda di stato, etichetta scritta e badge «N da inviare».
+Un tavolo prenotato scrive il nome della prenotazione e, sotto, persone su posti: vedi «On the
+till's screen» in `table-management.md`. Il pannello del tavolo è un `SidePanel` largo 672 px (`max-w-2xl`):
 su uno schermo largo la sala resta visibile accanto, a 1024 px ne resta una striscia sotto
 l'ombra — lì è una finestra, e vale la pena saperlo invece di prometterlo.
 

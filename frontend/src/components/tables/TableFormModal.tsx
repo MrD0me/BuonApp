@@ -15,20 +15,22 @@ import { useTranslations } from 'use-intl';
  * rearranged every day is no place to type pixel dimensions, and the presets
  * mirror the sizes the backend derives from seat count in
  * `main/lib/table-geometry.ts`.
+ *
+ * Medium is the smallest. A small size went with migration v98: fitted to the
+ * till's screen, a table that size had no room under its name for who it was
+ * booked by and how many were coming.
  */
 
-type SizeKey = 'small' | 'medium' | 'large' | 'banquet';
+type SizeKey = 'medium' | 'large' | 'banquet';
 
 const SIZE_PRESETS: Record<SizeKey, { rect: [number, number]; round: number }> = {
-  small: { rect: [110, 110], round: 110 },
   medium: { rect: [150, 110], round: 140 },
   large: { rect: [190, 120], round: 170 },
   banquet: { rect: [280, 150], round: 200 },
 };
-const SIZE_KEYS: SizeKey[] = ['small', 'medium', 'large', 'banquet'];
+const SIZE_KEYS: SizeKey[] = ['medium', 'large', 'banquet'];
 
 const SIZE_LABEL_KEYS = {
-  small: 'sizeSmall',
   medium: 'sizeMedium',
   large: 'sizeLarge',
   banquet: 'sizeBanquet',
@@ -75,7 +77,6 @@ function sizeOf(table: Table | null): SizeKey {
 
 /** The preset that suits a seat count, so a table of ten is not drawn as a two-top. */
 function sizeForCapacity(seats: number): SizeKey {
-  if (seats <= 2) return 'small';
   if (seats <= 4) return 'medium';
   if (seats <= 8) return 'large';
   return 'banquet';
@@ -215,7 +216,7 @@ export function TableFormModal({ table, rooms, defaultRoomId, onClose, onSaved, 
 
           <div>
             <span className="block text-sm font-medium text-gray-700 mb-1">{tTables('size')}</span>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {SIZE_KEYS.map((key) => (
                 <button key={key} type="button" onClick={() => setForm({ ...form, size: key })}
                   className={`px-1 py-2 text-xs rounded-lg border-2 transition-colors ${
