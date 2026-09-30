@@ -1031,7 +1031,7 @@ Apply discount to a bill (owner/manager only).
 **Validations:**
 - `type`: must be `"percentage"` or `"amount"`
 - `value`: must be positive; cannot exceed store limits (`discount_max_percentage`, `discount_max_amount`)
-- `discount_mode` setting is checked — restricts which discount types are allowed
+- The type must be switched on in `discount_methods`; the new total (`"total"`) is not offered here, only on `PATCH /api/orders/:id/discount`
 - If `discount_requires_approval` is true, `override_pin` is required
 - Updates both bill and order in a transaction
 
