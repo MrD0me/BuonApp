@@ -46,4 +46,5 @@ cover charge with fixed menus — shipped in 5.0.0 and moved up to the table abo
 ## Other repository assets
 
 - [social-preview.html](social-preview.html): HTML template used to render Open Graph preview card graphics.
-- `images/buonapp-pos.webp`: Screenshot of the BuonApp point-of-sale interface used in `README.md`.
+- `images/buonapp-mark.png`: The BuonApp mark, used by `social-preview.html`.
+- `images/sala.webp`, `tavolo.webp`, `ordina.webp`, `prenotazioni.webp`, `giornata.webp`, `palmare.webp`, `comanda.webp`: Screenshots used in `README.md`, taken from a test database with the interface in Italian. `sala.webp` is also the screenshot in the Linux AppStream metadata.
