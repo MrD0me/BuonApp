@@ -10,6 +10,13 @@ import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, CloudOff, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown, ShoppingBag } from 'lucide-react';
 import { StaffSettings } from '@/components/settings/StaffSettings';
 import {
+  DEFAULT_DISCOUNT_METHODS,
+  DISCOUNT_TYPES,
+  normalizeDiscountMethods,
+  type DiscountMethods,
+  type DiscountType,
+} from '@/lib/discount-settings';
+import {
   ORDER_TYPES_SETTING_KEY,
   parseOrderTypes,
   SELECTABLE_ORDER_TYPES,
@@ -127,6 +134,14 @@ const ORDER_TYPE_SETTING_LABELS = {
   takeaway: 'orderTypeTakeaway',
   delivery: 'orderTypeDelivery',
 } as const satisfies Record<SelectableOrderType, keyof AppConfig['Messages']['pos']>;
+
+// The ways to discount a check, one switch each, in the order the discount
+// window draws its buttons.
+const DISCOUNT_METHOD_ROWS: { type: DiscountType; labelKey: SettingsKey; hintKey: SettingsKey }[] = [
+  { type: 'total', labelKey: 'discountMethodTotal', hintKey: 'discountMethodTotalHint' },
+  { type: 'percentage', labelKey: 'discountMethodPercentage', hintKey: 'discountMethodPercentageHint' },
+  { type: 'amount', labelKey: 'discountMethodAmount', hintKey: 'discountMethodAmountHint' },
+];
 
 type InvoiceResetPeriod = 'never' | 'daily' | 'monthly' | 'financial_year';
 
@@ -312,8 +327,13 @@ export default function SettingsPage() {
   const [savedDiscountMaxPct, setSavedDiscountMaxPct] = useState(25);
   const [discountMaxAmount, setDiscountMaxAmount] = useState(0);
   const [savedDiscountMaxAmount, setSavedDiscountMaxAmount] = useState(0);
-  const [discountMode, setDiscountMode] = useState('percentage');
-  const [savedDiscountMode, setSavedDiscountMode] = useState('percentage');
+  const [discountMethods, setDiscountMethods] = useState<DiscountMethods>(DEFAULT_DISCOUNT_METHODS);
+  const [savedDiscountMethods, setSavedDiscountMethods] = useState<DiscountMethods>(DEFAULT_DISCOUNT_METHODS);
+  // One way in always stays on: the switch of the last one does nothing.
+  const toggleDiscountMethod = (type: DiscountType) => setDiscountMethods((current) => {
+    if (current.includes(type)) return current.length > 1 ? current.filter((method) => method !== type) : current;
+    return DISCOUNT_TYPES.filter((method) => method === type || current.includes(method));
+  });
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [savedDiscountRequiresApproval, setSavedDiscountRequiresApproval] = useState(false);
   const [savingDiscount, setSavingDiscount] = useState(false);
@@ -1200,7 +1220,11 @@ export default function SettingsPage() {
         setDiscountMaxAmount(value);
         setSavedDiscountMaxAmount(value);
       }
-      if (discountRes.data.discount_mode) { setDiscountMode(discountRes.data.discount_mode); setSavedDiscountMode(discountRes.data.discount_mode); }
+      if (discountRes.data.discount_methods) {
+        const methods = normalizeDiscountMethods(discountRes.data.discount_methods);
+        setDiscountMethods(methods);
+        setSavedDiscountMethods(methods);
+      }
       if (discountRes.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); }
 
       const loadedOrderNumbering: OrderNumberForm = {
@@ -1276,7 +1300,11 @@ export default function SettingsPage() {
         setDiscountMaxAmount(value);
         setSavedDiscountMaxAmount(value);
       }
-      if (res.data.discount_mode) { setDiscountMode(res.data.discount_mode); setSavedDiscountMode(res.data.discount_mode); }
+      if (res.data.discount_methods) {
+        const methods = normalizeDiscountMethods(res.data.discount_methods);
+        setDiscountMethods(methods);
+        setSavedDiscountMethods(methods);
+      }
       if (res.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!res.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!res.data.discount_requires_approval); }
     }).catch(() => {});
 
@@ -1672,12 +1700,12 @@ export default function SettingsPage() {
       await api.put('/settings/discount', {
         discount_max_percentage: normalizeDiscountPercentage(discountMaxPct),
         discount_max_amount: normalizeDiscountAmount(discountMaxAmount),
-        discount_mode: discountMode,
+        discount_methods: discountMethods,
         discount_requires_approval: discountRequiresApproval,
       });
       setSavedDiscountMaxPct(normalizeDiscountPercentage(discountMaxPct));
       setSavedDiscountMaxAmount(normalizeDiscountAmount(discountMaxAmount));
-      setSavedDiscountMode(discountMode);
+      setSavedDiscountMethods(discountMethods);
       setSavedDiscountRequiresApproval(discountRequiresApproval);
       if (!silent) toast.success(t('discountSaved'));
     } catch (err) {
@@ -1813,7 +1841,7 @@ export default function SettingsPage() {
     globalCashbackPercent !== savedGlobalCashbackPercent ||
     discountMaxPct !== savedDiscountMaxPct ||
     discountMaxAmount !== savedDiscountMaxAmount ||
-    discountMode !== savedDiscountMode ||
+    discountMethods.join(',') !== savedDiscountMethods.join(',') ||
     discountRequiresApproval !== savedDiscountRequiresApproval;
 
   useEffect(() => {
@@ -2953,20 +2981,42 @@ export default function SettingsPage() {
                 <h2 className="font-semibold text-gray-900">{t('discountLimits')}</h2>
               </div>
               <div className="space-y-5">
-                {/* Discount mode */}
+                {/* Which ways to discount the check are offered */}
                 <div>
-                  <p className="font-medium text-gray-900">{t('discountMode')}</p>
-                  <p className="text-sm text-gray-500 mb-2">{t('discountModeHint')}</p>
-                  <select value={discountMode}
-                    onChange={(e) => setDiscountMode(e.target.value)}
-                    className="w-48 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand bg-white">
-                    <option value="both">{t('discountBoth')}</option>
-                    <option value="percentage">{t('discountPercentageOnly')}</option>
-                    <option value="flat">{t('discountFlatOnly')}</option>
-                  </select>
+                  <p className="font-medium text-gray-900">{t('discountMethods')}</p>
+                  <p className="text-sm text-gray-500 mb-3">{t('discountMethodsHint')}</p>
+                  <div className="space-y-3">
+                    {DISCOUNT_METHOD_ROWS.map(({ type, labelKey, hintKey }) => {
+                      const on = discountMethods.includes(type);
+                      const lastOne = on && discountMethods.length === 1;
+                      return (
+                        <div key={type} className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{t(labelKey)}</p>
+                            <p className="text-sm text-gray-500">{lastOne ? t('discountMethodsLastOne') : t(hintKey)}</p>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={on}
+                            aria-label={t(labelKey)}
+                            disabled={lastOne}
+                            onClick={() => toggleDiscountMethod(type)}
+                            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
+                              on ? 'bg-brand' : 'bg-gray-200'
+                            }`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              on ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
+                            }`} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                {(discountMode === 'percentage' || discountMode === 'both') && (
+                {discountMethods.includes('percentage') && (
                   <div>
                     <p className="font-medium text-gray-900">{t('maxDiscountPercentage')}</p>
                     <p className="text-sm text-gray-500 mb-2">{t('maxDiscountPercentageHint')}</p>
@@ -2979,7 +3029,7 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                {(discountMode === 'flat' || discountMode === 'both') && (
+                {(discountMethods.includes('amount') || discountMethods.includes('total')) && (
                   <div>
                     <p className="font-medium text-gray-900">{t('maxDiscountAmount')}</p>
                     <p className="text-sm text-gray-500 mb-2">{t('maxDiscountAmountHint')}</p>

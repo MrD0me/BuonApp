@@ -19,8 +19,9 @@ import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { OrderPanel, paymentStatusOf } from '@/components/orders/OrderPanel';
 import { OrderListRow } from '@/components/orders/OrderListRow';
 import {
-  normalizeDiscountMode,
-  type DiscountMode,
+  DEFAULT_DISCOUNT_METHODS,
+  normalizeDiscountMethods,
+  type DiscountMethods,
 } from '@/lib/discount-settings';
 import {
   clearAppendAttempt,
@@ -91,7 +92,7 @@ export default function OrdersPage() {
   // Consolidated filter state
   const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '', status: '' });
 
-  const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
+  const [discountMethods, setDiscountMethods] = useState<DiscountMethods>(DEFAULT_DISCOUNT_METHODS);
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
 
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
@@ -180,7 +181,7 @@ export default function OrdersPage() {
 
       api.get('/settings/discount')
         .then((res) => {
-          setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
+          setDiscountMethods(normalizeDiscountMethods(res.data.discount_methods));
           setDiscountRequiresApproval(!!res.data.discount_requires_approval);
         })
         .catch(() => {});
@@ -476,7 +477,7 @@ export default function OrdersPage() {
           <OrderPanel
             order={openOrder}
             onChanged={fetchOrders}
-            discountMode={discountMode}
+            discountMethods={discountMethods}
             discountRequiresApproval={discountRequiresApproval}
             nowMs={now}
           />

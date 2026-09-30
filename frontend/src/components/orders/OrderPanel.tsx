@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { RotateCcw, MessageCircle, Printer, XCircle, Percent, Banknote, Plus, Users, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Download } from 'lucide-react';
+import { RotateCcw, MessageCircle, Printer, XCircle, Percent, Plus, Users, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
@@ -41,12 +41,8 @@ import { LineActionSheet } from '@/components/orders/LineActionSheet';
 import { OrderTotals } from '@/components/orders/OrderTotals';
 import { OrderActionBar } from '@/components/orders/OrderActionBar';
 import FixedMenuPicker from '@/components/pos/FixedMenuPicker';
-import {
-  defaultDiscountTypeForMode,
-  isDiscountTypeAllowed,
-  type DiscountMode,
-  type DiscountType,
-} from '@/lib/discount-settings';
+import { OrderDiscountModal } from '@/components/orders/OrderDiscountModal';
+import type { DiscountMethods } from '@/lib/discount-settings';
 
 /**
  * One order, everything that can be done to it.
@@ -98,13 +94,6 @@ interface RowEdit {
   overridePin: string;
 }
 
-interface DiscountModal {
-  order: Order;
-  type: DiscountType;
-  value: number;
-  reason: string;
-}
-
 export const isOrderPaid = (order: Order) => order.bill?.payment_status === 'paid';
 
 /** Null for a cancelled order: nothing is owed on something that never ran. */
@@ -120,7 +109,8 @@ interface OrderPanelProps {
   /** Refetch whatever list or screen holds this order: it just changed. */
   /** Reloads the order. Returns a promise where the caller has one, so a write can wait for it. */
   onChanged: () => void | Promise<unknown>;
-  discountMode: DiscountMode;
+  /** The ways to discount the check that are switched on, in button order. */
+  discountMethods: DiscountMethods;
   discountRequiresApproval: boolean;
   /**
    * Shared clock for the "12m ago" line. A list passes one ticking value so N
@@ -133,7 +123,7 @@ interface OrderPanelProps {
 }
 
 export function OrderPanel({
-  order, onChanged, discountMode, discountRequiresApproval, nowMs, extraMenu,
+  order, onChanged, discountMethods, discountRequiresApproval, nowMs, extraMenu,
 }: OrderPanelProps) {
   const { currentTenant } = useAuthStore();
   const { printBill } = usePrinterStore();
@@ -185,8 +175,7 @@ export function OrderPanel({
   const [voidItemModal, setVoidItemModal] = useState<VoidItemModal | null>(null);
   const [voidingItem, setVoidingItem] = useState(false);
 
-  const [discountModal, setDiscountModal] = useState<DiscountModal | null>(null);
-  const [discountPin, setDiscountPin] = useState('');
+  const [discountOpen, setDiscountOpen] = useState(false);
 
   const [generatingBill, setGeneratingBill] = useState<number | null>(null);
   const [printingBillId, setPrintingBillId] = useState<number | null>(null);
@@ -302,15 +291,6 @@ export function OrderPanel({
   }, [billId]);
 
   const fetchOrders = onChanged;
-
-  if (discountModal && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
-    setDiscountModal({
-      ...discountModal,
-      type: defaultDiscountTypeForMode(discountMode),
-      value: 0,
-    });
-    setDiscountPin('');
-  }
 
   const getTimeSince = (dateStr: string) => {
     const minutes = Math.floor((now - parseDbTimestamp(dateStr).getTime()) / 60000);
@@ -622,37 +602,6 @@ export function OrderPanel({
     }
   };
 
-  const handleApplyDiscount = async () => {
-    if (!discountModal) return;
-
-    // Check if PIN is required
-    if (discountRequiresApproval && discountModal.value > 0 && !discountPin) {
-      toast.error(tOrders('managerPinRequired'));
-      return;
-    }
-    if (discountModal.value > 0 && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
-      toast.error(tOrders('discountFailed'));
-      return;
-    }
-
-    try {
-      await api.patch(`/orders/${discountModal.order.id}/discount`, {
-        discount_type: discountModal.type,
-        discount_value: discountModal.value,
-        discount_reason: discountModal.reason || undefined,
-        override_pin: discountRequiresApproval && discountModal.value > 0 ? discountPin : undefined,
-      });
-      toast.success(tOrders('discountApplied'));
-      fetchOrders();
-    } catch {
-      toast.error(tOrders('discountFailed'));
-    } finally {
-      setDiscountModal(null);
-      setDiscountPin('');
-    }
-  };
-
-
   const showCheckout = (order: Order) => {
     return !isOrderPaid(order) && !['completed', 'cancelled'].includes(order.status);
   };
@@ -787,13 +736,6 @@ export function OrderPanel({
   const updateCancelModal = (updates: Partial<Omit<CancelModal, 'order'>>) => {
     if (cancelModal) {
       setCancelModal({ ...cancelModal, ...updates });
-    }
-  };
-
-  // Helper to update discount modal state
-  const updateDiscountModal = (updates: Partial<Omit<DiscountModal, 'order'>>) => {
-    if (discountModal) {
-      setDiscountModal({ ...discountModal, ...updates });
     }
   };
 
@@ -1060,12 +1002,7 @@ export function OrderPanel({
             menu={(orderOpen || extraMenu) ? (
               <>
                 {orderOpen && isOwnerOrManager && !paid && (
-                  <DropdownMenuItem onClick={() => setDiscountModal({
-                    order,
-                    type: defaultDiscountTypeForMode(discountMode),
-                    value: 0,
-                    reason: '',
-                  })}>
+                  <DropdownMenuItem onClick={() => setDiscountOpen(true)}>
                     <Percent className="me-2" />
                     {tOrders('orderDiscountAction')}
                   </DropdownMenuItem>
@@ -1286,139 +1223,14 @@ export function OrderPanel({
         </Modal>
       )}
 
-      {/* Discount */}
-      {discountModal && (
-        <Modal open onOpenChange={(open) => { if (!open) setDiscountModal(null); }} size="sm">
-          <ModalHeader closeLabel={tCommon('close')}>
-            <ModalTitle>{tOrders('applyDiscountTitle', { number: discountModal.order.order_number })}</ModalTitle>
-          </ModalHeader>
-          <ModalBody className="flex flex-col gap-4">
-            {/* Discount type */}
-            <div className="flex gap-1 rounded-xl bg-muted p-1">
-              {isDiscountTypeAllowed(discountMode, 'percentage') && (
-                <button
-                  type="button"
-                  aria-pressed={discountModal.type === 'percentage'}
-                  onClick={() => updateDiscountModal({ type: 'percentage', value: 0 })}
-                  className={`flex h-touch flex-1 items-center justify-center gap-2 rounded-lg text-base font-semibold transition ${
-                    discountModal.type === 'percentage' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
-                  }`}
-                >
-                  <Percent size={16} />
-                  {tCommon('percentage')}
-                </button>
-              )}
-              {isDiscountTypeAllowed(discountMode, 'amount') && (
-                <button
-                  type="button"
-                  aria-pressed={discountModal.type === 'amount'}
-                  onClick={() => updateDiscountModal({ type: 'amount', value: 0 })}
-                  className={`flex h-touch flex-1 items-center justify-center gap-2 rounded-lg text-base font-semibold transition ${
-                    discountModal.type === 'amount' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
-                  }`}
-                >
-                  <Banknote size={16} />
-                  {tCommon('amount')}
-                </button>
-              )}
-            </div>
-
-            {/* Discount value */}
-            <div>
-              <label htmlFor="discountValue" className={LABEL}>
-                {discountModal.type === 'percentage' ? tOrders('discountPercentageLabel') : tOrders('discountAmountLabel')}
-              </label>
-              <div className="relative">
-                <span className="absolute start-4 top-1/2 -translate-y-1/2 text-base text-muted-foreground">
-                  {discountModal.type === 'percentage' ? '%' : currency}
-                </span>
-                <input
-                  id="discountValue"
-                  type="number"
-                  min={0}
-                  max={discountModal.type === 'percentage' ? 100 : Number(discountModal.order.total)}
-                  step={discountModal.type === 'percentage' ? 1 : 0.01}
-                  value={discountModal.value || ''}
-                  onChange={(e) => updateDiscountModal({ value: Number(e.target.value) })}
-                  placeholder={discountModal.type === 'percentage' ? '0' : '0.00'}
-                  className={`${INPUT} ps-10`}
-                  dir="ltr"
-                />
-              </div>
-            </div>
-
-            {/* Discount reason */}
-            <div>
-              <label htmlFor="discountReason" className={LABEL}>{tCommon('reasonOptional')}</label>
-              <input
-                id="discountReason"
-                type="text"
-                value={discountModal.reason}
-                onChange={(e) => updateDiscountModal({ reason: e.target.value })}
-                placeholder={tOrders('discountReason')}
-                className={INPUT}
-              />
-            </div>
-
-            {/* Preview */}
-            <div className="flex flex-col gap-1.5 rounded-xl bg-muted p-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{tCommon('subtotal')}</span>
-                <Ltr className="text-foreground">{fmt(Number(discountModal.order.subtotal))}</Ltr>
-              </div>
-              <div className="flex justify-between text-sm text-table-held">
-                <span>
-                  {tCommon('discount')}
-                  {discountModal.type === 'percentage' && discountModal.value > 0 && (
-                    <span className="ms-1 text-muted-foreground">{tOrders('percentOnSubtotal', { value: discountModal.value })}</span>
-                  )}
-                </span>
-                <Ltr>
-                  -{fmt(
-                    discountModal.type === 'percentage'
-                      ? Number(discountModal.order.subtotal) * discountModal.value / 100
-                      : Number(discountModal.value)
-                  )}
-                </Ltr>
-              </div>
-              <div className="flex justify-between border-t border-border pt-1.5 text-base font-bold text-foreground">
-                <span>{tOrders('newTotal')}</span>
-                <Ltr>
-                  {fmt(
-                    discountModal.type === 'percentage'
-                      ? Number(discountModal.order.subtotal) * (1 - discountModal.value / 100)
-                      : Number(discountModal.order.subtotal) - Number(discountModal.value)
-                  )}
-                </Ltr>
-              </div>
-            </div>
-
-            {discountRequiresApproval && discountModal.value > 0 && (
-              <div>
-                <label htmlFor="discountPin" className={LABEL}>{tOrders('managerPinLabel')}</label>
-                <input
-                  id="discountPin"
-                  type="password"
-                  value={discountPin}
-                  onChange={(e) => setDiscountPin(e.target.value)}
-                  placeholder={tOrders('managerPin')}
-                  maxLength={6}
-                  className={INPUT}
-                  dir="ltr"
-                />
-              </div>
-            )}
-          </ModalBody>
-          <ModalFooter className="flex-row justify-end">
-            <Button type="button" variant="outline" size="touch" onClick={() => setDiscountModal(null)}>
-              {tCommon('cancel')}
-            </Button>
-            <Button type="button" size="touch" onClick={handleApplyDiscount} disabled={discountModal.value <= 0}>
-              <Percent />
-              {tOrders('applyDiscount')}
-            </Button>
-          </ModalFooter>
-        </Modal>
+      {discountOpen && (
+        <OrderDiscountModal
+          order={order}
+          methods={discountMethods}
+          requiresApproval={discountRequiresApproval}
+          onClose={() => setDiscountOpen(false)}
+          onChanged={fetchOrders}
+        />
       )}
 
       {/* One row, up close: what it costs and what comes off it. The price can

@@ -330,6 +330,23 @@ Cose decise mentre si implementava, che il piano non prevedeva:
   - Sparisce quando il Server App è spento.
 
   Vedi [palmare.md](palmare.md#come-ci-arriva-il-cameriere).
+- **Lo sconto sul conto si dà anche come nuovo totale**, deciso con l'utente il 2026-09-29. Al
+  locale lo sconto è quasi sempre un arrotondamento, «sono 53,40, facciamo 50», e bisognava fare la
+  sottrazione a mente per scriverla come importo.
+  - Nella finestra dello sconto il **nuovo totale** è il primo metodo e quello su cui si apre. Si
+    scrive quanto paga il tavolo, oppure si tocca una delle proposte già pronte: via i centesimi, ai
+    5 € sotto, ai 10 € sotto. Lo sconto lo calcola il server (`main/services/discounts.ts`) sull'ordine
+    com'è in quel momento. Sul preconto esce la solita riga «Sconto −3,40», la cifra da battere sul
+    registratore.
+  - Il totale non scende sotto il coperto, perché lo sconto tocca solo i piatti.
+  - Percentuale e importo restano. Ogni metodo si accende e si spegne da solo nelle impostazioni
+    (`discount_methods`, migrazione v99), al posto della vecchia scelta «entrambi / solo % / solo
+    importo». L'incasso anticipato offre solo percentuale e importo.
+  - **Una regola sola per il dopo.** Se il conto cambia, una percentuale si ricalcola sui piatti,
+    mentre uno sconto in euro resta quello concordato e non supera mai i piatti rimasti. Prima la
+    correzione del prezzo di una riga riproporzionava anche gli sconti in euro, e lo sconto di
+    «facciamo 50» cambiava cifra a ogni correzione.
+  - La finestra ora ha anche «Togli sconto»: prima uno sconto messo per sbaglio non si toglieva.
 
 ## Fuori ambito
 

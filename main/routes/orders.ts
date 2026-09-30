@@ -14,6 +14,7 @@ import { seatReservationForTable } from '../services/reservations';
 import { syncUnpaidBillsForOrder } from './bills';
 import { coveredGuestCount, expandFixedMenuItems, planCourseFill, planMenuCount, type ExpandedOrderItem } from '../services/fixed-menu';
 import { normalizeServiceRun, resolveServiceRun, MAX_SERVICE_RUNS } from '../services/service-runs';
+import { carryOrderDiscount, discountForTargetTotal, enabledDiscountMethods, isDiscountMethod, percentageDiscount } from '../services/discounts';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -233,7 +234,7 @@ function insertOrderItemRows(
     const quantity = item.quantity;
     // item.discount_amount is intentionally ignored here — discounts are only
     // applied through the dedicated PATCH discount endpoints, which enforce
-    // discount_mode/max_percentage/max_amount/approval (vuln-0002).
+    // discount_methods/max_percentage/max_amount/approval (vuln-0002).
     const itemDiscount = 0;
 
     // Validate quantity and price
@@ -718,16 +719,9 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         subtotal += item.subtotal;
       }
 
-      // BUG #12 FIX: Preserve order-level discount (scale percentage proportionally)
-      const existingDiscountAmount = currentOrder.discount_amount || 0;
-      let newDiscountAmount = existingDiscountAmount;
-      if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
-        if (currentOrder.discount_type === 'percentage') {
-          const pct = currentOrder.discount_value || 0;
-          newDiscountAmount = Math.round(subtotal * pct / 100 * 100) / 100;
-        }
-        // amount type: keep same value
-      }
+      // BUG #12 FIX: Preserve order-level discount — a percentage follows the
+      // food, euros stay what was agreed (see carryOrderDiscount).
+      const newDiscountAmount = carryOrderDiscount(currentOrder, subtotal);
 
       // A menu that includes the cover has just landed on the check, or has
       // not: either way the cover is settled from the rows, never left at what
@@ -1020,6 +1014,13 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole('owner
   }
 });
 
+/** Why a discount was refused when its method is switched off in the settings. */
+const DISABLED_DISCOUNT_ERRORS = {
+  total: 'New-total discounts are disabled',
+  percentage: 'Percentage discounts are disabled',
+  amount: 'Flat amount discounts are disabled',
+} as const;
+
 router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -1033,20 +1034,32 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
       return res.status(400).json({ error: 'Cannot apply discount to a completed or cancelled order' });
     }
 
-    const { discount_type, discount_value, discount_reason } = req.body || {};
+    const { discount_type, discount_value, discount_reason, target_total } = req.body || {};
+
+    // A value of zero takes the discount off, whatever the type says: it is
+    // the one way to remove one, and `total` does not change that. A new
+    // total travels in its own field for the same reason — zero already
+    // means something in `discount_value`.
+    const removing = discount_value === 0;
 
     // Validate discount_type
-    if (discount_value !== 0 && (!discount_type || !['percentage', 'amount'].includes(discount_type))) {
-      return res.status(400).json({ error: 'discount_type must be "percentage" or "amount"' });
+    if (!removing && !isDiscountMethod(discount_type)) {
+      return res.status(400).json({ error: 'discount_type must be "total", "percentage" or "amount"' });
     }
 
-    // Validate discount_value is a non-negative finite number
-    if (discount_value === undefined || discount_value === null || typeof discount_value !== 'number' || discount_value < 0 || !Number.isFinite(discount_value)) {
+    if (!removing && discount_type === 'total') {
+      // The total the table was told, cover included. How far that is from
+      // the check is worked out under the transaction lock below.
+      if (typeof target_total !== 'number' || !Number.isFinite(target_total) || target_total < 0) {
+        return res.status(400).json({ error: 'target_total must be a non-negative number' });
+      }
+    } else if (discount_value === undefined || discount_value === null || typeof discount_value !== 'number' || discount_value < 0 || !Number.isFinite(discount_value)) {
+      // Validate discount_value is a non-negative finite number
       return res.status(400).json({ error: 'discount_value must be a non-negative number' });
     }
 
     // Check if approval is required
-    if (discount_value > 0) {
+    if (!removing) {
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval) {
         const { override_pin } = req.body || {};
@@ -1067,26 +1080,21 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
       }
     }
 
-    // Check discount mode
-    if (discount_value > 0) {
-      const discountMode = getSettingValue('discount_mode') || 'percentage';
-      if (discountMode === 'flat' && discount_type === 'percentage') {
-        return res.status(400).json({ error: 'Percentage discounts are disabled' });
-      }
-      if (discountMode === 'percentage' && discount_type === 'amount') {
-        return res.status(400).json({ error: 'Flat amount discounts are disabled' });
-      }
+    // Check the method is switched on
+    if (!removing && !enabledDiscountMethods().includes(discount_type)) {
+      return res.status(400).json({ error: DISABLED_DISCOUNT_ERRORS[discount_type as keyof typeof DISABLED_DISCOUNT_ERRORS] });
     }
 
-    // Check against limits from settings (0 = no limit)
-    if (discount_value > 0) {
+    // Check against limits from settings (0 = no limit). A new total is
+    // checked against the euro limit once its discount is known, below.
+    const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
+    if (!removing) {
       if (discount_type === 'percentage') {
         const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
         if (maxPercentage > 0 && discount_value > maxPercentage) {
           return res.status(400).json({ error: `discount_value exceeds maximum percentage of ${maxPercentage}` });
         }
       } else if (discount_type === 'amount') {
-        const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
         if (maxAmount > 0 && discount_value > maxAmount) {
           return res.status(400).json({ error: `discount_value exceeds maximum amount of ${maxAmount}` });
         }
@@ -1105,15 +1113,32 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
         throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), { statusCode: 400 });
       }
 
-      // Calculate discount amount
+      // Calculate discount amount. What is kept as the value is what a later
+      // change to the check carries forward: the percentage, or the euros —
+      // for a new total, the euros it came to, since the total itself stops
+      // meaning anything the moment another coffee lands on the check.
       let discountAmount = 0;
-      if (discount_value > 0) {
-        if (discount_type === 'percentage') {
-          discountAmount = (currentOrder.subtotal * discount_value) / 100;
+      let storedValue: number | null = null;
+      if (!removing) {
+        if (discount_type === 'total') {
+          const worked = discountForTargetTotal(currentOrder.subtotal, orderCharges(currentOrder), target_total);
+          if (!worked.ok) {
+            throw Object.assign(new Error(worked.reason === 'below_charges'
+              ? 'target_total cannot be below the cover and other charges'
+              : 'target_total must be below the current total'), { statusCode: 400 });
+          }
+          if (maxAmount > 0 && worked.amount > maxAmount) {
+            throw Object.assign(new Error(`discount exceeds maximum amount of ${maxAmount}`), { statusCode: 400 });
+          }
+          discountAmount = worked.amount;
+          storedValue = worked.amount;
+        } else if (discount_type === 'percentage') {
+          discountAmount = percentageDiscount(currentOrder.subtotal, discount_value);
+          storedValue = discount_value;
         } else {
-          discountAmount = Math.min(discount_value, currentOrder.subtotal);
+          discountAmount = Math.round(Math.min(discount_value, currentOrder.subtotal) * 100) / 100;
+          storedValue = discount_value;
         }
-        discountAmount = Math.round(discountAmount * 100) / 100;
       }
 
       // The discount always applies to the stored subtotal, so calling this
@@ -1126,9 +1151,9 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
           discount_reason = ?, total = ?, updated_at = ? WHERE id = ?
       `).run(
         discountAmount,
-        discount_value > 0 ? discount_type : null,
-        discount_value > 0 ? discount_value : null,
-        discount_value > 0 ? (discount_reason || null) : null,
+        removing ? null : discount_type,
+        storedValue,
+        removing ? null : (discount_reason || null),
         newTotal, now(), req.params.id
       );
 
@@ -1143,9 +1168,9 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
           WHERE id = ?
         `).run(
           discountAmount,
-          discount_value > 0 ? discount_type : null,
-          discount_value > 0 ? discount_value : null,
-          discount_value > 0 ? (discount_reason || null) : null,
+          removing ? null : discount_type,
+          storedValue,
+          removing ? null : (discount_reason || null),
           newTotal, newBillBalance, now(), existingBill.id
         );
       }
@@ -1178,13 +1203,11 @@ function recomputeOrderAfterItemChange(db: ReturnType<typeof getDatabase>, order
     orderSubtotal += i.subtotal;
   }
 
-  // An order-level discount was agreed against the old subtotal, so it moves
-  // with it rather than staying a fixed number of euros.
-  const existingDiscountAmount = order.discount_amount || 0;
-  let newOrderDiscount = existingDiscountAmount;
-  if (existingDiscountAmount > 0 && order.subtotal > 0) {
-    newOrderDiscount = Math.round(existingDiscountAmount * (orderSubtotal / order.subtotal) * 100) / 100;
-  }
+  // The order-level discount by the same rule every other reprice uses: a
+  // percentage follows the food, euros stay what was agreed. Scaling the
+  // euros with the subtotal moved the discount of "call it 50" every time a
+  // row price was corrected.
+  const newOrderDiscount = carryOrderDiscount(order, orderSubtotal);
 
   // The cover is worked out here and nowhere else, from what is on the check
   // right now: so much a head, less the heads whose cover is already inside a
@@ -1261,13 +1284,9 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole('ow
       }
     }
 
-    // Check discount mode
-    const discountMode = getSettingValue('discount_mode') || 'percentage';
-    if (discountMode === 'flat' && discount_type === 'percentage') {
-      return res.status(400).json({ error: 'Percentage discounts are disabled' });
-    }
-    if (discountMode === 'percentage' && discount_type === 'amount') {
-      return res.status(400).json({ error: 'Flat amount discounts are disabled' });
+    // Check the method is switched on
+    if (!enabledDiscountMethods().includes(discount_type)) {
+      return res.status(400).json({ error: DISABLED_DISCOUNT_ERRORS[discount_type as keyof typeof DISABLED_DISCOUNT_ERRORS] });
     }
 
     // BUG #14 FIX: Check item-level discount against max settings (0 = no limit)
@@ -1486,15 +1505,11 @@ function repriceAfterMenuChange(db: ReturnType<typeof getDatabase>, orderId: str
   const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(orderId) as any[];
   const subtotal = activeItems.reduce((sum, row) => sum + row.subtotal, 0);
 
-  let discountAmount = order.discount_amount || 0;
-  if (discountAmount > 0 && order.subtotal > 0 && order.discount_type === 'percentage') {
-    discountAmount = roundMoney(subtotal * (order.discount_value || 0) / 100);
-  }
   // A discount agreed in euros stays what it was, but never more than what is
   // left on the check: taking six menus of eight off a table would otherwise
   // print "Sconto -50,00" under a subtotal of 30,00, and the lines on the
   // paper would not add up to the total under them.
-  discountAmount = Math.min(discountAmount, subtotal);
+  const discountAmount = carryOrderDiscount(order, subtotal);
 
   const coverCharge = orderCoverCharge(db, orderId);
   const total = roundMoney(Math.max(0, subtotal - discountAmount) + orderCharges({ ...order, cover_charge: coverCharge }));

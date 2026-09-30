@@ -36,6 +36,7 @@ import { WHATSAPP_AVAILABLE } from '../features';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
 import { orderCharges, roundMoney } from '../money';
+import { carryOrderDiscount } from '../services/discounts';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import expressRateLimit from 'express-rate-limit';
 
@@ -313,16 +314,9 @@ export function registerRoutes(app: Express): void {
         for (const i of activeItems) {
           subtotal += i.subtotal || 0;
         }
-        // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
-        const existingDiscountAmount = currentOrder.discount_amount || 0;
-        let newDiscountAmount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
-          if (currentOrder.discount_type === 'percentage') {
-            const pct = currentOrder.discount_value || 0;
-            newDiscountAmount = Math.round(subtotal * pct / 100 * 100) / 100;
-          }
-          // amount type: keep same value
-        }
+        // BUG #13 FIX: Preserve order-level discount — a percentage follows the
+        // food, euros stay what was agreed (see carryOrderDiscount).
+        const newDiscountAmount = carryOrderDiscount(currentOrder, subtotal);
 
         const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
 
@@ -463,16 +457,9 @@ export function registerRoutes(app: Express): void {
         for (const i of activeItems) {
           subtotal += i.subtotal || 0;
         }
-        // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
-        const existingDiscountAmount = currentOrder.discount_amount || 0;
-        let newDiscountAmount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
-          if (currentOrder.discount_type === 'percentage') {
-            const pct = currentOrder.discount_value || 0;
-            newDiscountAmount = Math.round(subtotal * pct / 100 * 100) / 100;
-          }
-          // amount type: keep same value
-        }
+        // BUG #13 FIX: Preserve order-level discount — a percentage follows the
+        // food, euros stay what was agreed (see carryOrderDiscount).
+        const newDiscountAmount = carryOrderDiscount(currentOrder, subtotal);
 
         const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
 

@@ -868,12 +868,35 @@ Apply order-level discount.
 }
 ```
 
+**New total** — the total the table pays, cover included. The server works out
+the discount that gets there against the order as it stands under the
+transaction lock, so an item added in the meantime moves the discount, not the
+total:
+```json
+{
+  "discount_type": "total",
+  "target_total": 50,
+  "discount_reason": "Arrotondamento"
+}
+```
+It is worked from the check without any discount, so a second rounding
+replaces the first. The order keeps `discount_type: "total"` and, as
+`discount_value`, the euros the discount came to: that is what a later change
+to the check carries forward.
+
+**Removing:** `{ "discount_value": 0 }` takes any discount off, whatever the type.
+
 **Validations:**
-- `discount_type`: must be `"percentage"` or `"amount"`
-- `discount_value`: must be positive; cannot exceed store limits (`discount_max_percentage`, `discount_max_amount`)
-- `discount_mode` setting is checked — if `'flat'`, percentage discounts are rejected; if `'percentage'`, flat discounts are rejected
+- `discount_type`: must be `"total"`, `"percentage"` or `"amount"`
+- `discount_value` (percentage, amount): must be positive; cannot exceed store limits (`discount_max_percentage`, `discount_max_amount`)
+- `target_total` (total): a non-negative number, below the current total and not below the cover and other charges — a discount only comes off the food. The discount it comes to cannot exceed `discount_max_amount`
+- The method must be switched on in `discount_methods`, or the request is rejected
 - If `discount_requires_approval` is true, `override_pin` (manager/owner PIN) is required
 - Order must exist and not be completed/cancelled
+
+**After the check changes:** a percentage is recomputed on the new food total; a
+discount in euros (`amount` or `total`) stays what was agreed, never more than
+the food left on the check.
 
 **Error (400):**
 ```json
@@ -901,7 +924,7 @@ Apply item-level discount.
 }
 ```
 
-**Validations:** Same as order-level discount.
+**Validations:** Same as order-level discount, for `"percentage"` and `"amount"` only.
 
 ### PATCH `/api/orders/:id/items/:itemId/service-run`
 Move one row to another service run — which wave of the meal the dish leaves
@@ -1274,7 +1297,7 @@ Get discount limits configuration.
 {
   "discount_max_percentage": 50,
   "discount_max_amount": 100,
-  "discount_mode": "both",
+  "discount_methods": ["total", "percentage"],
   "discount_requires_approval": false
 }
 ```
@@ -1282,8 +1305,8 @@ Get discount limits configuration.
 | Field | Type | Description |
 |-------|------|-------------|
 | `discount_max_percentage` | number | Max % for percentage discounts (0 = no limit) |
-| `discount_max_amount` | number | Max flat amount for discounts (0 = no limit) |
-| `discount_mode` | string | `'percentage'`, `'flat'`, or `'both'` — which discount types are allowed |
+| `discount_max_amount` | number | Max discount in money, for an amount or a new total (0 = no limit) |
+| `discount_methods` | string[] | The ways to discount that are switched on, in button order: `'total'`, `'percentage'`, `'amount'`. Never empty; the discount window opens on the first |
 | `discount_requires_approval` | boolean | Require manager PIN to apply discounts |
 
 ---
@@ -1298,7 +1321,7 @@ Update discount limits (owner/manager only).
 {
   "discount_max_percentage": 30,
   "discount_max_amount": 200,
-  "discount_mode": "both",
+  "discount_methods": ["total", "percentage", "amount"],
   "discount_requires_approval": true
 }
 ```
@@ -1306,12 +1329,12 @@ Update discount limits (owner/manager only).
 **Validation:**
 - `discount_max_percentage`: float, range 0–100 (0 = no limit)
 - `discount_max_amount`: float, range 0–999999 (0 = no limit)
-- `discount_mode`: must be `'percentage'`, `'flat'`, or `'both'`
+- `discount_methods`: a non-empty list of `'total'`, `'percentage'`, `'amount'`; stored in button order, without repeats
 - `discount_requires_approval`: boolean
 
 **Error (400):**
 ```json
-{ "error": "discount_mode must be \"percentage\", \"flat\", or \"both\"" }
+{ "error": "discount_methods must be a non-empty list of \"total\", \"percentage\", \"amount\"" }
 ```
 
 ---
