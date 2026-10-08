@@ -78,6 +78,8 @@ export interface SendQueue {
   takeBack: (id: string) => QueueEntry | null;
   /** The entry of this waiter still waiting to open a table, if any. */
   openingFor: (tableId: string) => QueueEntry | null;
+  /** Whether a ticket written from this draft is in the queue already. */
+  holdsDraft: (draftId: string) => boolean;
 }
 
 interface Options {
@@ -319,8 +321,13 @@ export function useSendQueue({ api, user, kotPrintingEnabled, applyOrder, refres
     [state, userId],
   );
 
+  const holdsDraft = useCallback(
+    (draftId: string) => read().entries.some((entry) => entry.draftId === draftId),
+    [read],
+  );
+
   const entries = useMemo(() => (userId ? entriesOf(state, userId) : []), [state, userId]);
   const others = useMemo(() => (userId ? othersWaiting(state, userId) : []), [state, userId]);
 
-  return { entries, others, sending, enqueue, flush, retry, sendAnyway: sendNow, discard, takeBack, openingFor };
+  return { entries, others, sending, enqueue, flush, retry, sendAnyway: sendNow, discard, takeBack, openingFor, holdsDraft };
 }

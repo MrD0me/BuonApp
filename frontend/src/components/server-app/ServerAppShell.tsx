@@ -16,6 +16,8 @@ import { useServerSession } from './useServerSession';
 import { useHandheldData } from './useHandheldData';
 import { useConnection } from './connection';
 import { useSendQueue } from './useSendQueue';
+import { useHandheldDraft } from './useHandheldDraft';
+import { SCREEN_DEPTH, enterScreen, placeOf, returnTo } from './handheld-history';
 import { HandheldStatusProvider, HeaderSubtitle, type HandheldStatus } from './handheld-status';
 import type { QueueEntry } from './send-queue';
 import { QueueSheet } from './QueueSheet';
@@ -65,6 +67,7 @@ export function ServerAppShell() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [ticketOpen, setTicketOpen] = useState(false);
   const linkedTable = useRef<string | null | undefined>(undefined);
 
   const allTables = useMemo<Table[]>(
@@ -117,6 +120,22 @@ export function ServerAppShell() {
     refreshFloor: data.refreshFloor,
     tableName: nameOfTable,
   });
+  const draft = useHandheldDraft({
+    user,
+    ready: data.loaded,
+    products: data.products,
+    tableName: (tableId) => data.knownTables.get(tableId)?.name ?? null,
+    isQueued: queue.holdsDraft,
+    onRestore: (restored, outcome) => {
+      if (outcome !== 'reopen') return;
+      // Written within the half hour: straight back to the ticket, and to
+      // the menu window if one was open (OrdinaView reopens it).
+      setSelectedTableId(restored.table.id);
+      setTicketOpen(false);
+      setView('ordina');
+      toast(t('draftRestored', { table: restored.table.name }));
+    },
+  });
   const reachable = useConnection(api, () => {
     queue.flush();
     data.refreshFloor().catch(() => { /* the next poll */ });
@@ -165,6 +184,24 @@ export function ServerAppShell() {
     };
   }, []);
 
+  // Back and forward in the browser move between the screens this page
+  // entered (handheld-history.ts): the Android back gesture closes the ticket
+  // onto the menu, the menu onto the table, the table onto the floor.
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      const place = placeOf(event.state);
+      setTicketOpen(place.screen === 'ticket');
+      if (place.screen === 'sala') {
+        setView('sala');
+        return;
+      }
+      if (place.tableId) setSelectedTableId(place.tableId);
+      setView(place.screen === 'table' ? 'table' : 'ordina');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   // A link that names a table opens it as soon as the floor is known.
   useEffect(() => {
     if (!data.loaded) return;
@@ -178,19 +215,32 @@ export function ServerAppShell() {
     }
   }, [data.loaded, allTables]);
 
+  // Forward is a tap, and adds a screen to the history; back goes through the
+  // history when the screen came from there. The screen is set at once either
+  // way, and the browser's report of the move sets the same one again.
   const selectTable = (table: Table) => {
+    enterScreen({ screen: 'table', tableId: table.id });
     setSelectedTableId(table.id);
     setView('table');
-    if (typeof window !== 'undefined') {
-      window.history.replaceState(null, '', `${window.location.pathname}?table=${encodeURIComponent(table.id)}`);
-    }
   };
 
   const backToFloor = () => {
+    returnTo({ screen: 'sala', tableId: null }, SCREEN_DEPTH.sala);
     setView('sala');
-    if (typeof window !== 'undefined') {
-      window.history.replaceState(null, '', window.location.pathname);
-    }
+  };
+
+  const backToTable = (tableId: string) => {
+    returnTo({ screen: 'table', tableId }, SCREEN_DEPTH.table);
+    setTicketOpen(false);
+    setSelectedTableId(tableId);
+    setView('table');
+  };
+
+  const changeTicketOpen = (open: boolean) => {
+    if (!cartTableId) return;
+    if (open) enterScreen({ screen: 'ticket', tableId: cartTableId });
+    else returnTo({ screen: 'ordina', tableId: cartTableId }, SCREEN_DEPTH.ordina);
+    setTicketOpen(open);
   };
 
   /**
@@ -226,13 +276,21 @@ export function ServerAppShell() {
     // covers alike: a count made for that party is not this one's. A ticket
     // whose table has left the floor is the exception: it was meant for a
     // table that no longer exists, so it goes with the waiter to this one.
+    // Back to the same ticket: a menu window it left open comes back too.
+    if (cart.tableId === selectedTable.id) draft.reopenLeftMenuWindow();
     if (cart.tableId !== selectedTable.id) {
-      const orphaned = cart.items.length > 0 && cart.tableId !== null && !allTables.some((table) => table.id === cart.tableId);
-      if (cart.items.length > 0 && !orphaned) {
-        const discard = await confirm(t('discardCartConfirm'), { destructive: true });
-        if (!discard) return;
+      const orphaned = cart.tableId !== null && !allTables.some((table) => table.id === cart.tableId);
+      if (orphaned) {
+        draft.reopenLeftMenuWindow();
+      } else {
+        if (cart.items.length > 0) {
+          const discard = await confirm(t('discardCartConfirm'), { destructive: true });
+          if (!discard) return;
+        }
+        // The window left open on the ticket thrown away goes with it.
+        draft.setMenuWindow(null);
+        cart.clearCart();
       }
-      if (!orphaned) cart.clearCart();
     }
     cart.setOrderType('dine_in');
     if (selectedOrder) {
@@ -242,6 +300,8 @@ export function ServerAppShell() {
       // A new order starts from the booking's party, or from the seats.
       cart.setTableId(selectedTable.id, coversForNewOrder(selectedTable));
     }
+    enterScreen({ screen: 'ordina', tableId: selectedTable.id });
+    setTicketOpen(false);
     setView('ordina');
   };
 
@@ -261,6 +321,7 @@ export function ServerAppShell() {
       lines: cart.items,
       guestCount: pendingOrder?.guest_count ?? cart.guestCount,
       orderNotes: cart.orderNotes,
+      draftId: draft.currentDraftId() ?? undefined,
     }, pendingOrder?.id ?? null);
     if (!kept) {
       toast.error(t('queueSaveFailed'));
@@ -269,8 +330,7 @@ export function ServerAppShell() {
     // The table first, then the cart emptied: emptied first, the screen had
     // no table to stand on and showed the floor for a moment, and a tap there
     // opened some other table.
-    setSelectedTableId(tableId);
-    setView('table');
+    backToTable(tableId);
     cart.clearCart();
     if (!reachable) toast(t('queuedOffline'));
   };
@@ -374,8 +434,28 @@ export function ServerAppShell() {
     kept.loadItems([...alongside, ...taken.lines], taken.tableId, null, taken.guestCount, taken.orderNotes);
     kept.setOrderType('dine_in');
     setQueueOpen(false);
+    enterScreen({ screen: 'ordina', tableId: taken.tableId });
+    setTicketOpen(false);
     setSelectedTableId(taken.tableId);
     setView('ordina');
+  };
+
+  /** The ticket of an older draft, put back in the cart and offered on the floor. */
+  const openOffered = () => {
+    const offered = draft.offered;
+    draft.dismissOffer();
+    if (!offered || !data.knownTables.has(offered.table.id)) return;
+    // With the menu window it had open, if it had one.
+    draft.reopenLeftMenuWindow();
+    enterScreen({ screen: 'ordina', tableId: offered.table.id });
+    setTicketOpen(false);
+    setSelectedTableId(offered.table.id);
+    setView('ordina');
+  };
+
+  const discardOffered = () => {
+    draft.dismissOffer();
+    useCartStore.getState().clearCart();
   };
 
   const discard = async (entry: QueueEntry) => {
@@ -428,7 +508,12 @@ export function ServerAppShell() {
         kotPrintingEnabled={data.settings.kotPrintingEnabled}
         coverChargeAmount={data.settings.coverChargeAmount}
         currency={data.settings.currency}
-        onBack={() => { setSelectedTableId(cartTable.id); setView('table'); }}
+        ticketOpen={ticketOpen}
+        onTicketOpenChange={changeTicketOpen}
+        onMenuWindowChange={draft.setMenuWindow}
+        restoreMenuWindow={draft.pendingMenuWindow}
+        onMenuWindowRestored={draft.takePendingMenuWindow}
+        onBack={() => backToTable(cartTable.id)}
         onSend={sendCart}
         onAttachToOrderMenu={(groupId, courseId, productIds) => fillCourse(pendingOrder, groupId, courseId, productIds)}
       />
@@ -483,6 +568,20 @@ export function ServerAppShell() {
           </div>
         </header>
         <main className="mx-auto w-full max-w-5xl flex-1 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          {draft.offered && cartTableId === draft.offered.table.id && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl bg-pending-soft px-3 py-2">
+              <p className="min-w-0 flex-1 text-sm font-semibold text-pending">
+                {t(data.knownTables.has(draft.offered.table.id) ? 'draftPending' : 'draftPendingNoTable', {
+                  table: draft.offered.table.name,
+                  time: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(draft.offered.savedAt),
+                })}
+              </p>
+              {data.knownTables.has(draft.offered.table.id) && (
+                <Button type="button" size="touch" onClick={openOffered}>{t('draftOpen')}</Button>
+              )}
+              <Button type="button" size="touch" variant="ghost" onClick={discardOffered}>{t('draftDiscard')}</Button>
+            </div>
+          )}
           {queue.others.map((other) => (
             <p key={other.userName} className="mb-3 rounded-xl bg-pending-soft px-3 py-2 text-sm font-semibold text-pending">
               {t('othersWaiting', { count: other.count, name: other.userName })}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Addon, CartItem, Category, FixedMenuSelection, Order, Product, Table } from '@/lib/types';
@@ -19,6 +19,7 @@ import { HandheldProductList } from './HandheldProductList';
 import { HandheldCart } from './HandheldCart';
 import { HeaderSubtitle, useHeaderTone } from './handheld-status';
 import type { QueueEntry } from './send-queue';
+import type { DraftMenuWindow } from './handheld-draft';
 
 interface Props {
   table: Table;
@@ -40,6 +41,14 @@ interface Props {
   kotPrintingEnabled: boolean;
   coverChargeAmount: number;
   currency: string;
+  /** The ticket screen over the menu: the shell keeps it, so «back» can close it. */
+  ticketOpen: boolean;
+  onTicketOpenChange: (open: boolean) => void;
+  /** What the open menu window has counted, for the draft; null when it closes the usual way. */
+  onMenuWindowChange?: (menuWindow: DraftMenuWindow | null) => void;
+  /** A menu window the page lost while it was open, to open again as it was. */
+  restoreMenuWindow?: DraftMenuWindow | null;
+  onMenuWindowRestored?: () => void;
   onBack: () => void;
   onSend: () => void;
   /** A dish put inside a menu already on the check; resolves false when the check refused it. */
@@ -58,6 +67,8 @@ interface MenuWindow {
   products: Product[];
   /** The cart line being edited, when the menu is already on the ticket. */
   line?: CartItem;
+  /** What it had counted when the page lost it: the window reopens with it. */
+  restored?: { menus: number | null; selection: FixedMenuSelection };
 }
 
 /**
@@ -79,13 +90,13 @@ interface MenuWindow {
  */
 export function OrdinaView({
   table, tableMissing = false, pendingOrder, queuedOpening = null, products, categories, kotPrintingEnabled, coverChargeAmount, currency,
+  ticketOpen, onTicketOpenChange, onMenuWindowChange, restoreMenuWindow = null, onMenuWindowRestored,
   onBack, onSend, onAttachToOrderMenu,
 }: Props) {
   const t = useTranslations('serverApp');
   const fmt = useFormatCurrency();
   const cartItems = useCartStore((state) => state.items);
   const guestCount = useCartStore((state) => state.guestCount);
-  const [cartOpen, setCartOpen] = useState(false);
   // The menu's own filter, kept up here because the list comes off the page
   // whenever the ticket is opened: held inside it, the category the waiter
   // had found would be gone on the way back from every glance at the check.
@@ -171,24 +182,48 @@ export function OrdinaView({
     useCartStore.getState().updateItemDetails(editingCartItem.id, quantity, addons, instructions);
   };
 
+  const closeMenuWindow = () => {
+    setMenuWindow(null);
+    onMenuWindowChange?.(null);
+  };
+
   const handleMenuSave = (menu: Product, menus: number, selection: FixedMenuSelection) => {
     const line = menuWindow?.line;
     if (line) useCartStore.getState().updateMenuSelection(line.id, menus, selection);
     else useCartStore.getState().addFixedMenu(menu, menus, selection);
-    setMenuWindow(null);
+    closeMenuWindow();
   };
+
+  // A menu window the page lost while it was open — a reload, the phone
+  // throwing the tab away, a back gesture — opens again with what it had
+  // counted, over the line it was editing if that line is still there.
+  useEffect(() => {
+    if (!restoreMenuWindow || products.length === 0) return;
+    const line = restoreMenuWindow.lineId
+      ? useCartStore.getState().items.find((item) => item.id === restoreMenuWindow.lineId && item.menu_selection)
+      : undefined;
+    const menu = line?.product ?? products.find((product) => product.id === restoreMenuWindow.menuProductId);
+    onMenuWindowRestored?.();
+    if (!menu) return;
+    setMenuWindow({
+      menu,
+      products,
+      ...(line ? { line } : {}),
+      restored: { menus: restoreMenuWindow.menus, selection: restoreMenuWindow.selection },
+    });
+  }, [restoreMenuWindow, products, onMenuWindowRestored]);
 
   const openTicket = () => {
     menuScroll.current = window.scrollY;
-    setCartOpen(true);
+    onTicketOpenChange(true);
   };
 
   // Back from the ticket, the menu is drawn again from the top; it is put
   // back where the waiter left it before the screen is painted.
   useLayoutEffect(() => {
-    if (cartOpen || menuScroll.current === 0) return;
+    if (ticketOpen || menuScroll.current === 0) return;
     window.scrollTo(0, menuScroll.current);
-  }, [cartOpen]);
+  }, [ticketOpen]);
 
   const itemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = useCartStore((state) => state.subtotal());
@@ -231,11 +266,20 @@ export function OrdinaView({
           covers={guests}
           {...(menuWindow.line ? {
             mode: 'edit' as const,
-            initialSelection: menuWindow.line.menu_selection || [],
-            initialMenus: menuWindow.line.quantity,
+            initialSelection: menuWindow.restored?.selection ?? (menuWindow.line.menu_selection || []),
+            initialMenus: menuWindow.restored?.menus ?? menuWindow.line.quantity,
+          } : menuWindow.restored ? {
+            initialSelection: menuWindow.restored.selection,
+            ...(menuWindow.restored.menus !== null ? { initialMenus: menuWindow.restored.menus } : {}),
           } : {})}
+          onSelectionChange={(menus, selection) => onMenuWindowChange?.({
+            menuProductId: menuWindow.menu.id,
+            ...(menuWindow.line ? { lineId: menuWindow.line.id } : {}),
+            menus,
+            selection,
+          })}
           onAdd={handleMenuSave}
-          onClose={() => setMenuWindow(null)}
+          onClose={closeMenuWindow}
         />
       )}
 
@@ -269,10 +313,10 @@ export function OrdinaView({
     </>
   );
 
-  if (cartOpen) {
+  if (ticketOpen) {
     return (
       <div className="flex min-h-dvh flex-col bg-background text-foreground">
-        {header(t('cart'), t('backToMenu'), () => setCartOpen(false))}
+        {header(t('cart'), t('backToMenu'), () => onTicketOpenChange(false))}
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
           <HandheldCart
             products={products}
