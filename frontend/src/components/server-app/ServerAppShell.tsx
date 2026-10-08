@@ -17,7 +17,7 @@ import { useHandheldData } from './useHandheldData';
 import { useConnection } from './connection';
 import { useSendQueue } from './useSendQueue';
 import { useHandheldDraft } from './useHandheldDraft';
-import { SCREEN_DEPTH, enterScreen, placeOf, returnTo } from './handheld-history';
+import { enterScreen, markCurrent, placeOf, returnTo } from './handheld-history';
 import { HandheldStatusProvider, HeaderSubtitle, type HandheldStatus } from './handheld-status';
 import type { QueueEntry } from './send-queue';
 import { QueueSheet } from './QueueSheet';
@@ -130,6 +130,7 @@ export function ServerAppShell() {
       if (outcome !== 'reopen') return;
       // Written within the half hour: straight back to the ticket, and to
       // the menu window if one was open (OrdinaView reopens it).
+      markCurrent({ screen: 'ordina', tableId: restored.table.id });
       setSelectedTableId(restored.table.id);
       setTicketOpen(false);
       setView('ordina');
@@ -210,6 +211,7 @@ export function ServerAppShell() {
     if (!wanted) return;
     linkedTable.current = null;
     if (allTables.some((table) => table.id === wanted)) {
+      markCurrent({ screen: 'table', tableId: wanted });
       setSelectedTableId(wanted);
       setView('table');
     }
@@ -225,12 +227,12 @@ export function ServerAppShell() {
   };
 
   const backToFloor = () => {
-    returnTo({ screen: 'sala', tableId: null }, SCREEN_DEPTH.sala);
+    returnTo({ screen: 'sala', tableId: null });
     setView('sala');
   };
 
   const backToTable = (tableId: string) => {
-    returnTo({ screen: 'table', tableId }, SCREEN_DEPTH.table);
+    returnTo({ screen: 'table', tableId });
     setTicketOpen(false);
     setSelectedTableId(tableId);
     setView('table');
@@ -239,7 +241,7 @@ export function ServerAppShell() {
   const changeTicketOpen = (open: boolean) => {
     if (!cartTableId) return;
     if (open) enterScreen({ screen: 'ticket', tableId: cartTableId });
-    else returnTo({ screen: 'ordina', tableId: cartTableId }, SCREEN_DEPTH.ordina);
+    else returnTo({ screen: 'ordina', tableId: cartTableId });
     setTicketOpen(open);
   };
 

@@ -38,6 +38,15 @@ interface HandheldEntry extends HandheldPlace {
 
 const KEY = 'buonappHandheld';
 
+/**
+ * Which screen sits at each depth of the history this page has made. The
+ * entries themselves cannot be read back from the page, only the current
+ * one, and «back to the table» has to know how many steps the table is:
+ * two from the ticket when the floor came first, one when the page was opened
+ * on the table by a link.
+ */
+const placesByDepth: HandheldPlace[] = [{ screen: 'sala', tableId: null }];
+
 function entryOf(state: unknown): HandheldEntry | null {
   const entry = (state as Record<string, unknown> | null)?.[KEY] as Partial<HandheldEntry> | undefined;
   if (!entry || typeof entry.screen !== 'string' || typeof entry.depth !== 'number') return null;
@@ -61,28 +70,46 @@ function addressFor(place: HandheldPlace): string {
   return place.tableId ? `${path}?table=${encodeURIComponent(place.tableId)}` : path;
 }
 
+/**
+ * The screen the page opened on, when it is not the floor: a link to a
+ * table, or a ticket put back after a reload. The entry the page already has
+ * is marked as that screen, so a back that comes down to it lands there and
+ * not on the floor. Replacing needs no tap.
+ */
+export function markCurrent(place: HandheldPlace): void {
+  if (typeof window === 'undefined') return;
+  const depth = currentDepth();
+  placesByDepth[depth] = place;
+  window.history.replaceState({ [KEY]: { ...place, depth } }, '', addressFor(place));
+}
+
 /** A screen the waiter tapped into: one entry more. Call it from the tap. */
 export function enterScreen(place: HandheldPlace): void {
   if (typeof window === 'undefined') return;
-  window.history.pushState({ [KEY]: { ...place, depth: currentDepth() + 1 } }, '', addressFor(place));
+  const depth = currentDepth() + 1;
+  // A new screen ends whatever lay ahead of the current one.
+  placesByDepth.length = depth;
+  placesByDepth[depth] = place;
+  window.history.pushState({ [KEY]: { ...place, depth } }, '', addressFor(place));
 }
 
 /**
  * Back to `place`, a screen this page entered earlier: through the history
- * when the entries are there — the browser then reports it, and the caller
- * sets the screen on that report — and false when they are not (the page
- * was opened on a table by a link), for the caller to set it itself.
+ * to the nearest entry below this one that shows it — the browser then
+ * reports the move, and the caller's handler sets the same screen again — and
+ * false when there is none (the page opened somewhere else), after marking
+ * the current entry as that screen, for the caller to set it itself.
  */
-export function returnTo(place: HandheldPlace, depthOfPlace: number): boolean {
+export function returnTo(place: HandheldPlace): boolean {
   if (typeof window === 'undefined') return false;
-  const steps = currentDepth() - depthOfPlace;
-  if (steps <= 0) {
-    window.history.replaceState({ [KEY]: { ...place, depth: currentDepth() } }, '', addressFor(place));
-    return false;
+  const depth = currentDepth();
+  for (let below = depth - 1; below >= 0; below -= 1) {
+    const known = placesByDepth[below];
+    if (!known || known.screen !== place.screen) continue;
+    if (place.tableId !== null && known.tableId !== null && known.tableId !== place.tableId) continue;
+    window.history.go(below - depth);
+    return true;
   }
-  window.history.go(-steps);
-  return true;
+  markCurrent(place);
+  return false;
 }
-
-/** The depth a screen sits at when entered the usual way: floor, table, menu, ticket. */
-export const SCREEN_DEPTH: Record<HandheldScreen, number> = { sala: 0, table: 1, ordina: 2, ticket: 3 };
