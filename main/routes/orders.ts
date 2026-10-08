@@ -4,9 +4,9 @@ import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, wit
 import { COVER_CHARGE_SETTING_KEY, computeCoverCharge, orderCharges, parseCoverChargeAmount, roundMoney } from '../money';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
-import { requireRole } from '../middleware/security';
+import { accountRouteRateLimit, requireRole } from '../middleware/security';
 import { resolveOrderTable } from './tables';
-import { tableLabelSource } from '../services/tables';
+import { ACTIVE_ORDER_STATUS_SQL, tableLabelSource } from '../services/tables';
 import { getOpenServiceDay, getOrOpenServiceDay } from '../services/service-day';
 import { cancelOrder } from '../services/orders';
 import { isOrderTypeAllowed, ORDER_TYPES_SETTING_KEY } from '../lib/order-types';
@@ -15,11 +15,12 @@ import { syncUnpaidBillsForOrder } from './bills';
 import { coveredGuestCount, expandFixedMenuItems, planCourseFill, planMenuCount, type ExpandedOrderItem } from '../services/fixed-menu';
 import { normalizeServiceRun, resolveServiceRun, MAX_SERVICE_RUNS } from '../services/service-runs';
 import { carryOrderDiscount, discountForTargetTotal, enabledDiscountMethods, isDiscountMethod, percentageDiscount } from '../services/discounts';
-import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
-const orderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
-const orderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
+// Per account: every phone comes through the Server App from 127.0.0.1, and
+// counted per address they shared one budget with each other and the till.
+const orderReadRateLimit = accountRouteRateLimit({ windowMs: 60 * 1000, limit: 120 });
+const orderWriteRateLimit = accountRouteRateLimit({ windowMs: 60 * 1000, limit: 60 });
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
 
 function orderIdempotencyKey(req: Request): string | null {
@@ -48,7 +49,7 @@ function getStoredOrderReplay(
   `).get(userId, idempotencyKey, userId) as { request_hash: string; response_json: string } | undefined;
   if (!prior) return null;
   if (prior.request_hash !== requestHash) {
-    throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
+    throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409, code: 'idempotency_conflict' });
   }
   try {
     return JSON.parse(prior.response_json);
@@ -81,6 +82,31 @@ export function checkPinRateLimit(key: string): boolean {
   if (entry.count >= PIN_MAX_ATTEMPTS) return false;
   entry.count++;
   return true;
+}
+
+/**
+ * A dish the check cannot take, said as a refusal rather than a fault.
+ *
+ * These used to leave as plain errors and reach the phone as 500s, which a
+ * handheld must treat as "may have gone through, try again": a ticket with a
+ * dish that no longer exists was retried for a day. A 4xx with a code says
+ * nothing was written, and lets the floor put the ticket right.
+ */
+function itemRefusal(message: string, code = 'invalid_item', statusCode = 400): Error {
+  return Object.assign(new Error(message), { statusCode, code });
+}
+
+/**
+ * How the two routes that write rows answer a failure: the message, and the
+ * code and order a client can act on — a table already open when the phone
+ * asked to open it says which order is open (see `only_if_table_free`).
+ */
+function sendOrderWriteError(res: Response, error: any): void {
+  const body: Record<string, unknown> = { error: error.statusCode ? error.message : 'Internal server error' };
+  if (error.code) body.code = error.code;
+  if (error.order_id !== undefined) body.order_id = error.order_id;
+  if (error.order_number !== undefined) body.order_number = error.order_number;
+  res.status(error.statusCode || 500).json(body);
 }
 
 function syncCustomerTagCounts(db: any, customerId: string, items: { product_id: string; quantity: number }[]) {
@@ -221,11 +247,11 @@ function insertOrderItemRows(
   for (const item of items) {
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
     if (!product) {
-      throw new Error(`Product ${item.product_id} not found`);
+      throw itemRefusal(`Product ${item.product_id} not found`);
     }
 
     if (product.track_inventory && product.stock_quantity < item.quantity) {
-      throw new Error(`Insufficient stock for ${product.name}`);
+      throw itemRefusal(`Insufficient stock for ${product.name}`, 'insufficient_stock', 409);
     }
 
     // A dish chosen inside a fixed menu is paid for by the package: its own row
@@ -239,10 +265,10 @@ function insertOrderItemRows(
 
     // Validate quantity and price
     if (!quantity || quantity <= 0 || !Number.isFinite(quantity)) {
-      throw new Error(`Invalid quantity for ${product.name}: must be a positive number`);
+      throw itemRefusal(`Invalid quantity for ${product.name}: must be a positive number`);
     }
     if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
-      throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
+      throw itemRefusal(`Invalid price for ${product.name}: must be a non-negative number`);
     }
 
     let itemSubtotal = unitPrice * quantity;
@@ -251,7 +277,7 @@ function insertOrderItemRows(
         if (!addon) continue;
         if (addon.quantity !== undefined) {
           if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
-            throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
+            throw itemRefusal(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
           }
         }
         const addonQty = addon.quantity || 1;
@@ -508,6 +534,17 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
     // reason staff have accounts of their own.
     const authenticatedUserId = (req as any).user.userId;
 
+    // A replay is answered before anything is checked again, as the append
+    // route already does. A handheld that lost the answer to an order it
+    // opened sends the same request with the same key, maybe minutes later
+    // (docs/palmare.md, la coda d'invio): by then a dish may have been
+    // switched off, and checking that first answered 400 for an order that
+    // exists. The phone took it for a refusal and the order was made twice.
+    if (idempotencyKey && requestHash) {
+      const replay = getStoredOrderReplay(getDatabase(), idempotencyUserId, idempotencyKey, requestHash) as { order?: unknown } | null;
+      if (replay) return res.status(200).json({ order: replay.order });
+    }
+
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'At least one item is required' });
     }
@@ -545,29 +582,38 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
       }
       expandedItems = expandFixedMenuItems(db, items);
     } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+      return res.status(400).json({ error: err.message, code: 'invalid_item' });
     }
     const result = withTxn(() => {
-      if (idempotencyKey) {
-        // Preserve exact replay for pre-user-scoped records whose creator is
-        // unavailable. New records never use the `legacy` compatibility owner.
-        const prior = db.prepare(`
-          SELECT request_hash, response_json
-          FROM order_idempotency
-          WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
-          ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
-          LIMIT 1
-        `).get(idempotencyUserId, idempotencyKey, idempotencyUserId) as { request_hash: string; response_json: string } | undefined;
-        if (prior) {
-          if (prior.request_hash !== requestHash) {
-            throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
-          }
-          try {
-            const response = JSON.parse(prior.response_json);
-            return { order: response.order, orderItems: response.order?.items || [], idempotentReplay: true };
-          } catch {
-            throw Object.assign(new Error('Stored order response is invalid'), { statusCode: 500 });
-          }
+      if (idempotencyKey && requestHash) {
+        // Again under the transaction lock, for a twin of this request that
+        // raced the lookup above. Pre-user-scoped records whose creator is
+        // unavailable still replay; new records never use the `legacy` owner.
+        const replay = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash) as { order?: any } | null;
+        if (replay) return { order: replay.order, orderItems: replay.order?.items || [], idempotentReplay: true };
+      }
+      // `only_if_table_free`: open the table only if it is still free. A
+      // handheld sends it when it opens a table it last saw free, and the
+      // floor may have moved since — another phone, or the till, opened it, or
+      // the map was edited and the table is gone. Opening a second order there
+      // would split the table across two checks, and the floor shows only one
+      // of them. The 409 names the order that is open, and since the replay
+      // above comes first it also proves nothing was written under this key:
+      // the phone sends the same dishes on as an addition to that order.
+      // Without the flag nothing changes, so the till is unaffected.
+      if (body.only_if_table_free === true && table_id && type === 'dine_in') {
+        if (!db.prepare('SELECT id FROM tables WHERE id = ?').get(table_id)) {
+          throw Object.assign(new Error('Table not found'), { statusCode: 409, code: 'table_not_found' });
+        }
+        const open = db.prepare(`
+          SELECT id, order_number FROM orders
+          WHERE table_id = ? AND type = 'dine_in' AND ${ACTIVE_ORDER_STATUS_SQL}
+          ORDER BY created_at DESC, id DESC LIMIT 1
+        `).get(table_id) as { id: number; order_number: string } | undefined;
+        if (open) {
+          throw Object.assign(new Error('The table already has an open order'), {
+            statusCode: 409, code: 'table_has_open_order', order_id: open.id, order_number: open.order_number,
+          });
         }
       }
       // Generate order number inside transaction to prevent race conditions
@@ -636,9 +682,13 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
 
     res.status(result.idempotentReplay ? 200 : 201).json({ order: Object.assign({}, result.order, { items: result.orderItems }) });
   } catch (error: any) {
-    console.error('[Orders] Create error:', error);
-    console.error("[API] Internal error:", error);
-    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+    // A refusal is an answer, not a fault: a table found open is part of how
+    // the handheld opens tables, and must not fill the log.
+    if (!error.statusCode) {
+      console.error('[Orders] Create error:', error);
+      console.error("[API] Internal error:", error);
+    }
+    sendOrderWriteError(res, error);
   }
 });
 
@@ -655,7 +705,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
 
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+      return res.status(404).json({ error: 'Order not found', code: 'order_not_found' });
     }
 
     // Replay before any mutable-order guard. A response-loss retry must return
@@ -693,7 +743,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
       }
 
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
-        throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
+        throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400, code: 'order_closed' });
       }
 
       let expandedItems: ExpandedOrderItem[] = [];
@@ -707,7 +757,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
         }
         expandedItems = expandFixedMenuItems(db, items);
       } catch (err: unknown) {
-        throw Object.assign(new Error(err instanceof Error ? err.message : 'Invalid order item'), { statusCode: 400 });
+        throw Object.assign(new Error(err instanceof Error ? err.message : 'Invalid order item'), { statusCode: 400, code: 'invalid_item' });
       }
 
       insertOrderItemRows(db, String(req.params.id), expandedItems);
@@ -772,8 +822,8 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
 
     res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+    if (!error.statusCode) console.error("[API] Internal error:", error);
+    sendOrderWriteError(res, error);
   }
 });
 

@@ -212,20 +212,59 @@ export const COUNTRIES: Country[] = Object.keys(SUPPORTED)
     return a.name.localeCompare(b.name);
   });
 
+const COUNTRIES_BY_CODE = new Map(COUNTRIES.map((country) => [country.code, country]));
+
 export const getCountryByCode = (code: string): Country | undefined => {
   if (!code) return undefined;
-  return COUNTRIES.find((c) => c.code === code.toUpperCase());
+  return COUNTRIES_BY_CODE.get(code.toUpperCase());
 };
+
+/**
+ * Number formatters, one per locale and options, built once.
+ *
+ * Building an `Intl.NumberFormat` is the dear part of formatting a number,
+ * and every price on a screen built its own: the handheld's menu made two
+ * hundred of them each time its rows were drawn again, on a phone that was
+ * meant to be taking an order. A formatter never changes once made, so the
+ * first serves every later call. A combination the runtime refuses (an
+ * unknown currency code) is remembered as `null`, and the caller's fallback
+ * is taken without asking the runtime again.
+ */
+const numberFormats = new Map<string, Intl.NumberFormat | null>();
+
+function cachedNumberFormat(key: string, build: () => Intl.NumberFormat): Intl.NumberFormat | null {
+  let format = numberFormats.get(key);
+  if (format === undefined) {
+    try {
+      format = build();
+    } catch {
+      format = null;
+    }
+    numberFormats.set(key, format);
+  }
+  return format;
+}
+
+const currencyNumberFormat = (locale: string, currency: string, numberingSystem?: string) => cachedNumberFormat(
+  `currency|${locale}|${currency}|${numberingSystem ?? ''}`,
+  () => new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    currencyDisplay: 'narrowSymbol',
+    ...(numberingSystem ? { numberingSystem } : {}),
+  }),
+);
+
+const plainNumberFormat = (locale: string, numberingSystem?: string) => cachedNumberFormat(
+  `number|${locale}|${numberingSystem ?? ''}`,
+  () => new Intl.NumberFormat(locale, numberingSystem ? { numberingSystem } : undefined),
+);
 
 export const getCurrencySymbol = (currency: string, locale = 'en-US'): string => {
   if (!currency) return currency;
-  try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
-      .formatToParts(0)
-      .find((p) => p.type === 'currency')?.value ?? currency;
-  } catch {
-    return currency;
-  }
+  const format = currencyNumberFormat(locale, currency);
+  if (!format) return currency;
+  return format.formatToParts(0).find((p) => p.type === 'currency')?.value ?? currency;
 };
 
 /**
@@ -265,11 +304,8 @@ const normalizePreferences = (prefs?: LocalePreferences): Required<LocalePrefere
 
 export const formatCurrency = (amount: number, currency: string, locale = 'en-US'): string => {
   if (!currency) return amount.toFixed(2);
-  try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' }).format(amount);
-  } catch {
-    return `${currency} ${amount.toFixed(2)}`;
-  }
+  const format = currencyNumberFormat(locale, currency);
+  return format ? format.format(amount) : `${currency} ${amount.toFixed(2)}`;
 };
 
 /**
@@ -297,16 +333,8 @@ export const formatMoney = (
   }
 
   if (!currency) return formatNumber(amount, locale, numberingSystem);
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency,
-      currencyDisplay: 'narrowSymbol',
-      numberingSystem,
-    }).format(amount);
-  } catch {
-    return `${currency} ${formatNumber(amount, locale, numberingSystem)}`;
-  }
+  const format = currencyNumberFormat(locale, currency, numberingSystem);
+  return format ? format.format(amount) : `${currency} ${formatNumber(amount, locale, numberingSystem)}`;
 };
 
 export interface CurrencyUnitAdapter {
@@ -369,11 +397,8 @@ export const formatCurrencyForTenant = (
  * browser's default locale.
  */
 export const formatNumber = (value: number, locale = 'en-US', numberingSystem?: string): string => {
-  try {
-    return new Intl.NumberFormat(locale, numberingSystem ? { numberingSystem } : undefined).format(value);
-  } catch {
-    return String(value);
-  }
+  const format = plainNumberFormat(locale, numberingSystem);
+  return format ? format.format(value) : String(value);
 };
 
 /**

@@ -39,6 +39,8 @@ export function roomTabs(rooms: Room[], orphanTables: Table[], orphanLabel: stri
 interface Props {
   tab: RoomTab | null;
   orderByTableId: Map<string, Order>;
+  /** How many of this phone's tickets wait for each table. */
+  queuedByTable?: Map<string, number>;
   onSelectTable: (table: Table) => void;
 }
 
@@ -50,7 +52,7 @@ interface Props {
  * table stands — they are standing next to it — but which ones have a round
  * waiting and how long each party has been sitting.
  */
-export function SalaView({ tab, orderByTableId, onSelectTable }: Props) {
+export function SalaView({ tab, orderByTableId, queuedByTable, onSelectTable }: Props) {
   const tTables = useTranslations('tables');
 
   if (!tab) {
@@ -64,6 +66,7 @@ export function SalaView({ tab, orderByTableId, onSelectTable }: Props) {
           key={table.id}
           table={table}
           order={orderByTableId.get(table.id) || null}
+          queued={queuedByTable?.get(table.id) || 0}
           onClick={() => onSelectTable(table)}
         />
       ))}

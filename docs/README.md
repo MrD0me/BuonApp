@@ -28,7 +28,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [order-flow-and-navigation.md](order-flow-and-navigation.md) | Riorganizzazione dell'interfaccia prima del rifacimento grafico: navigazione ridotta alle schermate del servizio, pannello ordine condiviso, giornata di servizio e archivio, prezzo di riga modificabile, e la divisione del conto tolta. | CURRENT |
 | [coperto-e-menu-fisso.md](coperto-e-menu-fisso.md) | Prezzo del coperto e menu completo a prezzo fisso: perché i gruppi extra non reggono (la comanda va in sezioni per categoria), come il menu scrive righe vere nell'ordine e si riempie strada facendo, il menu a conteggio (quanti menu, poi quanti piatti di ciascuno), le uscite, e da dove partono i coperti. | CURRENT |
 | [rifacimento-grafica.md](rifacimento-grafica.md) | Il rifacimento grafico del PC di cassa (monitor touch) e del palmare: i colori di stato e le misure touch condivisi, le primitive di interfaccia, e cosa è cambiato schermata per schermata. | CURRENT |
-| [palmare.md](palmare.md) | Il Server App dei camerieri rifatto: Sala in sola lettura e Ordina con aggiuntivi, coperti, menu fisso, uscite e completamento di un menu a metà; l'allowlist del proxy; la caduta del vincolo "ogni cameriere solo i suoi ordini". | CURRENT |
+| [palmare.md](palmare.md) | Il Server App dei camerieri rifatto: Sala in sola lettura e Ordina con aggiuntivi, coperti, menu fisso, uscite e completamento di un menu a metà; la coda d'invio che regge i buchi di Wi-Fi, la comanda salvata sul telefono e il tasto indietro; cosa fare se i telefoni perdono la rete; l'allowlist del proxy; la caduta del vincolo "ogni cameriere solo i suoi ordini". | CURRENT |
 
 ### Active design
 

@@ -20,6 +20,8 @@ import { Ltr } from '@/components/layout/Ltr';
 import FixedMenuPicker from '@/components/pos/FixedMenuPicker';
 import ServiceRunPicker from '@/components/pos/ServiceRunPicker';
 import { parseDbTimestamp } from '@/lib/utils';
+import { HeaderSubtitle, useHeaderTone } from './handheld-status';
+import type { QueueEntry } from './send-queue';
 
 const OFF_THE_CHECK = ['cancelled', 'voided', 'void_adjustment'];
 
@@ -35,6 +37,8 @@ interface Props {
   table: Table;
   /** The open order on the table, rows included; null when it is free. */
   order: Order | null;
+  /** This phone's tickets for the table that have not reached the PC yet. */
+  queued?: QueueEntry[];
   products: Product[];
   kotPrintingEnabled: boolean;
   busy: boolean;
@@ -64,7 +68,7 @@ interface Props {
  * a back arrow, and the window (a `Modal`, one layer up) simply opens on top.
  */
 export function TableScreen({
-  table, order, products, kotPrintingEnabled, busy,
+  table, order, queued = [], products, kotPrintingEnabled, busy,
   onBack, onAddItems, onChangeGuests, onChangeServiceRun, onChangeMenuCount, onFillCourse, onSendToKitchen,
 }: Props) {
   const t = useTranslations('serverApp');
@@ -84,6 +88,7 @@ export function TableScreen({
   const guests = order?.guest_count ?? 1;
   const elapsed = order ? minutesSince(order.created_at) : null;
   const tableTone = TABLE_STATUS_TONE[table.status] ?? 'free';
+  const headerTone = useHeaderTone();
 
   const subtitle = order
     ? [t('coversCount', { count: guests }), elapsed !== null ? t('openSince', { minutes: elapsed }) : null].filter(Boolean).join(' · ')
@@ -210,20 +215,35 @@ export function TableScreen({
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="sticky top-0 z-20 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+      <header className={`sticky top-0 z-20 border-b border-border pt-[env(safe-area-inset-top)] ${headerTone}`}>
         <div className="mx-auto flex h-16 max-w-5xl items-center gap-2 px-2">
           <Button type="button" variant="ghost" size="icon-touch" onClick={onBack} aria-label={t('backToFloor')}>
             <ArrowLeft className="rtl-flip size-6" />
           </Button>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-xl leading-tight font-bold">{table.name}</h1>
-            <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+            <HeaderSubtitle className="text-muted-foreground">{subtitle}</HeaderSubtitle>
           </div>
           <StatusBadge tone={tableTone} className="me-2">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</StatusBadge>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-4">
+        {/* What this phone has sent for the table and the PC has not taken
+            yet: written, kept, going by itself. Shown greyed, apart from the
+            check, because it is not on the check — not yet. */}
+        {queued.length > 0 && (
+          <section aria-label={t('queuedForTable')} className="mt-3 rounded-2xl border border-pending/40 bg-pending-soft px-3 py-2">
+            <h2 className="text-xs font-semibold tracking-wide text-pending uppercase">{t('queuedForTable')}</h2>
+            {queued.map((entry) => (
+              <ul key={entry.id} className="flex flex-col gap-0.5 py-1.5 text-sm text-muted-foreground">
+                {entry.lines.map((line) => (
+                  <li key={line.id} className="truncate"><Ltr>{line.quantity}×</Ltr> {line.product.name}</li>
+                ))}
+              </ul>
+            ))}
+          </section>
+        )}
         {order ? (
           <>
             <div className="flex items-center justify-between border-b border-border py-3">
@@ -254,7 +274,7 @@ export function TableScreen({
               })}
             </div>
           </>
-        ) : (
+        ) : queued.length === 0 && (
           <EmptyState
             className="py-16"
             icon={<ClipboardList />}
@@ -264,7 +284,7 @@ export function TableScreen({
         )}
       </main>
 
-      <ActionBar className="flex-col items-stretch">
+      <ActionBar className="flex-col items-stretch bg-background backdrop-blur-none">
         {order && pendingCount > 0 && (
           <Button
             type="button"
@@ -286,7 +306,7 @@ export function TableScreen({
           className="w-full bg-brand text-white hover:bg-brand-hover"
         >
           <Plus />
-          {order ? t('addItems') : tTables('takeOrder')}
+          {order || queued.length > 0 ? t('addItems') : tTables('takeOrder')}
         </Button>
       </ActionBar>
 

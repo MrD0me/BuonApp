@@ -31,7 +31,9 @@ function useScrollEdges(enabled: boolean, rtl: boolean, items: unknown) {
       // A pixel of slack: fractional layouts never land on exactly 0 or max.
       const fromStart = past > 1
       const toEnd = past < room - 1
-      setEdges({ left: rtl ? toEnd : fromStart, right: rtl ? fromStart : toEnd })
+      const left = rtl ? toEnd : fromStart
+      const right = rtl ? fromStart : toEnd
+      setEdges((current) => (current.left === left && current.right === right ? current : { left, right }))
     }
     measure()
     node.addEventListener("scroll", measure, { passive: true })
@@ -95,17 +97,35 @@ function SegmentedControl({
 }: SegmentedControlProps) {
   const language = usePosSettingsStore((s) => s.language)
   const direction = dir ?? getLanguageDirection(language)
-  const { ref, edges } = useScrollEdges(scrollable, direction === "rtl", items)
+  // What the row shows, as text. Callers build `items` afresh on every render
+  // — the handheld's categories come back as a new array every minute — so
+  // the effects below follow what the items say, not which array they are in.
+  const itemsKey = items
+    .map((item) => `${item.value}\u0001${typeof item.label === "string" ? item.label : ""}\u0001${item.count ?? ""}`)
+    .join("\u0000")
+  const { ref, edges } = useScrollEdges(scrollable, direction === "rtl", itemsKey)
   // The chosen item, brought back into the strip. A row that scrolls can be
   // drawn with its selection off screen — after a remount, or when the value
-  // is set from outside — and then nothing looks selected at all. `nearest`
-  // on both axes moves the strip and leaves the page where it is.
+  // is set from outside — and then nothing looks selected at all.
+  //
+  // Only the strip moves, and only sideways. `scrollIntoView` scrolls every
+  // ancestor too: on the handheld, a waiter halfway down the dishes was
+  // pulled back up to the category row each time the menu was re-read, and
+  // the dish under the thumb became another dish. The distances are physical,
+  // so the same arithmetic serves a row that reads right to left, whose
+  // scrollLeft runs negative. The fade is kept clear, so the chip is whole.
   React.useEffect(() => {
     if (!scrollable) return
-    ref.current
-      ?.querySelector<HTMLElement>('[data-state="on"]')
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" })
-  }, [scrollable, value, items, ref])
+    const strip = ref.current
+    const chip = strip?.querySelector<HTMLElement>('[data-state="on"]')
+    if (!strip || !chip) return
+    const stripBox = strip.getBoundingClientRect()
+    const chipBox = chip.getBoundingClientRect()
+    const start = stripBox.left + EDGE_FADE_PX
+    const end = stripBox.right - EDGE_FADE_PX
+    if (chipBox.left < start) strip.scrollLeft -= start - chipBox.left
+    else if (chipBox.right > end) strip.scrollLeft += chipBox.right - end
+  }, [scrollable, value, itemsKey, ref])
   // A scrolling row with no scrollbar and no fade is a row that lies: on a
   // phone the categories past the edge are simply not there, and the floor
   // reports them missing. The fade appears only on a side that has something

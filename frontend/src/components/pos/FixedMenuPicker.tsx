@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MessageSquarePlus, Minus, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Modal, ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Ltr } from '@/components/layout/Ltr';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import type { FixedMenuSelection, Product } from '@/lib/types';
+import type { FixedMenuCourse, FixedMenuSelection, Product } from '@/lib/types';
 import {
   courseCapacity, courseChoices, courseSurcharge, missingRequiredCourses, portionsOf, selectionSurcharge, tallySelection,
 } from '@/lib/fixed-menu';
@@ -47,6 +47,14 @@ import {
  * starter, first, second — and every plate of a course goes out on the wave
  * its category gives it; moving one is done from the check, on the rare
  * evening that is wanted at all.
+ *
+ * Nothing on the list moves under the finger. A table of twenty is counted
+ * in sixty quick taps without looking down between them, so every row keeps
+ * its height and every control its place from the first tap to the last: the
+ * minus and the count hold their room even at nought, the note for one
+ * portion is an icon in that same row, and the footer says what is missing in
+ * a line of fixed height. A list that grew a row under each dish as it was
+ * first counted sent the next tap onto the dish below, or onto that row.
  */
 interface Props {
   menu: Product;
@@ -54,8 +62,18 @@ interface Props {
   onAdd: (menu: Product, menus: number, selection: FixedMenuSelection) => void;
   onClose: () => void;
   initialSelection?: FixedMenuSelection;
-  /** How many menus the line already feeds — a cart line being edited, or a line on the check. */
+  /**
+   * How many menus the line already feeds — a cart line being edited, or a
+   * line on the check. In `add` mode it is left out, and the count starts
+   * unanswered; given there, it is a count the floor had already typed (the
+   * handheld brings back a window left half done when the page was lost).
+   */
   initialMenus?: number;
+  /**
+   * The window's count and dishes as they stand, after every change, for a
+   * caller that keeps a draft of them. Nothing is sent anywhere by this.
+   */
+  onSelectionChange?: (menus: number | null, selection: FixedMenuSelection) => void;
   /** The table's covers, said under the count so the floor sees what it is aiming at. */
   covers?: number;
   mode?: 'add' | 'edit' | 'fill';
@@ -85,8 +103,25 @@ const nextTallyKey = () => `tally-${++tallyKeys}`;
 const MAX_MENUS = 99;
 const NOTE_LENGTH = 100;
 
+/**
+ * Selects what the count box holds, so the digits typed next replace it.
+ *
+ * An iPhone ignores a `select()` made while the focus is still arriving, and
+ * the box kept its old digits: "8" and a typed "20" came out as 82 menus, the
+ * two-digit limit dropping the zero. A frame later the selection holds.
+ */
+function selectAll(input: HTMLInputElement) {
+  requestAnimationFrame(() => {
+    try {
+      input.setSelectionRange(0, input.value.length);
+    } catch {
+      // Gone, or no longer focused: nothing to select.
+    }
+  });
+}
+
 export default function FixedMenuPicker({
-  menu, products, onAdd, onClose,
+  menu, products, onAdd, onClose, onSelectionChange,
   initialSelection = [], initialMenus, covers, mode = 'add', restrictToCourseId,
 }: Props) {
   const t = useTranslations('pos');
@@ -112,8 +147,16 @@ export default function FixedMenuPicker({
       : [{ key: nextTallyKey(), ...shared, quantity: portions, note: '', own: false }];
   }));
   const [menus, setMenus] = useState<number | null>(
-    mode === 'add' ? null : Math.max(1, Math.floor(Number(initialMenus)) || 1),
+    mode === 'add' && initialMenus === undefined ? null : Math.max(1, Math.floor(Number(initialMenus)) || 1),
   );
+  /**
+   * The course whose full label lights up after a tap it had no room for. A
+   * new object at every such tap, so a second tap starts the moment again.
+   */
+  const [fullTap, setFullTap] = useState<{ courseId: string } | null>(null);
+  /** How many times the save button was tapped before the count was given; the count lights up. */
+  const [askCount, setAskCount] = useState<number | null>(null);
+  const countInput = useRef<HTMLInputElement>(null);
 
   const courses = useMemo(
     () => [...(menu.courses || [])]
@@ -122,12 +165,31 @@ export default function FixedMenuPicker({
     [menu.courses, restrictToCourseId],
   );
 
-  const selection: FixedMenuSelection = tallySelection(tallies.filter((entry) => entry.quantity > 0).map((entry) => ({
+  const selection: FixedMenuSelection = useMemo(() => tallySelection(tallies.filter((entry) => entry.quantity > 0).map((entry) => ({
     course_id: entry.course_id,
     product_id: entry.product_id,
     quantity: entry.quantity,
     ...(entry.note.trim() ? { note: entry.note.trim().slice(0, NOTE_LENGTH) } : {}),
-  })));
+  }))), [tallies]);
+
+  // A caller keeping a draft hears every change. Its function is read through
+  // a ref, so a parent that passes a new one on each render does not count
+  // as a change.
+  const selectionListener = useRef(onSelectionChange);
+  useEffect(() => { selectionListener.current = onSelectionChange; });
+  useEffect(() => { selectionListener.current?.(menus, selection); }, [menus, selection]);
+
+  // The lit labels go back to how they read after a moment.
+  useEffect(() => {
+    if (!fullTap) return;
+    const timer = window.setTimeout(() => setFullTap(null), 1200);
+    return () => window.clearTimeout(timer);
+  }, [fullTap]);
+  useEffect(() => {
+    if (askCount === null) return;
+    const timer = window.setTimeout(() => setAskCount(null), 1200);
+    return () => window.clearTimeout(timer);
+  }, [askCount]);
 
   const heldIn = (entries: Tally[], courseId: string) => entries
     .filter((entry) => entry.course_id === courseId)
@@ -146,6 +208,17 @@ export default function FixedMenuPicker({
   const missing = menus === null ? [] : missingRequiredCourses(menu, selection, menus)
     .filter((course) => !restrictToCourseId || course.id === restrictToCourseId);
   const canSave = menus !== null && overfull.length === 0;
+  const footerNote = overfull.length > 0
+    ? {
+      text: t('menuCourseTooMany', { course: overfull[0].label, count: capacityOf(overfull[0].max_choices) }),
+      tone: 'font-semibold text-destructive',
+    }
+    : missing.length > 0
+      ? { text: t('menuMissingCourses', { courses: missing.map((course) => course.label).join(', ') }), tone: 'text-pending' }
+      : surcharge > 0 && menus !== null && mode !== 'fill'
+        ? { text: t('menuSurchargeNote', { base: fmt((Number(menu.price) || 0) * menus), extra: fmt(surcharge) }), tone: 'text-muted-foreground' }
+        : null;
+  const fullCourse = fullTap ? courses.find((course) => course.id === fullTap.courseId) : undefined;
 
   const isPlain = (entry: Tally, courseId: string, productId: string) => (
     !entry.own && entry.course_id === courseId && entry.product_id === productId
@@ -217,33 +290,81 @@ export default function FixedMenuPicker({
     setMenus(digits === '' || value === 0 ? null : Math.min(MAX_MENUS, value));
   };
 
+  /**
+   * A tap on a dish, or on its plus. A course with no room left says so — its
+   * full label lights up for a moment, and a screen reader hears it — instead
+   * of swallowing the tap: a waiter counting twenty does not look at the
+   * header between taps, and a tap that does nothing reads as a phone that
+   * has stopped working. Asked of this render; `addOne` asks again of the
+   * state it updates, for two taps that land before the screen redraws.
+   */
+  const tapDish = (course: FixedMenuCourse, productId: string) => {
+    if (countOfCourse(course.id) >= capacityOf(course.max_choices)) {
+      setFullTap({ courseId: course.id });
+      return;
+    }
+    addOne(course.id, productId, course.max_choices);
+  };
+
+  /** The save button pressed before the count: the finger is taken to the count. */
+  const askForCount = () => {
+    setAskCount((asked) => (asked ?? 0) + 1);
+    countInput.current?.focus();
+  };
+
   // The counters are 36 px, under the house minimum of 44, because they are
   // not what the finger aims at: a dish is added by hitting its whole row,
   // 44 px tall and the width of the window, and how many menus is answered
   // once. Making them bigger cost a screenful of dishes.
   const countButton = 'bg-muted text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
   const dishButton = 'bg-card text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full border border-border outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
+  const noteButton = 'text-brand hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95';
 
   /**
-   * A dish that has not been counted yet shows one `+` and nothing else. A
+   * The end of a dish row, always the same width: a note for one portion, the
+   * minus, the count, the plus.
+   *
+   * A dish that has not been counted yet shows one `+` and nothing else — a
    * `− 0 +` on every line of a long card was forty greyed-out zeros to read
-   * past; this way the eye finds what has been taken.
+   * past, and this way the eye finds what has been taken. The others keep
+   * their room all the same, invisible (out of reach of the finger, the
+   * keyboard and the screen reader alike), so the name beside them never
+   * changes width and never wraps onto a second line at the first tap.
    */
-  const dishStepper = (count: number, name: string, full: boolean, onMinus: () => void, onPlus: () => void) => (
-    <div className="flex shrink-0 items-center gap-1">
-      {count > 0 && (
-        <>
-          <button type="button" aria-label={`${t('menuOneLess')}: ${name}`} onClick={onMinus} className={dishButton}>
-            <Minus className="size-4" />
-          </button>
-          <Ltr className="w-6 text-center text-base font-bold text-brand tabular-nums">{count}</Ltr>
-        </>
-      )}
-      <button type="button" aria-label={`${t('menuOneMore')}: ${name}`} onClick={onPlus} disabled={full} className={dishButton}>
-        <Plus className="size-4" />
-      </button>
-    </div>
-  );
+  const dishControls = (course: FixedMenuCourse, dishId: string, name: string, count: number, full: boolean) => {
+    const untilCounted = count > 0 ? '' : 'invisible';
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          aria-label={`${t('menuPortionApart')}: ${name}`}
+          title={t('menuPortionApart')}
+          onClick={() => noteOne(course.id, dishId, course.max_choices)}
+          className={`${noteButton} ${untilCounted}`}
+        >
+          <MessageSquarePlus className="size-4" />
+        </button>
+        <button
+          type="button"
+          aria-label={`${t('menuOneLess')}: ${name}`}
+          onClick={() => removeOne(course.id, dishId)}
+          className={`${dishButton} ${untilCounted}`}
+        >
+          <Minus className="size-4" />
+        </button>
+        <Ltr className={`w-6 text-center text-base font-bold text-brand tabular-nums ${untilCounted}`}>{count}</Ltr>
+        <button
+          type="button"
+          aria-label={`${t('menuOneMore')}: ${name}`}
+          aria-disabled={full || undefined}
+          onClick={() => tapDish(course, dishId)}
+          className={`${dishButton} ${full ? 'opacity-40' : ''}`}
+        >
+          <Plus className="size-4" />
+        </button>
+      </div>
+    );
+  };
 
   return (
     <Modal open onOpenChange={(open) => { if (!open) onClose(); }} size="md">
@@ -259,6 +380,9 @@ export default function FixedMenuPicker({
       </ModalHeader>
 
       <ModalBody className="p-0">
+        <p className="sr-only" aria-live="polite">
+          {fullCourse ? t('menuCourseFullNotice', { course: fullCourse.label }) : ''}
+        </p>
         {/* The first question at the table. On the check the count changes
             from the menu's own row instead, so it is not asked twice. */}
         {mode !== 'fill' && (
@@ -280,19 +404,26 @@ export default function FixedMenuPicker({
                 <Minus className="size-4" />
               </button>
               <input
+                ref={countInput}
                 type="text"
                 inputMode="numeric"
+                enterKeyHint="done"
                 pattern="[0-9]*"
                 dir="ltr"
                 maxLength={2}
                 value={menus === null ? '' : String(menus)}
                 onChange={(event) => typeCount(event.target.value)}
-                onFocus={(event) => event.target.select()}
+                onFocus={(event) => selectAll(event.currentTarget)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return;
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }}
                 aria-label={t('menuHowMany')}
                 placeholder="0"
-                className={`h-9 w-12 rounded-lg border border-input bg-card text-center text-lg font-bold tabular-nums outline-none focus:ring-2 focus:ring-brand ${
+                className={`h-9 w-12 rounded-lg border border-input bg-card text-center text-lg font-bold tabular-nums outline-none transition focus:ring-2 focus:ring-brand ${
                   menus === null ? 'text-muted-foreground' : 'text-brand'
-                }`}
+                } ${askCount !== null ? 'ring-2 ring-pending' : ''}`}
               />
               <button
                 type="button"
@@ -318,11 +449,15 @@ export default function FixedMenuPicker({
           const short = menus !== null && course.is_required && count < menus;
           const room = Math.max(0, capacity - count);
           const choices = courseChoices(course, products);
-          const state = tooMany ? null
-            : short ? { label: t('menuCourseToChoose'), tone: 'text-pending' }
-              : menus !== null && room === 0 ? { label: t('menuCourseFull'), tone: 'text-muted-foreground' }
-                : !course.is_required && count === 0 ? { label: t('menuCourseOptional'), tone: 'text-muted-foreground' }
-                  : null;
+          const full = room === 0;
+          // A tap the course had no room for lights its full label up, in
+          // place: same box, same padding, only the colours change.
+          const state = fullTap?.courseId === course.id ? { label: t('menuCourseFull'), tone: 'bg-pending text-white' }
+            : tooMany ? null
+              : short ? { label: t('menuCourseToChoose'), tone: 'text-pending' }
+                : menus !== null && full ? { label: t('menuCourseFull'), tone: 'text-muted-foreground' }
+                  : !course.is_required && count === 0 ? { label: t('menuCourseOptional'), tone: 'text-muted-foreground' }
+                    : null;
 
           return (
             <section
@@ -347,7 +482,7 @@ export default function FixedMenuPicker({
               <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-muted-foreground/40 bg-brand-band px-4 py-1.5">
                 <h3 className="min-w-0 truncate text-sm font-bold text-foreground">{course.label}</h3>
                 <span className="flex shrink-0 items-center gap-2 text-xs font-semibold">
-                  {state && <span className={state.tone}>{state.label}</span>}
+                  {state && <span className={`rounded px-1.5 transition-colors ${state.tone}`}>{state.label}</span>}
                   {(menus !== null || count > 0) && (
                     <span className={`font-semibold ${tooMany ? 'text-destructive' : count > 0 ? 'text-brand' : 'text-muted-foreground'}`}>
                       {menus === null
@@ -358,12 +493,6 @@ export default function FixedMenuPicker({
                 </span>
               </header>
 
-              {tooMany && (
-                <p className="border-b border-border bg-destructive/10 px-4 py-1.5 text-xs font-semibold text-destructive">
-                  {t('menuCourseTooMany', { course: course.label, count: capacity })}
-                </p>
-              )}
-
               {choices.length === 0 ? (
                 <p className="ps-8 pe-4 py-2 text-sm text-muted-foreground">{t('menuCourseEmpty')}</p>
               ) : choices.map((dish) => {
@@ -371,43 +500,47 @@ export default function FixedMenuPicker({
                 const dishCount = entries.reduce((total, entry) => total + entry.quantity, 0);
                 const noted = entries.filter((entry) => entry.own);
                 const extra = courseSurcharge(course, dish.id);
+                const counted = dishCount > 0;
+                // A counted dish changes colour, never weight: a bolder name
+                // is a wider one, and a wider one can wrap and move the rows
+                // below it. In a full course the dishes it does not hold
+                // step back.
+                const tone = counted ? 'text-brand' : full ? 'text-muted-foreground' : 'text-foreground';
                 return (
                   <div
                     key={dish.id}
-                    className={`border-b border-border last:border-0 ${dishCount > 0 ? 'bg-brand-light/50' : ''}`}
+                    className={`border-b border-border last:border-0 ${counted ? 'bg-brand-light/50' : ''}`}
                   >
-                    <div className="flex items-center gap-2 ps-8 pe-2">
+                    <div className="flex items-center gap-2 ps-8 pe-2 select-none [-webkit-touch-callout:none]">
                       {/* The whole name is the plus: the floor counts by tapping the dish. */}
                       <button
                         type="button"
-                        onClick={() => addOne(course.id, dish.id, course.max_choices)}
-                        disabled={room === 0}
+                        onClick={() => tapDish(course, dish.id)}
+                        aria-disabled={full || undefined}
                         aria-label={`${t('menuOneMore')}: ${dish.name}`}
-                        className="flex min-h-touch min-w-0 flex-1 items-center justify-between gap-3 text-start disabled:cursor-not-allowed"
+                        className="flex min-h-touch min-w-0 flex-1 items-center justify-between gap-3 text-start"
                       >
-                        <span className={`text-sm ${dishCount > 0 ? 'font-semibold text-brand' : 'font-medium text-foreground'}`}>{dish.name}</span>
+                        <span className={`text-sm font-medium ${tone}`}>{dish.name}</span>
                         {extra > 0 && (
-                          <span className={`shrink-0 text-xs ${dishCount > 0 ? 'font-semibold text-brand' : 'text-muted-foreground'}`}>
+                          <span className={`shrink-0 text-xs font-medium ${counted ? 'text-brand' : 'text-muted-foreground'}`}>
                             <Ltr>+{fmt(extra)}</Ltr>
                           </span>
                         )}
                       </button>
-                      {dishStepper(
-                        dishCount,
-                        dish.name,
-                        room === 0,
-                        () => removeOne(course.id, dish.id),
-                        () => addOne(course.id, dish.id, course.max_choices),
-                      )}
+                      {dishControls(course, dish.id, dish.name, dishCount, full)}
                     </div>
 
-                    {dishCount > 0 && (
+                    {noted.length > 0 && (
                       <div className="flex flex-col gap-1.5 pb-2 ps-11 pe-2">
                         {/* One of the plates counted above, and what the
                             kitchen has to know about that one. The note has
                             the line to itself: beside a picker and a counter
                             it was down to a dozen characters, and "senza
-                            besciamella" read "nza besciamella". */}
+                            besciamella" read "nza besciamella". It appears
+                            when the waiter asks for it, under the dish they
+                            are looking at; nothing else on the list moves
+                            on its own. Sixteen pixels on a phone, or an
+                            iPhone zooms the page in on the first letter. */}
                         {noted.map((entry) => (
                           <div key={entry.key} className="flex items-center gap-2">
                             <Ltr className="shrink-0 text-xs font-bold text-brand">1×</Ltr>
@@ -418,7 +551,7 @@ export default function FixedMenuPicker({
                               placeholder={t('menuDishNotePlaceholder')}
                               aria-label={`${t('menuDishNotePlaceholder')}: ${dish.name}`}
                               maxLength={NOTE_LENGTH}
-                              className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                              className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-base outline-none focus:ring-2 focus:ring-brand sm:text-sm"
                             />
                             <button
                               type="button"
@@ -430,14 +563,6 @@ export default function FixedMenuPicker({
                             </button>
                           </div>
                         ))}
-                        <button
-                          type="button"
-                          onClick={() => noteOne(course.id, dish.id, course.max_choices)}
-                          className="flex min-h-9 items-center gap-1.5 self-start rounded-lg pe-2 text-xs font-semibold text-brand active:bg-muted"
-                        >
-                          <MessageSquarePlus className="size-3.5" />
-                          {t('menuPortionApart')}
-                        </button>
                       </div>
                     )}
                   </div>
@@ -451,18 +576,24 @@ export default function FixedMenuPicker({
       <ModalFooter className="px-4 py-3">
         {/* Said once, plainly, next to the button that takes the order
             anyway. A dialog here would be a dialog every evening in a house
-            that sells the menu without dessert. */}
-        {missing.length > 0 && (
-          <p className="text-center text-xs text-pending">
-            {t('menuMissingCourses', { courses: missing.map((course) => course.label).join(', ') })}
-          </p>
-        )}
-        {surcharge > 0 && menus !== null && mode !== 'fill' && (
-          <p className="text-center text-xs text-muted-foreground">
-            {t('menuSurchargeNote', { base: fmt((Number(menu.price) || 0) * menus), extra: fmt(surcharge) })}
-          </p>
-        )}
-        <Button onClick={() => { if (menus !== null) onAdd(menu, menus, selection); }} disabled={!canSave} className="w-full" size="touch-lg">
+            that sells the menu without dessert.
+
+            One line of fixed height, whatever it has to say — too many plates
+            first, then the courses still missing, then the surcharges — and
+            the same height when it has nothing to say: a footer that grew and
+            shrank pushed a short window up and down under the finger. */}
+        <p aria-live="polite" className={`line-clamp-2 min-h-8 text-center text-xs ${footerNote?.tone ?? ''}`}>
+          {footerNote?.text}
+        </p>
+        <Button
+          onClick={() => {
+            if (menus === null) askForCount();
+            else onAdd(menu, menus, selection);
+          }}
+          disabled={menus !== null && !canSave}
+          className="w-full"
+          size="touch-lg"
+        >
           {menus === null
             ? t('menuHowMany')
             : mode === 'add'
