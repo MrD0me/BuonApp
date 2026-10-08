@@ -210,7 +210,7 @@ export function TableScreen({
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="sticky top-0 z-20 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-border bg-background pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex h-16 max-w-5xl items-center gap-2 px-2">
           <Button type="button" variant="ghost" size="icon-touch" onClick={onBack} aria-label={t('backToFloor')}>
             <ArrowLeft className="rtl-flip size-6" />
@@ -264,7 +264,7 @@ export function TableScreen({
         )}
       </main>
 
-      <ActionBar className="flex-col items-stretch">
+      <ActionBar className="flex-col items-stretch bg-background backdrop-blur-none">
         {order && pendingCount > 0 && (
           <Button
             type="button"

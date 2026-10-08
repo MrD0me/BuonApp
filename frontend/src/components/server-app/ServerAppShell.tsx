@@ -81,16 +81,48 @@ export function ServerAppShell() {
   );
   const selectedOrder = selectedTable ? orderByTableId.get(selectedTable.id) || null : null;
   // Derived, never stored: the order the cart adds to is whatever is open on
-  // the cart's table right now.
-  const cartTable = useMemo(
+  // the cart's table right now. A table that has dropped off the floor — the
+  // map edited on the PC to seat a big party — keeps its ticket on screen,
+  // with the header saying so: unmounting Ordina there took the menu window
+  // down with it, and twenty counted dishes with the window.
+  const cartTableOnFloor = useMemo(
     () => (cart.tableId ? allTables.find((table) => table.id === cart.tableId) || null : null),
     [allTables, cart.tableId],
   );
+  const cartTable = cartTableOnFloor || (cart.tableId ? data.knownTables.get(cart.tableId) || null : null);
   const pendingOrder = cart.tableId ? orderByTableId.get(cart.tableId) || null : null;
 
   useEffect(() => {
     if (data.loadError) toast.error(t('couldNotLoadData'));
   }, [data.loadError, t]);
+
+  // Two things only a phone needs, set while the handheld is on screen.
+  //
+  // A double tap is two taps here, never a zoom: counting dishes is tapping
+  // the same row fast, and a page that zoomed in on the second tap was a page
+  // where the next tap landed somewhere else.
+  //
+  // And after the keyboard closes, an iPhone can leave the page drawn a few
+  // pixels from where it takes taps until something scrolls. A scroll to
+  // where the page already is makes it settle.
+  useEffect(() => {
+    const root = document.documentElement;
+    const touchAction = root.style.touchAction;
+    root.style.touchAction = 'manipulation';
+    let settle = 0;
+    const onFocusOut = () => {
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        if ((window.visualViewport?.offsetTop ?? 0) > 0) window.scrollTo(window.scrollX, window.scrollY);
+      }, 100);
+    };
+    document.addEventListener('focusout', onFocusOut);
+    return () => {
+      root.style.touchAction = touchAction;
+      window.clearTimeout(settle);
+      document.removeEventListener('focusout', onFocusOut);
+    };
+  }, []);
 
   // A link that names a table opens it as soon as the floor is known.
   useEffect(() => {
@@ -243,6 +275,7 @@ export function ServerAppShell() {
             { headers: { 'Idempotency-Key': attempt.idempotencyKey } },
           );
           orderId = response.order?.id ?? target.id;
+          if (response.order) data.applyOrder(response.order);
         } catch (error) {
           if (isPermanentAppendRefusal(error)) clearAppendAttempt(storage, attempt);
           throw error;
@@ -268,15 +301,19 @@ export function ServerAppShell() {
         const { data: response } = await api.post('/api/orders', payload, { headers: { 'Idempotency-Key': attempt.idempotencyKey } });
         clearOrderAttempt();
         orderId = response.order.id;
+        if (response.order) data.applyOrder(response.order);
       }
+      // The table first, then the cart emptied: emptied first, the screen had
+      // no table to stand on and showed the floor for as long as the kitchen
+      // ticket took, and a tap there opened some other table.
+      setSelectedTableId(cart.tableId);
+      setView('table');
       cart.clearCart();
       toast.success(t('orderSent'));
       // On a handheld, sending the order *is* the act of firing the ticket.
       // It runs after the success toast: the order is already committed, and
       // a jammed printer must not read as a failed order.
-      await sendToKitchen(orderId);
-      await data.refreshFloor().catch(() => {});
-      setView('table');
+      void sendToKitchen(orderId).then(() => data.refreshFloor()).catch(() => {});
     } catch (error) {
       if (target && isPermanentAppendRefusal(error)) toast.error(t('attemptDropped'));
       else toast.error(t('couldNotSendOrder'));
@@ -387,6 +424,7 @@ export function ServerAppShell() {
       <>
         <OrdinaView
           table={cartTable}
+          tableMissing={!cartTableOnFloor}
           pendingOrder={pendingOrder}
           products={data.products}
           categories={data.categories}
@@ -427,7 +465,7 @@ export function ServerAppShell() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="sticky top-0 z-20 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-border bg-background pt-[env(safe-area-inset-top)]">
         <div className="mx-auto max-w-5xl px-3">
           <div className="flex h-16 items-center gap-2">
             <div className="min-w-0 flex-1">

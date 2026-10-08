@@ -1010,6 +1010,7 @@
     "completeMenu": "Complete the menu",
     "couldNotLoadData": "Could not load Server App data",
     "couldNotSendOrder": "Could not send order",
+    "tableMissing": "Table no longer on the floor: the ticket stays here",
     "courseToChoose": "to choose",
     "coverCharge": "Cover charge: {count} × {amount}",
     "disabledHint": "Ask an owner or manager to re-enable Tableside Ordering from Settings.",

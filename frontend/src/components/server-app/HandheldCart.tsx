@@ -154,7 +154,7 @@ export function HandheldCart({
         )}
       </div>
 
-      <ActionBar className="flex-col items-stretch gap-2">
+      <ActionBar className="flex-col items-stretch gap-2 bg-background backdrop-blur-none">
         <div className="flex items-center justify-between px-1">
           <span className="text-sm text-muted-foreground">{t('dishCount', { count: dishCount })}</span>
           <span className="text-xl font-bold text-foreground"><Ltr>{fmt(cart.subtotal())}</Ltr></span>

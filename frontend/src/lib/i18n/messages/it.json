@@ -1010,6 +1010,7 @@
     "completeMenu": "Completa il menu",
     "couldNotLoadData": "Impossibile caricare i dati della Server App",
     "couldNotSendOrder": "Impossibile inviare l'ordine",
+    "tableMissing": "Tavolo non più in sala: la comanda resta qui",
     "courseToChoose": "da scegliere",
     "coverCharge": "Coperto: {count} × {amount}",
     "disabledHint": "Chiedi a un proprietario o un manager di riattivare l'Ordinazione al Tavolo dalle Impostazioni.",

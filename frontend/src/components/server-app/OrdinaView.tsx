@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Addon, CartItem, Category, FixedMenuSelection, Order, Product, Table } from '@/lib/types';
@@ -20,6 +20,11 @@ import { HandheldCart } from './HandheldCart';
 
 interface Props {
   table: Table;
+  /**
+   * The table is no longer on the floor the PC serves — the map was edited
+   * while this ticket was being written. The ticket stays; the header says so.
+   */
+  tableMissing?: boolean;
   /** The order already open on the table, which the cart will be added to. */
   pendingOrder: Order | null;
   products: Product[];
@@ -34,6 +39,20 @@ interface Props {
   onAttachToOrderMenu: (groupId: string, courseId: string, productIds: string[]) => Promise<boolean>;
 }
 
+/** A fixed menu's window, with the menu as it read when the window opened. */
+interface MenuWindow {
+  menu: Product;
+  /**
+   * The catalogue is re-read every minute. A dish switched off on the PC while
+   * the waiter is counting would leave its course mid-count, and every row
+   * under it would move up under the finger; the window keeps the dishes it
+   * opened with, and the check refuses the switched-off one at sending.
+   */
+  products: Product[];
+  /** The cart line being edited, when the menu is already on the ticket. */
+  line?: CartItem;
+}
+
 /**
  * Taking the order: the till's Ordina screen, on a phone.
  *
@@ -46,14 +65,19 @@ interface Props {
  * The three windows are the till's own, mounted as they are. They sit one
  * layer above the page, so the ticket stays where it is while a line is
  * being edited.
+ *
+ * The headers and the bar at the bottom are solid, not frosted: a blur
+ * behind them is redrawn at every frame of a scroll, and on a cheap phone
+ * that was the scroll.
  */
 export function OrdinaView({
-  table, pendingOrder, products, categories, kotPrintingEnabled, coverChargeAmount, currency, submitting,
+  table, tableMissing = false, pendingOrder, products, categories, kotPrintingEnabled, coverChargeAmount, currency, submitting,
   onBack, onSend, onAttachToOrderMenu,
 }: Props) {
   const t = useTranslations('serverApp');
   const fmt = useFormatCurrency();
-  const cart = useCartStore();
+  const cartItems = useCartStore((state) => state.items);
+  const guestCount = useCartStore((state) => state.guestCount);
   const [cartOpen, setCartOpen] = useState(false);
   // The menu's own filter, kept up here because the list comes off the page
   // whenever the ticket is opened: held inside it, the category the waiter
@@ -61,25 +85,26 @@ export function OrdinaView({
   const [menuQuery, setMenuQuery] = useState('');
   const [menuCategoryId, setMenuCategoryId] = useState('all');
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
-  const [menuProduct, setMenuProduct] = useState<Product | null>(null);
+  const [menuWindow, setMenuWindow] = useState<MenuWindow | null>(null);
   const [attachProduct, setAttachProduct] = useState<{ product: Product; slots: OpenSlot[] } | null>(null);
+  const [attaching, setAttaching] = useState(false);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
-  const [editingMenuItem, setEditingMenuItem] = useState<CartItem | null>(null);
+  /** Where the menu was scrolled to when the ticket was opened over it. */
+  const menuScroll = useRef(0);
 
   // Menus with room left, wherever they are: still in the cart, or already
   // on the check of the table being added to.
   const openMenuLines = useMemo(() => [
-    ...menuLinesOfCart(cart.items),
+    ...menuLinesOfCart(cartItems),
     ...menuLinesOfOrder(menuGroupsOfOrder(pendingOrder?.items || [], products)),
-  ], [cart.items, pendingOrder, products]);
+  ], [cartItems, pendingOrder, products]);
 
-  const handleProductClick = (product: Product) => {
+  const handleProductClick = useCallback((product: Product) => {
     // A menu already in the cart reopens that line: the table's count and
     // dishes go on one line, not two.
     if (isFixedMenu(product)) {
-      const existing = cart.items.find((item) => item.menu_selection && item.product.id === product.id);
-      if (existing) setEditingMenuItem(existing);
-      else setMenuProduct(product);
+      const existing = useCartStore.getState().items.find((item) => item.menu_selection && item.product.id === product.id);
+      setMenuWindow({ menu: existing ? existing.product : product, products, line: existing });
       return;
     }
     const slots = openSlotsForProduct(product, openMenuLines);
@@ -91,65 +116,89 @@ export function OrdinaView({
       setAddonProduct(product);
       return;
     }
-    cart.addItem(product, 1, [], '');
-  };
+    useCartStore.getState().addItem(product, 1, [], '');
+  }, [openMenuLines, products]);
 
   // The − on a dish takes a plate off the line its + fills: the plain one, no
   // note and no add-on, which is where a tap made by mistake went. A dish with
   // no plain line — every plate carries add-ons, or a note from the pencil —
   // gives up its latest line instead. A plate inside a menu is not reached:
   // it is the menu's, and comes off in the menu's window.
-  const handleProductRemove = (product: Product) => {
+  const handleProductRemove = useCallback((product: Product) => {
+    const cart = useCartStore.getState();
     const plainId = generateCartItemId(product.id, [], '');
     const line = cart.items.find((item) => item.id === plainId)
       ?? [...cart.items].reverse().find((item) => item.product.id === product.id && !item.menu_selection);
     if (line) cart.updateQuantity(line.id, line.quantity - 1);
-  };
+  }, []);
 
+  /**
+   * A dish put inside a menu. In the cart that cannot fail. On the check it
+   * needs the PC, and the window stays open until the check has taken it: it
+   * used to close first, and a refusal — the phone out of reach of the PC —
+   * dropped the dish without a trace.
+   */
   const handleAttachToMenu = async (slot: OpenSlot) => {
     const chosen = attachProduct;
-    if (!chosen) return;
-    setAttachProduct(null);
+    if (!chosen || attaching) return;
     if (slot.target.kind === 'cart') {
-      cart.attachToMenu(slot.target.cartItemId, slot.course.id, chosen.product.id);
+      setAttachProduct(null);
+      useCartStore.getState().attachToMenu(slot.target.cartItemId, slot.course.id, chosen.product.id);
       return;
     }
-    await onAttachToOrderMenu(slot.target.groupId, slot.course.id, [...slot.taken, chosen.product.id]);
+    setAttaching(true);
+    try {
+      const taken = await onAttachToOrderMenu(slot.target.groupId, slot.course.id, [...slot.taken, chosen.product.id]);
+      if (taken) setAttachProduct(null);
+    } finally {
+      setAttaching(false);
+    }
   };
 
   const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string) => {
-    cart.addItem(product, quantity, addons, instructions);
+    useCartStore.getState().addItem(product, quantity, addons, instructions);
   };
 
   const handleEditItemSave = (_product: Product, quantity: number, addons: Addon[], instructions: string) => {
     if (!editingCartItem) return;
-    cart.updateItemDetails(editingCartItem.id, quantity, addons, instructions);
+    useCartStore.getState().updateItemDetails(editingCartItem.id, quantity, addons, instructions);
   };
 
-  const handleMenuAdd = (menu: Product, menus: number, selection: FixedMenuSelection) => {
-    cart.addFixedMenu(menu, menus, selection);
-    setMenuProduct(null);
+  const handleMenuSave = (menu: Product, menus: number, selection: FixedMenuSelection) => {
+    const line = menuWindow?.line;
+    if (line) useCartStore.getState().updateMenuSelection(line.id, menus, selection);
+    else useCartStore.getState().addFixedMenu(menu, menus, selection);
+    setMenuWindow(null);
   };
 
-  const handleMenuEditSave = (_menu: Product, menus: number, selection: FixedMenuSelection) => {
-    if (!editingMenuItem) return;
-    cart.updateMenuSelection(editingMenuItem.id, menus, selection);
-    setEditingMenuItem(null);
+  const openTicket = () => {
+    menuScroll.current = window.scrollY;
+    setCartOpen(true);
   };
 
-  const itemCount = cart.itemCount();
-  const guests = pendingOrder?.guest_count ?? cart.guestCount;
-  const subtitle = `${t('coversCount', { count: guests })} · ${pendingOrder ? t('openOrder') : t('newOrder')}`;
+  // Back from the ticket, the menu is drawn again from the top; it is put
+  // back where the waiter left it before the screen is painted.
+  useLayoutEffect(() => {
+    if (cartOpen || menuScroll.current === 0) return;
+    window.scrollTo(0, menuScroll.current);
+  }, [cartOpen]);
+
+  const itemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+  const subtotal = useCartStore((state) => state.subtotal());
+  const guests = pendingOrder?.guest_count ?? guestCount;
+  const subtitle = tableMissing
+    ? t('tableMissing')
+    : `${t('coversCount', { count: guests })} · ${pendingOrder ? t('openOrder') : t('newOrder')}`;
 
   const header = (title: string, backLabel: string, onBackClick: () => void) => (
-    <header className="sticky top-0 z-20 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+    <header className="sticky top-0 z-20 border-b border-border bg-background pt-[env(safe-area-inset-top)]">
       <div className="mx-auto flex h-16 max-w-5xl items-center gap-2 px-2">
         <Button type="button" variant="ghost" size="icon-touch" onClick={onBackClick} aria-label={backLabel}>
           <ArrowLeft className="rtl-flip size-6" />
         </Button>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-xl leading-tight font-bold">{title}</h1>
-          <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+          <p className={`truncate text-sm ${tableMissing ? 'font-semibold text-pending' : 'text-muted-foreground'}`}>{subtitle}</p>
         </div>
       </div>
     </header>
@@ -166,13 +215,18 @@ export function OrdinaView({
         />
       )}
 
-      {menuProduct && (
+      {menuWindow && (
         <FixedMenuPicker
-          menu={menuProduct}
-          products={products}
+          menu={menuWindow.menu}
+          products={menuWindow.products}
           covers={guests}
-          onAdd={handleMenuAdd}
-          onClose={() => setMenuProduct(null)}
+          {...(menuWindow.line ? {
+            mode: 'edit' as const,
+            initialSelection: menuWindow.line.menu_selection || [],
+            initialMenus: menuWindow.line.quantity,
+          } : {})}
+          onAdd={handleMenuSave}
+          onClose={() => setMenuWindow(null)}
         />
       )}
 
@@ -185,22 +239,9 @@ export function OrdinaView({
             const chosen = attachProduct.product;
             setAttachProduct(null);
             if (needsOptionsDialog(chosen)) setAddonProduct(chosen);
-            else cart.addItem(chosen, 1, [], '');
+            else useCartStore.getState().addItem(chosen, 1, [], '');
           }}
-          onClose={() => setAttachProduct(null)}
-        />
-      )}
-
-      {editingMenuItem && (
-        <FixedMenuPicker
-          menu={editingMenuItem.product}
-          products={products}
-          mode="edit"
-          initialSelection={editingMenuItem.menu_selection || []}
-          initialMenus={editingMenuItem.quantity}
-          covers={guests}
-          onAdd={handleMenuEditSave}
-          onClose={() => setEditingMenuItem(null)}
+          onClose={() => { if (!attaching) setAttachProduct(null); }}
         />
       )}
 
@@ -232,7 +273,7 @@ export function OrdinaView({
             existingOrder={pendingOrder}
             submitting={submitting}
             onEditItem={(item) => {
-              if (item.menu_selection) setEditingMenuItem(item);
+              if (item.menu_selection) setMenuWindow({ menu: item.product, products, line: item });
               else setEditingCartItem(item);
             }}
             onSend={() => { void onSend(); }}
@@ -261,11 +302,11 @@ export function OrdinaView({
       </main>
 
       {/* The ticket, in one bar: how many plates and how much, and a tap opens it. */}
-      <ActionBar>
+      <ActionBar className="bg-background backdrop-blur-none">
         <Button
           type="button"
           size="touch-xl"
-          onClick={() => setCartOpen(true)}
+          onClick={openTicket}
           className="w-full justify-between bg-brand text-white hover:bg-brand-hover"
         >
           <span className="flex items-center gap-2.5">
@@ -273,7 +314,7 @@ export function OrdinaView({
             <span>{t('cart')}</span>
             <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-white/25 px-2 text-sm font-bold"><Ltr>{itemCount}</Ltr></span>
           </span>
-          <Ltr>{fmt(cart.subtotal())}</Ltr>
+          <Ltr>{fmt(subtotal)}</Ltr>
         </Button>
       </ActionBar>
       {windows}

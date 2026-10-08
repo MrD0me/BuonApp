@@ -1010,6 +1010,7 @@
     "completeMenu": "Completar el menú",
     "couldNotLoadData": "No se pudieron cargar los datos de la App de mesero",
     "couldNotSendOrder": "No se pudo enviar el pedido",
+    "tableMissing": "La mesa ya no está en la sala: la comanda se queda aquí",
     "courseToChoose": "por elegir",
     "coverCharge": "Cubierto: {count} × {amount}",
     "disabledHint": "Pedile al propietario o encargado que reactive los pedidos desde la mesa desde Ajustes.",

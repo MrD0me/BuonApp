@@ -1010,6 +1010,7 @@
     "completeMenu": "Completar o menu",
     "couldNotLoadData": "Não foi possível carregar os dados do App do Garçom",
     "couldNotSendOrder": "Não foi possível enviar o pedido",
+    "tableMissing": "A mesa já não está no salão: o pedido fica aqui",
     "courseToChoose": "a escolher",
     "coverCharge": "Couvert: {count} × {amount}",
     "disabledHint": "Peça ao proprietário ou gerente para reativar os pedidos à mesa nas Definições.",
