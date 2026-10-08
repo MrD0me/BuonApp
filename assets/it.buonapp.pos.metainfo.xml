@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.6.0" date="2026-10-08">
+      <description>
+        <p>In service the handheld let a waiter down in two ways: a phone that dropped off the Wi-Fi could send nothing more until the page was reloaded, and a long ticket, a fixed menu for twenty above all, grew slow and put taps on the wrong dish, until a reload threw the whole ticket away. A ticket sent without a connection now waits on the phone and goes by itself as soon as the PC answers again, for up to 30 minutes. A ticket being written survives a reload or the app being closed, and back stays inside the app. The fixed-menu window no longer moves its rows under the finger, on the handheld and on the till alike. No database migration.</p>
+      </description>
+    </release>
     <release version="6.5.1" date="2026-09-29">
       <description>
         <p>A discount on the check is usually a round figure, "it's 53.40, call it 50", and it had to be worked out by hand and typed as an amount. The discount window now opens on New total: type what the table pays, or tap one of the round figures it offers, and the discount is worked out for you and printed on the pre-bill as before. Each way to discount is switched on or off on its own in the settings, and a discount can now be taken off. One database migration: v99 turns the old discount mode into the list of methods switched on.</p>

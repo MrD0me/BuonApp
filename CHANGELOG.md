@@ -4,6 +4,38 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.6.0] - 2026-10-08
+
+In service the handheld let a waiter down in two ways: a phone that dropped off
+the Wi-Fi could send nothing more until the page was reloaded, and a long
+ticket, a fixed menu for twenty above all, grew slow and put taps on the wrong
+dish, until a reload threw the whole ticket away. A ticket sent without a
+connection now waits on the phone and goes by itself as soon as the PC answers
+again, for up to 30 minutes. A ticket being written survives a reload or the
+app being closed, and back stays inside the app. The fixed-menu window no longer
+moves its rows under the finger, on the handheld and on the till alike. No
+database migration.
+
+### Added
+
+- **A ticket waits on the phone when the Wi-Fi drops.** *Send* freezes the ticket on the phone, goes straight back to the table and sends it at once, or as soon as the PC answers again; meanwhile the waiter takes the next table. The header turns amber and says *No connection to the PC · 2 tickets waiting*, and a tap lists them with *Try again*, *Send anyway*, *Back to the ticket* and *Delete*; the table shows them under *Waiting to be sent*, and its tile on the floor says *Waiting*. A ticket goes by itself only within 30 minutes of being written: after that it waits for *Send anyway*. A ticket that opens a table carries `only_if_table_free`, so when the till opened the same table in the meantime the dishes go onto that order as a further round, with a notice, and never make a second order. The kitchen ticket goes once per order at the end of the round. *Back to the ticket* is offered only when the PC certainly has nothing of it, and a waiter's tickets go only under that waiter's sign-in. On start-up with no answer from the PC the phone says *Reaching the PC…* and keeps trying, instead of showing the sign-in form.
+- **A ticket being written is kept on the phone.** The cart, the covers, the notes and a fixed-menu window left open are saved for each waiter as they change. After a reload, or the app closed and opened again within 30 minutes, the ticket comes back as it was, window included; up to 12 hours later the floor offers it with *Open* and *Discard*. A ticket already sent is never brought back, and one never lands on top of a cart that holds dishes.
+- **Back stays inside the app.** Each screen a waiter taps into is a step of the browser's history, so the back gesture goes from the ticket to the menu, to the table and to the floor, and leaves only from the floor. Before, a swipe from the edge of the screen, as often by accident as on purpose, left the page and took the ticket with it.
+
+### Changed
+
+- **Order limits are counted per account.** The order routes allow 60 writes and 120 reads a minute, and they were counted per address: every handheld reaches the API through the Server App on 127.0.0.1, so the whole restaurant shared one budget, and once it was spent every phone and the till got errors for a minute. Each waiter and the till now have a budget of their own; a request without a sign-in is still counted by address.
+- **The order API refuses with a reason.** A repeated `POST /api/orders` with the same `Idempotency-Key` is answered from the stored reply before the order is checked, so a dish switched off after the first attempt no longer turns the repeat into an error. Refusals carry a `code` — `invalid_item` and `order_closed` (400); `insufficient_stock`, `table_has_open_order` with the open order's `order_id` and `order_number`, `table_not_found` and `idempotency_conflict` (409) — where some were a 500, and refusals are no longer written to the error log.
+- **In the fixed-menu window the note for a single portion is an icon in the dish's row**, beside the stepper, instead of a *Portion apart* line that appeared under the dish. Same window on the till.
+
+### Fixed
+
+- **Taps landed on the wrong dish in the fixed-menu window.** The first portion of a dish opened a line under it and pushed every row below down by a row's height, under the finger that was about to tap again; the stepper grew from one button to three and wrapped the dish's name; and the footer changed height. The row's controls now have a fixed width, a counted dish changes colour rather than weight, and the footer keeps one status line. A course already full says so — its heading lights up and the screen reader hears it — instead of silently ignoring the tap. *Save* with no menus counted takes the cursor to *How many menus?*, and on iPhone retyping that number replaces it instead of adding to it.
+- **The dish list jumped back to the top by itself.** The category strip scrolled itself into view each time the menu was read again, once a minute, and dragged the list with it. Only the strip scrolls now.
+- **The handheld slowed down during a long ticket.** A poll that brings nothing new redraws nothing, the dish rows are drawn once, and the money formats are built once instead of for every price on every redraw, which the till gains too. The headers are solid instead of blurred, and a quick double tap no longer zooms the page.
+- **One send without an answer blocked every send until a reload.** The handheld kept a single pending attempt per waiter, and any later send, at any table, failed with *Could not send order*. The queue replaced it.
+- **The menu closed under the waiter when the table left the floor.** Ordering now stays open on the last table known, saying *Table no longer on the floor: the ticket stays here*.
+
 ## [6.5.1] - 2026-09-29
 
 A discount on the check is usually a round figure, "it's 53.40, call it 50",
