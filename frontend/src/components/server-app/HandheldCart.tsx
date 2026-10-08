@@ -22,7 +22,11 @@ interface Props {
   coverChargeAmount: number;
   /** The order these lines will be added to, or null when they open one. */
   existingOrder: Order | null;
-  submitting: boolean;
+  /**
+   * No order on the table yet, but a ticket of this phone waiting to open it:
+   * these lines go on after it, and its covers and notes stand.
+   */
+  addsToQueued?: boolean;
   onEditItem: (item: CartItem) => void;
   onSend: () => void;
 }
@@ -40,14 +44,14 @@ interface Props {
  * Tapping the dish's name opens its note and options.
  */
 export function HandheldCart({
-  products, categories, kotPrintingEnabled, coverChargeAmount, existingOrder, submitting, onEditItem, onSend,
+  products, categories, kotPrintingEnabled, coverChargeAmount, existingOrder, addsToQueued = false, onEditItem, onSend,
 }: Props) {
   const t = useTranslations('serverApp');
   const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
   const cart = useCartStore();
-  const isNewOrder = !existingOrder;
+  const isNewOrder = !existingOrder && !addsToQueued;
   const dishCount = cart.itemCount();
 
   return (
@@ -163,11 +167,11 @@ export function HandheldCart({
           type="button"
           size="touch-xl"
           onClick={onSend}
-          disabled={submitting || cart.items.length === 0}
+          disabled={cart.items.length === 0}
           className="w-full bg-brand text-white hover:bg-brand-hover"
         >
           <Send />
-          {submitting ? t('sending') : existingOrder ? t('addToOrder') : t('sendToKitchen')}
+          {isNewOrder ? t('sendToKitchen') : t('addToOrder')}
         </Button>
       </ActionBar>
     </div>

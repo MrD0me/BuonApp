@@ -84,6 +84,8 @@ const SCREEN_FILES = [
   'frontend/src/components/server-app/OrdinaView.tsx',
   'frontend/src/components/server-app/HandheldProductList.tsx',
   'frontend/src/components/server-app/HandheldCart.tsx',
+  'frontend/src/components/server-app/QueueSheet.tsx',
+  'frontend/src/components/server-app/handheld-status.tsx',
   // WhatsApp
   'frontend/src/app/(dashboard)/whatsapp/page.tsx',
 ];

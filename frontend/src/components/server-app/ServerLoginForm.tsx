@@ -28,8 +28,9 @@ export function ServerLoginForm({ onLogin }: Props) {
     setBusy(true);
     try {
       await onLogin(username, password, rememberMe);
-    } catch {
-      toast.error(t('signInFailed'));
+    } catch (error) {
+      // No answer is not a wrong password: the phone could not reach the PC.
+      toast.error((error as { response?: unknown })?.response ? t('signInFailed') : t('pcUnreachable'));
     } finally {
       setBusy(false);
     }

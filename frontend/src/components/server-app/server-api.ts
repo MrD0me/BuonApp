@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
+import { reportReachability } from './connection';
 
 /**
  * The handheld's own HTTP client.
@@ -41,6 +42,9 @@ export function clearServerToken(): void {
  * the token — expired, revoked, or the account switched off — so the shell
  * can fall back to the login form instead of showing a screen that fails
  * on every tap.
+ *
+ * Every request also says whether the PC answered (`connection.ts`): any
+ * answer means it is there, none means the phone cannot reach it.
  */
 export function createServerApi(onUnauthorized?: () => void): AxiosInstance {
   const api = axios.create({ baseURL: window.location.origin, timeout: 10000 });
@@ -50,8 +54,13 @@ export function createServerApi(onUnauthorized?: () => void): AxiosInstance {
     return config;
   });
   api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+      reportReachability(true);
+      return response;
+    },
     (error) => {
+      if (error.response) reportReachability(true);
+      else if (!axios.isCancel(error)) reportReachability(false);
       if (error.response?.status === 401) {
         clearServerToken();
         onUnauthorized?.();
@@ -60,6 +69,11 @@ export function createServerApi(onUnauthorized?: () => void): AxiosInstance {
     },
   );
   return api;
+}
+
+/** Whether a failed request got an answer at all: none means the PC was out of reach. */
+export function isNetworkFailure(error: unknown): boolean {
+  return !(error as { response?: unknown })?.response;
 }
 
 /** A key the order routes accept as Idempotency-Key: printable ASCII, under 128 chars. */

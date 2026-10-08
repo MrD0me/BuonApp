@@ -17,6 +17,8 @@ import FixedMenuPicker from '@/components/pos/FixedMenuPicker';
 import AttachToMenuModal from '@/components/pos/AttachToMenuModal';
 import { HandheldProductList } from './HandheldProductList';
 import { HandheldCart } from './HandheldCart';
+import { HeaderSubtitle, useHeaderTone } from './handheld-status';
+import type { QueueEntry } from './send-queue';
 
 interface Props {
   table: Table;
@@ -27,14 +29,19 @@ interface Props {
   tableMissing?: boolean;
   /** The order already open on the table, which the cart will be added to. */
   pendingOrder: Order | null;
+  /**
+   * This phone's ticket still waiting to open the table. What is written now
+   * goes on after it, onto the order it opens, so the covers and notes are
+   * that ticket's and are not asked again.
+   */
+  queuedOpening?: QueueEntry | null;
   products: Product[];
   categories: Category[];
   kotPrintingEnabled: boolean;
   coverChargeAmount: number;
   currency: string;
-  submitting: boolean;
   onBack: () => void;
-  onSend: () => Promise<void>;
+  onSend: () => void;
   /** A dish put inside a menu already on the check; resolves false when the check refused it. */
   onAttachToOrderMenu: (groupId: string, courseId: string, productIds: string[]) => Promise<boolean>;
 }
@@ -71,7 +78,7 @@ interface MenuWindow {
  * that was the scroll.
  */
 export function OrdinaView({
-  table, tableMissing = false, pendingOrder, products, categories, kotPrintingEnabled, coverChargeAmount, currency, submitting,
+  table, tableMissing = false, pendingOrder, queuedOpening = null, products, categories, kotPrintingEnabled, coverChargeAmount, currency,
   onBack, onSend, onAttachToOrderMenu,
 }: Props) {
   const t = useTranslations('serverApp');
@@ -185,20 +192,22 @@ export function OrdinaView({
 
   const itemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = useCartStore((state) => state.subtotal());
-  const guests = pendingOrder?.guest_count ?? guestCount;
+  const guests = pendingOrder?.guest_count ?? queuedOpening?.guestCount ?? guestCount;
+  const addsToOrder = Boolean(pendingOrder || queuedOpening);
   const subtitle = tableMissing
     ? t('tableMissing')
-    : `${t('coversCount', { count: guests })} · ${pendingOrder ? t('openOrder') : t('newOrder')}`;
+    : `${t('coversCount', { count: guests })} · ${addsToOrder ? t('openOrder') : t('newOrder')}`;
+  const headerTone = useHeaderTone();
 
   const header = (title: string, backLabel: string, onBackClick: () => void) => (
-    <header className="sticky top-0 z-20 border-b border-border bg-background pt-[env(safe-area-inset-top)]">
+    <header className={`sticky top-0 z-20 border-b border-border pt-[env(safe-area-inset-top)] ${headerTone}`}>
       <div className="mx-auto flex h-16 max-w-5xl items-center gap-2 px-2">
         <Button type="button" variant="ghost" size="icon-touch" onClick={onBackClick} aria-label={backLabel}>
           <ArrowLeft className="rtl-flip size-6" />
         </Button>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-xl leading-tight font-bold">{title}</h1>
-          <p className={`truncate text-sm ${tableMissing ? 'font-semibold text-pending' : 'text-muted-foreground'}`}>{subtitle}</p>
+          <HeaderSubtitle className={tableMissing ? 'font-semibold text-pending' : 'text-muted-foreground'}>{subtitle}</HeaderSubtitle>
         </div>
       </div>
     </header>
@@ -271,12 +280,12 @@ export function OrdinaView({
             kotPrintingEnabled={kotPrintingEnabled}
             coverChargeAmount={coverChargeAmount}
             existingOrder={pendingOrder}
-            submitting={submitting}
+            addsToQueued={!pendingOrder && Boolean(queuedOpening)}
             onEditItem={(item) => {
               if (item.menu_selection) setMenuWindow({ menu: item.product, products, line: item });
               else setEditingCartItem(item);
             }}
-            onSend={() => { void onSend(); }}
+            onSend={onSend}
           />
         </div>
         {windows}
