@@ -548,6 +548,7 @@
     "menuCourseToChoose": "برای انتخاب",
 
     "menuCourseFull": "تکمیل",
+    "menuCourseFullNotice": "{course} کامل است: برای عوض کردن غذا یکی را کم کنید",
 
     "menuNoteRemove": "حذف یادداشت",
     "menuDishNotePlaceholder": "یادداشت برای آشپزخانه",

@@ -548,6 +548,7 @@
     "menuCourseToChoose": "To choose",
 
     "menuCourseFull": "Full",
+    "menuCourseFullNotice": "{course} is full: take one off to change a dish",
 
     "menuNoteRemove": "Remove the note",
     "menuDishNotePlaceholder": "Note for the kitchen",

@@ -404,6 +404,10 @@ già mandata. Con una riga per porzione tutto questo esisteva già.
 - in testa **«Quanti menu?»**, un solo `−` numero `+` col numero anche battibile a tastiera (sul
   telefono si apre il tastierino). **Non parte da nessun numero**, e senza non si aggiunge: con i
   tavoli misti, partire dai coperti farebbe pagare menu non presi a chi si dimentica di abbassarlo.
+  Il pulsante in fondo, finché il numero manca, dice «Quanti menu?» e porta il dito lì (il riquadro
+  si accende un attimo): prima era spento, e un tocco a vuoto sembrava un telefono bloccato. Al
+  tocco il riquadro seleziona quello che contiene, un fotogramma dopo, perché l'iPhone ignora la
+  selezione fatta mentre il cursore arriva e «8» più «20» diventava 82 menu.
   Sotto, per informazione, i coperti del tavolo. La fila di numeri da 1 ai coperti che c'era prima,
   con un `+` in fondo, al tavolo da uno si riduceva a un «1» fermo a sinistra e a un più: leggeva
   come uno stepper a cui manca il meno;
@@ -414,9 +418,22 @@ già mandata. Con una riga per porzione tutto questo esisteva già.
   contate;
 - i piatti sono righe con `−` conteggio `+`, e un tocco sul nome vale uno in più, come la tacca sul
   foglio; quelli contati si tingono per tutta la riga, così da fuori si legge cosa è stato preso;
-- **«Nota per una porzione»** prende una lasagna dal conteggio semplice e le dà una riga sua con la
-  nota («senza besciamella»); la ✕ toglie la nota e la riporta nel conteggio, senza cambiare il
-  totale del piatto;
+- **niente si sposta sotto il dito.** Un tavolo da venti si conta in sessanta tocchi rapidi senza
+  guardare fra l'uno e l'altro, e ogni riga che cresceva spostava le altre: alla prima porzione di un
+  piatto compariva sotto di lui il pulsante della nota, e il tocco seguente finiva sul piatto sotto o
+  su quel pulsante (succedeva davvero, il 2026-10-07, con un tavolo da 20). Ora i comandi in fondo
+  alla riga hanno sempre la stessa larghezza — nota, `−`, numero, `+` — e prima della prima porzione
+  si vede solo il `+`, ma gli altri tengono il loro posto invisibili; il nome cambia colore e non
+  peso, perché un nome più grassetto è più largo e può andare a capo; e il piè della finestra ha una
+  riga di stato ad altezza fissa (troppi piatti, poi le portate che mancano, poi i supplementi);
+- **la nota per una porzione** è l'icona a sinistra del `−`, che compare quando il piatto ha almeno
+  una porzione: prende una lasagna dal conteggio semplice e le dà una riga sua, sotto il piatto, con
+  la nota («senza besciamella»); la ✕ toglie la nota e la riporta nel conteggio, senza cambiare il
+  totale del piatto. Il campo della nota è a 16 px sul telefono, perché l'iPhone ingrandisce la
+  pagina sui campi più piccoli;
+- **una portata al completo lo dice**: i piatti che non ha si spengono, e un tocco su uno di loro
+  accende per un attimo «Al completo» nella sua testata (e lo legge a chi usa il lettore di schermo),
+  invece di non fare niente in silenzio. Per cambiare piatto si toglie prima una porzione;
 - **l'uscita non si chiede dentro il menu**: un menu è già un ordine di uscite — antipasto, primo,
   secondo — e ogni piatto prende l'uscita della sua categoria. Chiederla porzione per porzione
   voleva dire un selettore sotto ogni piatto scelto, per una cosa che al locale non si fa;

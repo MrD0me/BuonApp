@@ -548,6 +548,7 @@
     "menuCourseToChoose": "A escolher",
 
     "menuCourseFull": "Completo",
+    "menuCourseFullNotice": "{course} está completo: tire um para trocar de prato",
 
     "menuNoteRemove": "Retirar a nota",
     "menuDishNotePlaceholder": "Nota para a cozinha",
