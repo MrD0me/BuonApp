@@ -58,6 +58,7 @@ async function getJson(baseUrl: string, pathName: string, token: string) {
 // prove the photo came through as bytes.
 const DISH_PHOTO = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x00, 0x80]);
 const DISH_PHOTO_ETAG = '"dish-photo-1"';
+const TABLE_OPEN_KEY = 'server-app-table-open';
 
 /**
  * A stand-in for the main API behind the forwards, so what comes back through
@@ -79,6 +80,14 @@ async function startMainApiStandIn(port: number): Promise<http.Server> {
         'Cache-Control': 'no-cache',
       });
       res.end(DISH_PHOTO);
+      return;
+    }
+    // The answer the handheld's send queue turns into an addition: the table
+    // it meant to open is already open. Only for the key the test sends, so
+    // the forward is seen to carry the key as well as the answer back.
+    if (req.method === 'POST' && req.url === '/api/orders' && req.headers['idempotency-key'] === TABLE_OPEN_KEY) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'The table already has an open order', code: 'table_has_open_order', order_id: 42, order_number: 'ORD-42' }));
       return;
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -202,6 +211,22 @@ async function main() {
       assert.notEqual(withToken, 403, `${method} ${route} lets a server through`);
       assert.equal(await send(baseUrl, method, route), 401, `${method} ${route} requires a token`);
     }
+
+    // A refusal comes back to the phone as the API gave it: status, code and
+    // the order it names — the send queue acts on all three.
+    const tableOpen = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serverLogin.body.access_token}`,
+        'Idempotency-Key': TABLE_OPEN_KEY,
+      },
+      body: JSON.stringify({ type: 'dine_in', table_id: 't1', only_if_table_free: true, items: [] }),
+    });
+    assert.equal(tableOpen.status, 409, 'a 409 comes through the forward as a 409');
+    const tableOpenBody = await tableOpen.json();
+    assert.equal(tableOpenBody.code, 'table_has_open_order', 'with its code');
+    assert.equal(tableOpenBody.order_id, 42, 'and the order it names');
 
     // Handhelds do not file guests, and they do not touch tables, bills or
     // payments: none of that is forwarded, whoever asks.

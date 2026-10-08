@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import expressRateLimit from 'express-rate-limit';
+import expressRateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createHash } from 'node:crypto';
 import { areCustomersEnabled, getDatabase, isKdsEnabled, now, parseDbTimestamp } from '../db';
 
@@ -126,6 +126,32 @@ export function staticRouteRateLimit(options: { windowMs?: number; limit?: numbe
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
+  });
+}
+
+/**
+ * A per-route limit counted per signed-in account, not per address.
+ *
+ * Every handheld reaches the API through the Server App's forwarder, so to
+ * the API they all come from 127.0.0.1 — and so does the PC, whose window
+ * loads from localhost. Counted per address, the whole restaurant shared one
+ * budget: sixty order writes a minute for every phone and the till together,
+ * and a busy service ran into it and got 429 everywhere for the rest of the
+ * minute. Counted per account, each waiter and the till have their own, and a
+ * client stuck in a loop is still held back. Runs after `requireAuth`, which
+ * puts the account on the request; without one the address is the key.
+ */
+export function accountRouteRateLimit(options: { windowMs: number; limit: number }) {
+  return expressRateLimit({
+    windowMs: options.windowMs,
+    limit: options.limit,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as any).user?.userId;
+      if (userId !== undefined && userId !== null && userId !== '') return `user:${userId}`;
+      return ipKeyGenerator(req.ip || req.socket.remoteAddress || '');
+    },
   });
 }
 

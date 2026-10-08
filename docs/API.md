@@ -669,6 +669,14 @@ Order item `addons` reference catalog add-ons by `id`. Each add-on must be activ
 }
 ```
 
+For a retry-safe create, send an `Idempotency-Key` header (1–128 printable, non-whitespace ASCII characters). A retry of the same authenticated user's identical request returns the order it made with `200`, and it is answered before anything else is checked: an order whose answer was lost still comes back after one of its dishes, add-ons or the order type has been switched off. Reusing the key for a different body returns `409` with `code: "idempotency_conflict"`.
+
+`only_if_table_free: true` (dine-in with a `table_id` only) opens the table only if it is still free. If the table has an open dine-in order the answer is `409` with `code: "table_has_open_order"`, `order_id` and `order_number`; if the table no longer exists, `409` with `code: "table_not_found"`. Either way nothing was written under the key, so the caller can send the same dishes to `POST /api/orders/:id/items` with a key of its own. The handheld sends it on every order it opens (docs/palmare.md); without the flag the route behaves as before.
+
+Refusals carry a `code` a client can act on: `invalid_item` (400) for a dish, add-on, quantity or price the order cannot take, `insufficient_stock` (409). A `5xx` means the outcome is unknown and the same request should be retried with the same key.
+
+Writes on the order routes are limited to 60 a minute and reads to 120, counted per signed-in account: the handhelds all reach the API from `127.0.0.1` through the Server App, and counted per address they shared one budget with each other and the till.
+
 ---
 
 ### GET `/api/orders/:id`
@@ -807,7 +815,7 @@ Append items to an existing order.
 
 **Headers:** `Authorization: Bearer <token>`
 
-For a retry-safe append, send an `Idempotency-Key` header containing 1–128 printable, non-whitespace ASCII characters. Reuse the same key only for the same authenticated user's identical append request (order, items, and order notes) until its response is confirmed. A matching retry returns the original `200` response without adding items again, including if the order has since become non-editable; reusing the key for different data returns `409`.
+For a retry-safe append, send an `Idempotency-Key` header containing 1–128 printable, non-whitespace ASCII characters. Reuse the same key only for the same authenticated user's identical append request (order, items, and order notes) until its response is confirmed. A matching retry returns the original `200` response without adding items again, including if the order has since become non-editable; reusing the key for different data returns `409` with `code: "idempotency_conflict"`. An order already completed or cancelled refuses new items with `400` and `code: "order_closed"`; a missing order is `404` with `code: "order_not_found"`; a dish it cannot take is `invalid_item` (400) or `insufficient_stock` (409).
 
 Items take the same shape as on `POST /api/orders`, `service_run` and `menu_selection` included. Any waiter may append to any open order; the order keeps the `user_id` of whoever opened it.
 
