@@ -498,10 +498,10 @@
     "semantic_hash": "c5650c00d1f70f93417a00bcbaf0d42d"
   },
   "frontend/src/components/pos/FixedMenuPicker.tsx": {
-    "mtime": 1791491764.1278777,
-    "seen": 1791544982.606473,
-    "ast_hash": "04977e19b2ae50e7325f6e7fee2a4b83",
-    "semantic_hash": "04977e19b2ae50e7325f6e7fee2a4b83"
+    "mtime": 1791578322.6520054,
+    "seen": 1791578780.6353855,
+    "ast_hash": "944f360fe5603e7e5d928f9ca5d29c15",
+    "semantic_hash": "944f360fe5603e7e5d928f9ca5d29c15"
   },
   "frontend/src/components/pos/PaymentModal.tsx": {
     "mtime": 1790443798.3920522,
@@ -1776,10 +1776,10 @@
     "semantic_hash": "b2789c6ef8bdc5a51ab639b3d4a34ae2"
   },
   "package.json": {
-    "mtime": 1791491893.8751538,
-    "seen": 1791544982.640924,
-    "ast_hash": "2b17d525fad91baba054c9435271bcb8",
-    "semantic_hash": "2b17d525fad91baba054c9435271bcb8"
+    "mtime": 1791578322.6520054,
+    "seen": 1791578780.6356947,
+    "ast_hash": "fdc0a4a5811cfc18e7c5ad4f45229010",
+    "semantic_hash": "fdc0a4a5811cfc18e7c5ad4f45229010"
   },
   "scripts/afterPack.js": {
     "mtime": 1788361662.4226933,
@@ -2868,10 +2868,10 @@
     "semantic_hash": "fe2ef22922b581efd293494ee6d7c038"
   },
   "CHANGELOG.md": {
-    "mtime": 1791491885.1581762,
-    "seen": 1791544982.6555111,
-    "ast_hash": "9f88f509454564acd61a544a42e1f279",
-    "semantic_hash": "9f88f509454564acd61a544a42e1f279"
+    "mtime": 1791578322.648516,
+    "seen": 1791578780.6359308,
+    "ast_hash": "316e7c319eba4de23a045624a8fd38d8",
+    "semantic_hash": "316e7c319eba4de23a045624a8fd38d8"
   },
   "CLAUDE.md": {
     "mtime": 1788361662.1811635,
@@ -2892,10 +2892,10 @@
     "semantic_hash": "73d2b749591e27c3048754fb57b5427b"
   },
   "README.md": {
-    "mtime": 1791491893.887623,
-    "seen": 1791544982.6555128,
-    "ast_hash": "11648ea36508d83566f36daf1083850f",
-    "semantic_hash": "11648ea36508d83566f36daf1083850f"
+    "mtime": 1791578322.648516,
+    "seen": 1791578780.6359322,
+    "ast_hash": "dbd8da57ce23477a1d2629cd63d90107",
+    "semantic_hash": "dbd8da57ce23477a1d2629cd63d90107"
   },
   "SECURITY.md": {
     "mtime": 1788361662.182166,
@@ -2916,10 +2916,10 @@
     "semantic_hash": "ebd826e9b996d5e5c0ef412adb328bbc"
   },
   "docs/coperto-e-menu-fisso.md": {
-    "mtime": 1791491764.1231484,
-    "seen": 1791544982.655517,
-    "ast_hash": "40799818167cf723cf47373a7ff7bf85",
-    "semantic_hash": "40799818167cf723cf47373a7ff7bf85"
+    "mtime": 1791578322.648516,
+    "seen": 1791578780.6359334,
+    "ast_hash": "f5d9473939e5f82f4dd7964f5f5d9b26",
+    "semantic_hash": "f5d9473939e5f82f4dd7964f5f5d9b26"
   },
   "docs/google-drive-setup.md": {
     "mtime": 1788361662.2870934,
