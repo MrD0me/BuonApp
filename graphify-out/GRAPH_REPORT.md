@@ -301,16 +301,11 @@ Nodes (81): main(), main(), main(), api(), assert(), assertEqual(), assertInclud
 
 ### Community 11 - "Test tavoli, prenotazioni, giornate"
 Cohesion: 0.03
-Nodes (72): MIGRATIONS, orderRoutes, roomRoutes, serviceDayRoutes, tableRoutes, { billRoutes }, fs, {
-
-  initTestDb, createApp, startServer,
-
-  seedOwnerUser, seedCategory, seedProduct,
-
-  api, assert, assertEqual,
-
-  getResults, closeDatabase,
-
+Nodes (72): MIGRATIONS, orderRoutes, roomRoutes, serviceDayRoutes, tableRoutes, { billRoutes }, fs, {
+  initTestDb, createApp, startServer,
+  seedOwnerUser, seedCategory, seedProduct,
+  api, assert, assertEqual,
+  getResults, closeDatabase,
 } (+64 more)
 
 ### Community 12 - "Server KDS e WebSocket"
@@ -379,30 +374,20 @@ Nodes (43): isBlockedSsrfTarget(), PRODUCT_NUMERIC_FIELDS, resolvePublicHostname
 
 ### Community 28 - "Test impostazioni locali e coperto"
 Cohesion: 0.04
-Nodes (51): settingsRoutes, { billRoutes }, fs, {
-
-  initTestDb, createApp, startServer,
-
-  seedOwnerUser, seedCategory, seedProduct,
-
-  api, assert, assertEqual,
-
-  getResults, closeDatabase, now,
-
+Nodes (51): settingsRoutes, { billRoutes }, fs, {
+  initTestDb, createApp, startServer,
+  seedOwnerUser, seedCategory, seedProduct,
+  api, assert, assertEqual,
+  getResults, closeDatabase, now,
 }, Module, { orderRoutes }, os, path (+43 more)
 
 ### Community 29 - "Test menu fisso, PIN e autorizzazioni"
 Cohesion: 0.05
-Nodes (46): registerRoutes(), { billRoutes }, { fixedMenuRoutes }, { formatKOT, formatReceipt, escPosToText }, fs, {
-
-  initTestDb, createApp, startServer,
-
-  seedOwnerUser, seedServerUser, seedCategory, seedProduct,
-
-  api, assert, assertEqual,
-
-  getResults, closeDatabase, now,
-
+Nodes (46): registerRoutes(), { billRoutes }, { fixedMenuRoutes }, { formatKOT, formatReceipt, escPosToText }, fs, {
+  initTestDb, createApp, startServer,
+  seedOwnerUser, seedServerUser, seedCategory, seedProduct,
+  api, assert, assertEqual,
+  getResults, closeDatabase, now,
 }, main(), Module (+38 more)
 
 ### Community 30 - "Registro lingue i18n"
@@ -431,14 +416,10 @@ Nodes (22): Navigator, USB, USBAlternateInterface, USBConfiguration, USBConnecti
 
 ### Community 36 - "Test catalogo e spec Playwright"
 Cohesion: 0.05
-Nodes (36): addonGroupRoutes, categoryRoutes, productRoutes, fs, {
-
-  initTestDb, createApp, startServer,
-
-  seedOwnerUser, seedCategory, seedProduct,
-
-  api, assert, assertEqual, getResults, closeDatabase,
-
+Nodes (36): addonGroupRoutes, categoryRoutes, productRoutes, fs, {
+  initTestDb, createApp, startServer,
+  seedOwnerUser, seedCategory, seedProduct,
+  api, assert, assertEqual, getResults, closeDatabase,
 }, Module, os, path (+28 more)
 
 ### Community 37 - "Changelog 6.x: sconti, coperto e prezzi"
@@ -455,16 +436,11 @@ Nodes (29): ref_node_sqlite, backupPath, currentDb, Database, dataOnlyRestore(),
 
 ### Community 40 - "Test conti, sconti e fuso orario"
 Cohesion: 0.05
-Nodes (35): tests_helpers_test_setup_getdatabase, { billRoutes }, fs, {
-
-  initTestDb, createApp, startServer,
-
-  seedOwnerUser, seedCategory, seedProduct,
-
-  api, assert, assertEqual,
-
-  getResults, closeDatabase, getDatabase, now,
-
+Nodes (35): tests_helpers_test_setup_getdatabase, { billRoutes }, fs, {
+  initTestDb, createApp, startServer,
+  seedOwnerUser, seedCategory, seedProduct,
+  api, assert, assertEqual,
+  getResults, closeDatabase, getDatabase, now,
 }, Module, { orderRoutes }, os, path (+27 more)
 
 ### Community 41 - "Test RTL delle schermate"
@@ -481,16 +457,11 @@ Nodes (36): Held orders (/api/held-orders), Reports summary and sales (UTC dates
 
 ### Community 44 - "Test ciclo di vita ordine"
 Cohesion: 0.07
-Nodes (33): ref_worker_threads, resetCounters(), seedManagerUser(), seedTable(), { billRoutes }, fs, {
-
-  initTestDb, createApp, startServer,
-
-  seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
-
-  api, assert, assertEqual, assertIncludes,
-
-  getResults, closeDatabase, getDatabase, now,
-
+Nodes (33): ref_worker_threads, resetCounters(), seedManagerUser(), seedTable(), { billRoutes }, fs, {
+  initTestDb, createApp, startServer,
+  seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
+  api, assert, assertEqual, assertIncludes,
+  getResults, closeDatabase, getDatabase, now,
 }, Module (+25 more)
 
 ### Community 45 - "Dipendenze e engine backend"
@@ -499,16 +470,11 @@ Nodes (33): allowScripts, author, email, name, description, engines, node, homep
 
 ### Community 46 - "Test metodi di pagamento e PIN manager"
 Cohesion: 0.06
-Nodes (31): billRoutes, { billRoutes }, fs, {
-
-  initTestDb, createApp, startServer,
-
-  seedOwnerUser, seedCategory, seedProduct,
-
-  api, assert, assertEqual, assertIncludes,
-
-  getResults, closeDatabase, getDatabase, now,
-
+Nodes (31): billRoutes, { billRoutes }, fs, {
+  initTestDb, createApp, startServer,
+  seedOwnerUser, seedCategory, seedProduct,
+  api, assert, assertEqual, assertIncludes,
+  getResults, closeDatabase, getDatabase, now,
 }, Module, { orderRoutes }, os, path (+23 more)
 
 ### Community 47 - "Encoder preconto frontend"
@@ -609,34 +575,22 @@ Nodes (23): createBackup(), assertNoRestoreAttachment(), clearLinkedData(), copy
 
 ### Community 71 - "Test clienti e autorizzazioni"
 Cohesion: 0.09
-Nodes (23): customerRoutes, { customerRoutes }, { getJWTSecret }, {
-
-  initTestDb,
-
-  createApp,
-
-  assertEqual,
-
-  getResults,
-
-  closeDatabase,
-
-  now,
-
+Nodes (23): customerRoutes, { customerRoutes }, { getJWTSecret }, {
+  initTestDb,
+  createApp,
+  assertEqual,
+  getResults,
+  closeDatabase,
+  now,
 }, jwt, main(), makeToken(), Module (+15 more)
 
 ### Community 72 - "Test paginazione clienti"
 Cohesion: 0.08
-Nodes (23): ref_events, assertGreaterThan(), { billRoutes }, { customerRoutes }, fs, {
-
-  initTestDb, createApp, startServer,
-
-  seedOwnerUser, seedCategory, seedProduct, seedCustomer, seedWalletCredit,
-
-  api, assert, assertEqual, assertGreaterThan,
-
-  getResults, closeDatabase, getDatabase, now,
-
+Nodes (23): ref_events, assertGreaterThan(), { billRoutes }, { customerRoutes }, fs, {
+  initTestDb, createApp, startServer,
+  seedOwnerUser, seedCategory, seedProduct, seedCustomer, seedWalletCredit,
+  api, assert, assertEqual, assertGreaterThan,
+  getResults, closeDatabase, getDatabase, now,
 }, Module, { orderRoutes } (+15 more)
 
 ### Community 73 - "Layout app e lingua HTML"
@@ -693,48 +647,29 @@ Nodes (21): dependencies, axios, class-variance-authority, clsx, @dnd-kit/dom, @
 
 ### Community 86 - "Test DB legacy e stampa scontrino"
 Cohesion: 0.17
-Nodes (20): captureUserSecurityState(), isNativeAbiMismatch(), {
-
-  assert,
-
-  assertEqual,
-
-  getResults,
-
-  createApp,
-
-  seedOwnerUser,
-
-  isNativeAbiMismatch,
-
+Nodes (20): captureUserSecurityState(), isNativeAbiMismatch(), {
+  assert,
+  assertEqual,
+  getResults,
+  createApp,
+  seedOwnerUser,
+  isNativeAbiMismatch,
 }, backend, checkMigration(), checkRestoreMerge(), checkRule(), checkStaffApi() (+12 more)
 
 ### Community 87 - "Import/export menu CSV"
 Cohesion: 0.10
-Nodes (19): main_routes_menu_csv_menucsvroutes, addonCsv(), addonCsvWithHeader(), fs, {
-
-  initTestDb,
-
-  createApp,
-
-  startServer,
-
-  seedOwnerUser,
-
-  seedCategory,
-
-  api,
-
-  assert,
-
-  assertEqual,
-
-  getResults,
-
-  closeDatabase,
-
-  now,
-
+Nodes (19): main_routes_menu_csv_menucsvroutes, addonCsv(), addonCsvWithHeader(), fs, {
+  initTestDb,
+  createApp,
+  startServer,
+  seedOwnerUser,
+  seedCategory,
+  api,
+  assert,
+  assertEqual,
+  getResults,
+  closeDatabase,
+  now,
 }, { menuCsvRoutes }, Module, os (+11 more)
 
 ### Community 88 - "Test integrità prezzi addon"
@@ -795,10 +730,8 @@ Nodes (18): dependencies, bcryptjs, better-sqlite3, bonjour-service, cors, decim
 
 ### Community 102 - "Test interruttori KDS e comande"
 Cohesion: 0.12
-Nodes (17): bcrypt, fs, { getJWTSecret }, {
-
-  initTestDb, createApp, assert, assertEqual, getResults, closeDatabase, now,
-
+Nodes (17): bcrypt, fs, { getJWTSecret }, {
+  initTestDb, createApp, assert, assertEqual, getResults, closeDatabase, now,
 }, jwt, { kdsInfoRoutes }, { kdsRoutes }, { kitchenRoutes } (+9 more)
 
 ### Community 103 - "tsconfig backend"
@@ -867,10 +800,8 @@ Nodes (6): FakeBrowserWindow, FakeWebContents, Module, registered, run(), window
 
 ### Community 119 - "Test revoca token"
 Cohesion: 0.15
-Nodes (14): bcrypt, Database, fs, { getJWTSecret, authRoutes }, { initDatabase, getDbPath }, {
-
-  initTestDb, createApp, assertEqual, getResults, getDatabase, closeDatabase, now,
-
+Nodes (14): bcrypt, Database, fs, { getJWTSecret, authRoutes }, { initDatabase, getDbPath }, {
+  initTestDb, createApp, assertEqual, getResults, getDatabase, closeDatabase, now,
 }, { isTokenRevoked, revokeToken }, jwt (+6 more)
 
 ### Community 120 - "Comande stampate a giri"
@@ -891,46 +822,28 @@ Nodes (10): ImageUploader(), ImageUploaderProps, Mode, compressCroppedImage(), C
 
 ### Community 124 - "Test letture addon (KDS)"
 Cohesion: 0.14
-Nodes (13): getEffectiveOrderItems(), { attachEffectiveAddons }, fs, { getEffectiveOrderItems }, {
-
-  initTestDb, createApp, startServer,
-
-  seedOwnerUser, seedCategory, seedProduct,
-
-  api, assert, assertEqual, getResults, closeDatabase,
-
+Nodes (13): getEffectiveOrderItems(), { attachEffectiveAddons }, fs, { getEffectiveOrderItems }, {
+  initTestDb, createApp, startServer,
+  seedOwnerUser, seedCategory, seedProduct,
+  api, assert, assertEqual, getResults, closeDatabase,
 }, { kdsRoutes }, { kitchenRoutes }, Module (+5 more)
 
 ### Community 125 - "Test ripetizioni e guardia tavolo"
 Cohesion: 0.16
-Nodes (13): bcrypt, count(), fs, { getJWTSecret }, {
-
-  initTestDb,
-
-  createApp,
-
-  startServer,
-
-  seedOwnerUser,
-
-  seedCategory,
-
-  seedProduct,
-
-  seedTable,
-
-  api,
-
-  assert,
-
-  assertEqual,
-
-  getResults,
-
-  closeDatabase,
-
-  now,
-
+Nodes (13): bcrypt, count(), fs, { getJWTSecret }, {
+  initTestDb,
+  createApp,
+  startServer,
+  seedOwnerUser,
+  seedCategory,
+  seedProduct,
+  seedTable,
+  api,
+  assert,
+  assertEqual,
+  getResults,
+  closeDatabase,
+  now,
 }, jwt, main(), Module (+5 more)
 
 ### Community 126 - "Test fondamenta RTL"
