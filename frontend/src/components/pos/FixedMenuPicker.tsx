@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MessageSquarePlus, Minus, Plus, X } from 'lucide-react';
+import { MessageSquarePlus, Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Modal, ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Ltr } from '@/components/layout/Ltr';
@@ -371,6 +371,9 @@ export default function FixedMenuPicker({
   const countButton = 'bg-muted text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
   const dishButton = 'bg-card text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full border border-border outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
   const noteButton = 'text-brand hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95';
+  // The counter of a note's line is smaller still, 32 px: it is tapped a few
+  // times and on purpose, and at the dish's size it left the note half the line.
+  const noteCountButton = 'focus-visible:ring-ring/50 flex size-8 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95';
 
   /**
    * The end of a dish row, always the same width: a note for one portion, the
@@ -583,7 +586,7 @@ export default function FixedMenuPicker({
                     </div>
 
                     {noted.length > 0 && (
-                      <div className="flex flex-col gap-1.5 pb-2 ps-11 pe-2">
+                      <div className="flex flex-col gap-1.5 pb-2 ps-8 pe-2">
                         {/* Some of the plates counted above, and what the
                             kitchen has to know about them. The note has the
                             line to itself: beside a picker and a counter it
@@ -594,39 +597,42 @@ export default function FixedMenuPicker({
                             on its own. Sixteen pixels on a phone, or an
                             iPhone zooms the page in on the first letter.
 
-                            The line opens on a counter of its own, before
-                            the note it counts, so it reads "2 senza
-                            besciamella": a ✕ that gives a plate back and
-                            takes the line away at the last, how many plates
-                            carry the note, and a plus that marks one more of
-                            the plain ones. At the end of the line, under the
-                            dish's own counter, it read as a second count of
-                            the dish. One note written once for three
-                            lasagne, not three lines saying the same thing. */}
+                            The line opens on a small counter of its own,
+                            before the note it counts, so it reads "− 2 +
+                            senza besciamella": a minus that gives a plate
+                            back and takes the line away at the last, how
+                            many plates carry the note, and a plus that marks
+                            one more of the plain ones. Red and green, and
+                            smaller than the dish's: at the end of the line,
+                            under the dish's own counter and drawn like it,
+                            it read as a second count of the dish, and at
+                            full size it left the note half the line. One
+                            note written once for three lasagne, not three
+                            lines saying the same thing. */}
                         {noted.map((entry) => {
                           const plainLeft = entries.some((other) => !other.own && other.quantity > 0);
                           const noteName = entry.note.trim() ? `${dish.name} — ${entry.note.trim()}` : dish.name;
                           const plusFull = full && !plainLeft;
                           return (
-                            <div key={entry.key} className="flex items-center gap-2">
-                              <div className="flex shrink-0 items-center gap-1 select-none [-webkit-touch-callout:none]">
+                            <div key={entry.key} className="flex items-center gap-1.5">
+                              <div className="flex shrink-0 items-center select-none [-webkit-touch-callout:none]">
                                 <button
                                   type="button"
                                   onClick={() => lessNoted(entry.key)}
                                   aria-label={entry.quantity > 1 ? `${t('menuOneLess')}: ${noteName}` : `${t('menuNoteRemove')}: ${dish.name}`}
-                                  className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:text-foreground active:scale-95"
+                                  className={`${noteCountButton} bg-red-100 text-red-700`}
                                 >
-                                  <X className="size-4" />
+                                  <Minus className="size-3.5" />
                                 </button>
-                                <Ltr className="w-6 text-center text-base font-bold text-brand tabular-nums">{entry.quantity}</Ltr>
+                                <Ltr className="w-5 text-center text-sm font-bold text-brand tabular-nums">{entry.quantity}</Ltr>
                                 <button
                                   type="button"
                                   aria-label={`${t('menuOneMore')}: ${noteName}`}
                                   aria-disabled={plusFull || undefined}
                                   onClick={() => tapNotedPlus(course, entry.key, plainLeft)}
-                                  className={`${dishButton} ${plusFull ? 'opacity-40' : ''}`}
+                                  className={`${noteCountButton} bg-green-100 text-green-700 ${plusFull ? 'opacity-40' : ''}`}
                                 >
-                                  <Plus className="size-4" />
+                                  <Plus className="size-3.5" />
                                 </button>
                               </div>
                               <input

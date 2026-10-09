@@ -429,12 +429,14 @@ già mandata. Con una riga per porzione tutto questo esisteva già.
 - **la nota per una porzione** è l'icona a sinistra del `−`, che compare quando il piatto ha almeno
   una porzione: prende una lasagna dal conteggio semplice e le dà una riga sua, sotto il piatto, con
   la nota («senza besciamella»). La riga comincia con un contatore suo, prima della nota, e si legge
-  «2 senza besciamella»: ✕, quante porzioni hanno quella nota, `+`. In fondo alla riga, sotto il
-  contatore del piatto, sembrava un secondo conteggio del piatto.
+  «− 2 + senza besciamella»: `−` rosso chiaro, quante porzioni hanno quella nota, `+` verde chiaro.
+  È più piccolo di quello del piatto (32 px): in fondo alla riga, sotto il contatore del piatto e
+  disegnato come lui, sembrava un secondo conteggio del piatto, e a misura piena lasciava alla nota
+  mezza riga.
   - Il `+` segna con la stessa nota un'altra lasagna già contata. Se non ne restano di semplici ne
     aggiunge una, quando la portata ha posto.
-  - La ✕ ne riporta una nel conteggio semplice e, all'ultima, toglie la riga.
-  - Né l'uno né l'altra cambiano il totale del piatto: per toglierne una c'è il `−` del piatto.
+  - Il `−` ne riporta una nel conteggio semplice e, all'ultima, toglie la riga.
+  - Né l'uno né l'altro cambiano il totale del piatto: per toglierne una c'è il `−` del piatto.
   - Prima ogni porzione con la nota era una riga a sé, e tre lasagne senza besciamella volevano la
     stessa nota scritta tre volte.
 
