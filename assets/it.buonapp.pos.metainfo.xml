@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.6.1" date="2026-10-09">
+      <description>
+        <p>At a table on the fixed menu the same change often goes on more than one plate: three lasagne out of five "senza besciamella". Each noted portion was a line of its own in the menu window, so the note was written three times. The line of a note now counts the plates that carry it, and one note is written once. Same window on the handheld and on the till. No database migration.</p>
+      </description>
+    </release>
     <release version="6.6.0" date="2026-10-08">
       <description>
         <p>In service the handheld let a waiter down in two ways: a phone that dropped off the Wi-Fi could send nothing more until the page was reloaded, and a long ticket, a fixed menu for twenty above all, grew slow and put taps on the wrong dish, until a reload threw the whole ticket away. A ticket sent without a connection now waits on the phone and goes by itself as soon as the PC answers again, for up to 30 minutes. A ticket being written survives a reload or the app being closed, and back stays inside the app. The fixed-menu window no longer moves its rows under the finger, on the handheld and on the till alike. No database migration.</p>

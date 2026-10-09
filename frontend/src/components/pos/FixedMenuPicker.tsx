@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MessageSquarePlus, Minus, Plus, X } from 'lucide-react';
+import { MessageSquarePlus, Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Modal, ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Ltr } from '@/components/layout/Ltr';
@@ -33,8 +33,9 @@ import {
  *
  * Every count on this screen counts plates. A course says "3 di 8": three of
  * the eight plates those menus are owed. A dish says how many of it, the ones
- * carrying a note included — a note does not make a second dish, it marks one
- * of the plates already counted.
+ * carrying a note included — a note does not make a second dish, it marks
+ * plates already counted. Three lasagne out of five "senza besciamella" is one
+ * note with a count of three, written once.
  *
  * An unfinished menu is allowed out of here. The table orders the starters and
  * decides the main over them, and refusing the menu until every course is
@@ -82,10 +83,13 @@ interface Props {
 }
 
 /**
- * One counted entry: a dish's plain portions, or a single one with its note.
+ * One counted entry: a dish's plain portions, or the portions that share one
+ * note.
  *
- * A noted portion is always one plate — "senza besciamella" is about that
- * plate and no other — so it is a line of its own with a count of one.
+ * A note is about the plates it is written on and no others, so it is a line
+ * of its own under the dish, with a count of how many plates carry it. It
+ * used to be a line per plate, and three lasagne "senza besciamella" were the
+ * same note written three times.
  */
 interface Tally {
   key: string;
@@ -128,7 +132,8 @@ export default function FixedMenuPicker({
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
 
-  // A course read back off the check is a row per portion; the window counts.
+  // A course read back off the check is a row per portion; the window counts,
+  // and the portions sharing a note come back as that note's one line.
   // The wave each row goes out in comes back with it and is left alone: it is
   // not a choice this window makes, so it is not one it counts by either.
   const [tallies, setTallies] = useState<Tally[]>(() => tallySelection(
@@ -138,13 +143,16 @@ export default function FixedMenuPicker({
       quantity: choice.quantity,
       ...(choice.note ? { note: choice.note } : {}),
     })),
-  ).flatMap((entry): Tally[] => {
-    const shared = { course_id: entry.course_id, product_id: entry.product_id };
-    const portions = portionsOf(entry);
+  ).map((entry): Tally => {
     const note = (entry.note || '').trim();
-    return note
-      ? Array.from({ length: portions }, () => ({ key: nextTallyKey(), ...shared, quantity: 1, note, own: true }))
-      : [{ key: nextTallyKey(), ...shared, quantity: portions, note: '', own: false }];
+    return {
+      key: nextTallyKey(),
+      course_id: entry.course_id,
+      product_id: entry.product_id,
+      quantity: portionsOf(entry),
+      note,
+      own: note !== '',
+    };
   }));
   const [menus, setMenus] = useState<number | null>(
     mode === 'add' && initialMenus === undefined ? null : Math.max(1, Math.floor(Number(initialMenus)) || 1),
@@ -270,16 +278,47 @@ export default function FixedMenuPicker({
     setTallies((current) => current.map((entry) => (entry.key === key ? { ...entry, note } : entry)));
   };
 
-  /** The note goes, the plate stays: it goes back into the plain count. */
-  const dropNote = (key: string) => {
+  /**
+   * The plus of a note's line: one more plate with that note, the same rule
+   * as the note icon — a plain plate of the dish when there is one, so the
+   * dish total does not move, and one more plate only when every plate of the
+   * dish carries a note already and the course has room.
+   */
+  const moreNoted = (key: string, maxChoices: number) => {
+    setTallies((current) => {
+      const noted = current.find((entry) => entry.key === key);
+      if (!noted) return current;
+      const plain = current.find((entry) => isPlain(entry, noted.course_id, noted.product_id) && entry.quantity > 0);
+      if (!plain && !roomIn(current, noted.course_id, maxChoices)) return current;
+      return current
+        .map((entry) => (
+          entry === noted ? { ...entry, quantity: entry.quantity + 1 }
+            : entry === plain ? { ...entry, quantity: entry.quantity - 1 }
+              : entry
+        ))
+        .filter((entry) => entry.quantity > 0);
+    });
+  };
+
+  /**
+   * The ✕ of a note's line: one plate fewer with that note. The note goes,
+   * the plate stays — it goes back into the plain count, so the dish total
+   * does not move — and at the last plate the line goes with it. Taking a
+   * plate off the dish is the dish's own minus.
+   */
+  const lessNoted = (key: string) => {
     setTallies((current) => {
       const noted = current.find((entry) => entry.key === key);
       if (!noted) return current;
       const plain = current.find((entry) => isPlain(entry, noted.course_id, noted.product_id));
       const kept = current
-        .filter((entry) => entry.key !== key)
-        .map((entry) => (entry === plain ? { ...entry, quantity: entry.quantity + noted.quantity } : entry));
-      return plain ? kept : [...kept, { ...noted, key: nextTallyKey(), note: '', own: false }];
+        .map((entry) => (
+          entry === noted ? { ...entry, quantity: entry.quantity - 1 }
+            : entry === plain ? { ...entry, quantity: entry.quantity + 1 }
+              : entry
+        ))
+        .filter((entry) => entry.quantity > 0);
+      return plain ? kept : [...kept, { key: nextTallyKey(), course_id: noted.course_id, product_id: noted.product_id, quantity: 1, note: '', own: false }];
     });
   };
 
@@ -306,6 +345,19 @@ export default function FixedMenuPicker({
     addOne(course.id, productId, course.max_choices);
   };
 
+  /**
+   * The plus of a note's line. Marking a plain plate always has room; only a
+   * dish whose every plate carries a note already asks the course for one
+   * more, and a full course says so the way a tap on a dish does.
+   */
+  const tapNotedPlus = (course: FixedMenuCourse, key: string, hasPlain: boolean) => {
+    if (!hasPlain && countOfCourse(course.id) >= capacityOf(course.max_choices)) {
+      setFullTap({ courseId: course.id });
+      return;
+    }
+    moreNoted(key, course.max_choices);
+  };
+
   /** The save button pressed before the count: the finger is taken to the count. */
   const askForCount = () => {
     setAskCount((asked) => (asked ?? 0) + 1);
@@ -319,6 +371,9 @@ export default function FixedMenuPicker({
   const countButton = 'bg-muted text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
   const dishButton = 'bg-card text-foreground hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full border border-border outline-none transition focus-visible:ring-[3px] active:scale-95 disabled:opacity-40 disabled:active:scale-100';
   const noteButton = 'text-brand hover:bg-accent focus-visible:ring-ring/50 flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95';
+  // The counter of a note's line is smaller still, 32 px: it is tapped a few
+  // times and on purpose, and at the dish's size it left the note half the line.
+  const noteCountButton = 'focus-visible:ring-ring/50 flex size-8 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-[3px] active:scale-95';
 
   /**
    * The end of a dish row, always the same width: a note for one portion, the
@@ -531,38 +586,67 @@ export default function FixedMenuPicker({
                     </div>
 
                     {noted.length > 0 && (
-                      <div className="flex flex-col gap-1.5 pb-2 ps-11 pe-2">
-                        {/* One of the plates counted above, and what the
-                            kitchen has to know about that one. The note has
-                            the line to itself: beside a picker and a counter
-                            it was down to a dozen characters, and "senza
+                      <div className="flex flex-col gap-1.5 pb-2 ps-8 pe-2">
+                        {/* Some of the plates counted above, and what the
+                            kitchen has to know about them. The note has the
+                            line to itself: beside a picker and a counter it
+                            was down to a dozen characters, and "senza
                             besciamella" read "nza besciamella". It appears
                             when the waiter asks for it, under the dish they
                             are looking at; nothing else on the list moves
                             on its own. Sixteen pixels on a phone, or an
-                            iPhone zooms the page in on the first letter. */}
-                        {noted.map((entry) => (
-                          <div key={entry.key} className="flex items-center gap-2">
-                            <Ltr className="shrink-0 text-xs font-bold text-brand">1×</Ltr>
-                            <input
-                              type="text"
-                              value={entry.note}
-                              onChange={(event) => amendNote(entry.key, event.target.value.slice(0, NOTE_LENGTH))}
-                              placeholder={t('menuDishNotePlaceholder')}
-                              aria-label={`${t('menuDishNotePlaceholder')}: ${dish.name}`}
-                              maxLength={NOTE_LENGTH}
-                              className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-base outline-none focus:ring-2 focus:ring-brand sm:text-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => dropNote(entry.key)}
-                              aria-label={`${t('menuNoteRemove')}: ${dish.name}`}
-                              className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:text-foreground active:scale-95"
-                            >
-                              <X className="size-4" />
-                            </button>
-                          </div>
-                        ))}
+                            iPhone zooms the page in on the first letter.
+
+                            The line opens on a small counter of its own,
+                            before the note it counts, so it reads "− 2 +
+                            senza besciamella": a minus that gives a plate
+                            back and takes the line away at the last, how
+                            many plates carry the note, and a plus that marks
+                            one more of the plain ones. Red and green, and
+                            smaller than the dish's: at the end of the line,
+                            under the dish's own counter and drawn like it,
+                            it read as a second count of the dish, and at
+                            full size it left the note half the line. One
+                            note written once for three lasagne, not three
+                            lines saying the same thing. */}
+                        {noted.map((entry) => {
+                          const plainLeft = entries.some((other) => !other.own && other.quantity > 0);
+                          const noteName = entry.note.trim() ? `${dish.name} — ${entry.note.trim()}` : dish.name;
+                          const plusFull = full && !plainLeft;
+                          return (
+                            <div key={entry.key} className="flex items-center gap-1.5">
+                              <div className="flex shrink-0 items-center select-none [-webkit-touch-callout:none]">
+                                <button
+                                  type="button"
+                                  onClick={() => lessNoted(entry.key)}
+                                  aria-label={entry.quantity > 1 ? `${t('menuOneLess')}: ${noteName}` : `${t('menuNoteRemove')}: ${dish.name}`}
+                                  className={`${noteCountButton} bg-red-100 text-red-700`}
+                                >
+                                  <Minus className="size-3.5" />
+                                </button>
+                                <Ltr className="w-5 text-center text-sm font-bold text-brand tabular-nums">{entry.quantity}</Ltr>
+                                <button
+                                  type="button"
+                                  aria-label={`${t('menuOneMore')}: ${noteName}`}
+                                  aria-disabled={plusFull || undefined}
+                                  onClick={() => tapNotedPlus(course, entry.key, plainLeft)}
+                                  className={`${noteCountButton} bg-green-100 text-green-700 ${plusFull ? 'opacity-40' : ''}`}
+                                >
+                                  <Plus className="size-3.5" />
+                                </button>
+                              </div>
+                              <input
+                                type="text"
+                                value={entry.note}
+                                onChange={(event) => amendNote(entry.key, event.target.value.slice(0, NOTE_LENGTH))}
+                                placeholder={t('menuDishNotePlaceholder')}
+                                aria-label={`${t('menuDishNotePlaceholder')}: ${dish.name}`}
+                                maxLength={NOTE_LENGTH}
+                                className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-base outline-none focus:ring-2 focus:ring-brand sm:text-sm"
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

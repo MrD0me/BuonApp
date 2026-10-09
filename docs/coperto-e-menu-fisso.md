@@ -428,9 +428,20 @@ già mandata. Con una riga per porzione tutto questo esisteva già.
   riga di stato ad altezza fissa (troppi piatti, poi le portate che mancano, poi i supplementi);
 - **la nota per una porzione** è l'icona a sinistra del `−`, che compare quando il piatto ha almeno
   una porzione: prende una lasagna dal conteggio semplice e le dà una riga sua, sotto il piatto, con
-  la nota («senza besciamella»); la ✕ toglie la nota e la riporta nel conteggio, senza cambiare il
-  totale del piatto. Il campo della nota è a 16 px sul telefono, perché l'iPhone ingrandisce la
-  pagina sui campi più piccoli;
+  la nota («senza besciamella»). La riga comincia con un contatore suo, prima della nota, e si legge
+  «− 2 + senza besciamella»: `−` rosso chiaro, quante porzioni hanno quella nota, `+` verde chiaro.
+  È più piccolo di quello del piatto (32 px): in fondo alla riga, sotto il contatore del piatto e
+  disegnato come lui, sembrava un secondo conteggio del piatto, e a misura piena lasciava alla nota
+  mezza riga.
+  - Il `+` segna con la stessa nota un'altra lasagna già contata. Se non ne restano di semplici ne
+    aggiunge una, quando la portata ha posto.
+  - Il `−` ne riporta una nel conteggio semplice e, all'ultima, toglie la riga.
+  - Né l'uno né l'altro cambiano il totale del piatto: per toglierne una c'è il `−` del piatto.
+  - Prima ogni porzione con la nota era una riga a sé, e tre lasagne senza besciamella volevano la
+    stessa nota scritta tre volte.
+
+  Il campo della nota è a 16 px sul telefono, perché l'iPhone ingrandisce la pagina sui campi più
+  piccoli;
 - **una portata al completo lo dice**: i piatti che non ha si spengono, e un tocco su uno di loro
   accende per un attimo «Al completo» nella sua testata (e lo legge a chi usa il lettore di schermo),
   invece di non fare niente in silenzio. Per cambiare piatto si toglie prima una porzione;
