@@ -594,27 +594,21 @@ export default function FixedMenuPicker({
                             on its own. Sixteen pixels on a phone, or an
                             iPhone zooms the page in on the first letter.
 
-                            Its end is the dish's own counter, right under
-                            it: how many plates carry the note, a plus that
-                            marks one more of the plain ones, and a ✕ that
-                            gives one back and takes the line away at the
-                            last. One note written once for three lasagne,
-                            not three lines saying the same thing. */}
+                            The line opens on a counter of its own, before
+                            the note it counts, so it reads "2 senza
+                            besciamella": a ✕ that gives a plate back and
+                            takes the line away at the last, how many plates
+                            carry the note, and a plus that marks one more of
+                            the plain ones. At the end of the line, under the
+                            dish's own counter, it read as a second count of
+                            the dish. One note written once for three
+                            lasagne, not three lines saying the same thing. */}
                         {noted.map((entry) => {
                           const plainLeft = entries.some((other) => !other.own && other.quantity > 0);
                           const noteName = entry.note.trim() ? `${dish.name} — ${entry.note.trim()}` : dish.name;
                           const plusFull = full && !plainLeft;
                           return (
                             <div key={entry.key} className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                value={entry.note}
-                                onChange={(event) => amendNote(entry.key, event.target.value.slice(0, NOTE_LENGTH))}
-                                placeholder={t('menuDishNotePlaceholder')}
-                                aria-label={`${t('menuDishNotePlaceholder')}: ${dish.name}`}
-                                maxLength={NOTE_LENGTH}
-                                className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-base outline-none focus:ring-2 focus:ring-brand sm:text-sm"
-                              />
                               <div className="flex shrink-0 items-center gap-1 select-none [-webkit-touch-callout:none]">
                                 <button
                                   type="button"
@@ -635,6 +629,15 @@ export default function FixedMenuPicker({
                                   <Plus className="size-4" />
                                 </button>
                               </div>
+                              <input
+                                type="text"
+                                value={entry.note}
+                                onChange={(event) => amendNote(entry.key, event.target.value.slice(0, NOTE_LENGTH))}
+                                placeholder={t('menuDishNotePlaceholder')}
+                                aria-label={`${t('menuDishNotePlaceholder')}: ${dish.name}`}
+                                maxLength={NOTE_LENGTH}
+                                className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 text-base outline-none focus:ring-2 focus:ring-brand sm:text-sm"
+                              />
                             </div>
                           );
                         })}
