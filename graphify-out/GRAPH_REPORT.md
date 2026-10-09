@@ -108,14 +108,14 @@
 - Pagina prodotti
 - Provider i18n e fuso SSR
 - Profili stampante
-- Backup su Google Drive
+- Frequenza e pulizia backup Drive
 - Test quantità addon
 - Rifiuti e ripetizioni ordini
 - Dipendenze runtime backend
 - Test interruttori KDS e comande
 - tsconfig backend
 - Stampa web del preconto
-- Rotte dei gruppi di varianti
+- Validazione e limiti gruppi addon
 - Test impostazioni sconti
 - Test API stampanti
 - Invarianti del fork
@@ -301,11 +301,16 @@ Nodes (81): main(), main(), main(), api(), assert(), assertEqual(), assertInclud
 
 ### Community 11 - "Test tavoli, prenotazioni, giornate"
 Cohesion: 0.03
-Nodes (72): MIGRATIONS, orderRoutes, roomRoutes, serviceDayRoutes, tableRoutes, { billRoutes }, fs, {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
-  api, assert, assertEqual,
-  getResults, closeDatabase,
+Nodes (72): MIGRATIONS, orderRoutes, roomRoutes, serviceDayRoutes, tableRoutes, { billRoutes }, fs, {
+
+  initTestDb, createApp, startServer,
+
+  seedOwnerUser, seedCategory, seedProduct,
+
+  api, assert, assertEqual,
+
+  getResults, closeDatabase,
+
 } (+64 more)
 
 ### Community 12 - "Server KDS e WebSocket"
@@ -374,20 +379,30 @@ Nodes (43): isBlockedSsrfTarget(), PRODUCT_NUMERIC_FIELDS, resolvePublicHostname
 
 ### Community 28 - "Test impostazioni locali e coperto"
 Cohesion: 0.04
-Nodes (51): settingsRoutes, { billRoutes }, fs, {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
-  api, assert, assertEqual,
-  getResults, closeDatabase, now,
+Nodes (51): settingsRoutes, { billRoutes }, fs, {
+
+  initTestDb, createApp, startServer,
+
+  seedOwnerUser, seedCategory, seedProduct,
+
+  api, assert, assertEqual,
+
+  getResults, closeDatabase, now,
+
 }, Module, { orderRoutes }, os, path (+43 more)
 
 ### Community 29 - "Test menu fisso, PIN e autorizzazioni"
 Cohesion: 0.05
-Nodes (46): registerRoutes(), { billRoutes }, { fixedMenuRoutes }, { formatKOT, formatReceipt, escPosToText }, fs, {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedServerUser, seedCategory, seedProduct,
-  api, assert, assertEqual,
-  getResults, closeDatabase, now,
+Nodes (46): registerRoutes(), { billRoutes }, { fixedMenuRoutes }, { formatKOT, formatReceipt, escPosToText }, fs, {
+
+  initTestDb, createApp, startServer,
+
+  seedOwnerUser, seedServerUser, seedCategory, seedProduct,
+
+  api, assert, assertEqual,
+
+  getResults, closeDatabase, now,
+
 }, main(), Module (+38 more)
 
 ### Community 30 - "Registro lingue i18n"
@@ -416,10 +431,14 @@ Nodes (22): Navigator, USB, USBAlternateInterface, USBConfiguration, USBConnecti
 
 ### Community 36 - "Test catalogo e spec Playwright"
 Cohesion: 0.05
-Nodes (36): addonGroupRoutes, categoryRoutes, productRoutes, fs, {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
-  api, assert, assertEqual, getResults, closeDatabase,
+Nodes (36): addonGroupRoutes, categoryRoutes, productRoutes, fs, {
+
+  initTestDb, createApp, startServer,
+
+  seedOwnerUser, seedCategory, seedProduct,
+
+  api, assert, assertEqual, getResults, closeDatabase,
+
 }, Module, os, path (+28 more)
 
 ### Community 37 - "Changelog 6.x: sconti, coperto e prezzi"
@@ -436,11 +455,16 @@ Nodes (29): ref_node_sqlite, backupPath, currentDb, Database, dataOnlyRestore(),
 
 ### Community 40 - "Test conti, sconti e fuso orario"
 Cohesion: 0.05
-Nodes (35): tests_helpers_test_setup_getdatabase, { billRoutes }, fs, {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
-  api, assert, assertEqual,
-  getResults, closeDatabase, getDatabase, now,
+Nodes (35): tests_helpers_test_setup_getdatabase, { billRoutes }, fs, {
+
+  initTestDb, createApp, startServer,
+
+  seedOwnerUser, seedCategory, seedProduct,
+
+  api, assert, assertEqual,
+
+  getResults, closeDatabase, getDatabase, now,
+
 }, Module, { orderRoutes }, os, path (+27 more)
 
 ### Community 41 - "Test RTL delle schermate"
@@ -457,11 +481,16 @@ Nodes (36): Held orders (/api/held-orders), Reports summary and sales (UTC dates
 
 ### Community 44 - "Test ciclo di vita ordine"
 Cohesion: 0.07
-Nodes (33): ref_worker_threads, resetCounters(), seedManagerUser(), seedTable(), { billRoutes }, fs, {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
-  api, assert, assertEqual, assertIncludes,
-  getResults, closeDatabase, getDatabase, now,
+Nodes (33): ref_worker_threads, resetCounters(), seedManagerUser(), seedTable(), { billRoutes }, fs, {
+
+  initTestDb, createApp, startServer,
+
+  seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
+
+  api, assert, assertEqual, assertIncludes,
+
+  getResults, closeDatabase, getDatabase, now,
+
 }, Module (+25 more)
 
 ### Community 45 - "Dipendenze e engine backend"
@@ -470,11 +499,16 @@ Nodes (33): allowScripts, author, email, name, description, engines, node, homep
 
 ### Community 46 - "Test metodi di pagamento e PIN manager"
 Cohesion: 0.06
-Nodes (31): billRoutes, { billRoutes }, fs, {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
-  api, assert, assertEqual, assertIncludes,
-  getResults, closeDatabase, getDatabase, now,
+Nodes (31): billRoutes, { billRoutes }, fs, {
+
+  initTestDb, createApp, startServer,
+
+  seedOwnerUser, seedCategory, seedProduct,
+
+  api, assert, assertEqual, assertIncludes,
+
+  getResults, closeDatabase, getDatabase, now,
+
 }, Module, { orderRoutes }, os, path (+23 more)
 
 ### Community 47 - "Encoder preconto frontend"
@@ -575,22 +609,34 @@ Nodes (23): createBackup(), assertNoRestoreAttachment(), clearLinkedData(), copy
 
 ### Community 71 - "Test clienti e autorizzazioni"
 Cohesion: 0.09
-Nodes (23): customerRoutes, { customerRoutes }, { getJWTSecret }, {
-  initTestDb,
-  createApp,
-  assertEqual,
-  getResults,
-  closeDatabase,
-  now,
+Nodes (23): customerRoutes, { customerRoutes }, { getJWTSecret }, {
+
+  initTestDb,
+
+  createApp,
+
+  assertEqual,
+
+  getResults,
+
+  closeDatabase,
+
+  now,
+
 }, jwt, main(), makeToken(), Module (+15 more)
 
 ### Community 72 - "Test paginazione clienti"
 Cohesion: 0.08
-Nodes (23): ref_events, assertGreaterThan(), { billRoutes }, { customerRoutes }, fs, {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct, seedCustomer, seedWalletCredit,
-  api, assert, assertEqual, assertGreaterThan,
-  getResults, closeDatabase, getDatabase, now,
+Nodes (23): ref_events, assertGreaterThan(), { billRoutes }, { customerRoutes }, fs, {
+
+  initTestDb, createApp, startServer,
+
+  seedOwnerUser, seedCategory, seedProduct, seedCustomer, seedWalletCredit,
+
+  api, assert, assertEqual, assertGreaterThan,
+
+  getResults, closeDatabase, getDatabase, now,
+
 }, Module, { orderRoutes } (+15 more)
 
 ### Community 73 - "Layout app e lingua HTML"
@@ -647,29 +693,48 @@ Nodes (21): dependencies, axios, class-variance-authority, clsx, @dnd-kit/dom, @
 
 ### Community 86 - "Test DB legacy e stampa scontrino"
 Cohesion: 0.17
-Nodes (20): captureUserSecurityState(), isNativeAbiMismatch(), {
-  assert,
-  assertEqual,
-  getResults,
-  createApp,
-  seedOwnerUser,
-  isNativeAbiMismatch,
+Nodes (20): captureUserSecurityState(), isNativeAbiMismatch(), {
+
+  assert,
+
+  assertEqual,
+
+  getResults,
+
+  createApp,
+
+  seedOwnerUser,
+
+  isNativeAbiMismatch,
+
 }, backend, checkMigration(), checkRestoreMerge(), checkRule(), checkStaffApi() (+12 more)
 
 ### Community 87 - "Import/export menu CSV"
 Cohesion: 0.10
-Nodes (19): main_routes_menu_csv_menucsvroutes, addonCsv(), addonCsvWithHeader(), fs, {
-  initTestDb,
-  createApp,
-  startServer,
-  seedOwnerUser,
-  seedCategory,
-  api,
-  assert,
-  assertEqual,
-  getResults,
-  closeDatabase,
-  now,
+Nodes (19): main_routes_menu_csv_menucsvroutes, addonCsv(), addonCsvWithHeader(), fs, {
+
+  initTestDb,
+
+  createApp,
+
+  startServer,
+
+  seedOwnerUser,
+
+  seedCategory,
+
+  api,
+
+  assert,
+
+  assertEqual,
+
+  getResults,
+
+  closeDatabase,
+
+  now,
+
 }, { menuCsvRoutes }, Module, os (+11 more)
 
 ### Community 88 - "Test integrità prezzi addon"
@@ -712,7 +777,7 @@ Nodes (16): handleI18nError(), assert(), buildHtmlDocument(), frontendRequire, {
 Cohesion: 0.12
 Nodes (12): getSupportedPrinterProfiles(), matchSupportedPrinterProfile(), PrinterCommandSet, PrinterCutMode, resolvePrinterProfile(), SUPPORTED_PRINTER_PROFILES, SupportedPrinterProfile, failures (+4 more)
 
-### Community 98 - "Backup su Google Drive"
+### Community 98 - "Frequenza e pulizia backup Drive"
 Cohesion: 0.12
 Nodes (16): BackupFrequency, cancelDriveOperation(), computeFilesToDelete(), DRIVE_BACKUP_FOLDER_NAME, DRIVE_FILE_SCOPE, getClientCredentials(), googleDrive, GoogleDriveStatus (+8 more)
 
@@ -730,8 +795,10 @@ Nodes (18): dependencies, bcryptjs, better-sqlite3, bonjour-service, cors, decim
 
 ### Community 102 - "Test interruttori KDS e comande"
 Cohesion: 0.12
-Nodes (17): bcrypt, fs, { getJWTSecret }, {
-  initTestDb, createApp, assert, assertEqual, getResults, closeDatabase, now,
+Nodes (17): bcrypt, fs, { getJWTSecret }, {
+
+  initTestDb, createApp, assert, assertEqual, getResults, closeDatabase, now,
+
 }, jwt, { kdsInfoRoutes }, { kdsRoutes }, { kitchenRoutes } (+9 more)
 
 ### Community 103 - "tsconfig backend"
@@ -742,7 +809,7 @@ Nodes (17): compilerOptions, declaration, declarationMap, esModuleInterop, force
 Cohesion: 0.22
 Nodes (16): ensureReceiptMessagesLoaded(), escapeHtml(), generateBillHtml(), getPaperStyles(), getReceiptTranslator(), ltrSpan(), PaperSize, PAYMENT_METHOD_KEYS (+8 more)
 
-### Community 105 - "Rotte dei gruppi di varianti"
+### Community 105 - "Validazione e limiti gruppi addon"
 Cohesion: 0.14
 Nodes (8): addonGroupReadRateLimit, addonGroupWriteRateLimit, FieldErrors, router, serializeAddon(), serializeAddonGroup(), toBoolean(), express-rate-limit
 
@@ -800,8 +867,10 @@ Nodes (6): FakeBrowserWindow, FakeWebContents, Module, registered, run(), window
 
 ### Community 119 - "Test revoca token"
 Cohesion: 0.15
-Nodes (14): bcrypt, Database, fs, { getJWTSecret, authRoutes }, { initDatabase, getDbPath }, {
-  initTestDb, createApp, assertEqual, getResults, getDatabase, closeDatabase, now,
+Nodes (14): bcrypt, Database, fs, { getJWTSecret, authRoutes }, { initDatabase, getDbPath }, {
+
+  initTestDb, createApp, assertEqual, getResults, getDatabase, closeDatabase, now,
+
 }, { isTokenRevoked, revokeToken }, jwt (+6 more)
 
 ### Community 120 - "Comande stampate a giri"
@@ -822,28 +891,46 @@ Nodes (10): ImageUploader(), ImageUploaderProps, Mode, compressCroppedImage(), C
 
 ### Community 124 - "Test letture addon (KDS)"
 Cohesion: 0.14
-Nodes (13): getEffectiveOrderItems(), { attachEffectiveAddons }, fs, { getEffectiveOrderItems }, {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
-  api, assert, assertEqual, getResults, closeDatabase,
+Nodes (13): getEffectiveOrderItems(), { attachEffectiveAddons }, fs, { getEffectiveOrderItems }, {
+
+  initTestDb, createApp, startServer,
+
+  seedOwnerUser, seedCategory, seedProduct,
+
+  api, assert, assertEqual, getResults, closeDatabase,
+
 }, { kdsRoutes }, { kitchenRoutes }, Module (+5 more)
 
 ### Community 125 - "Test ripetizioni e guardia tavolo"
 Cohesion: 0.16
-Nodes (13): bcrypt, count(), fs, { getJWTSecret }, {
-  initTestDb,
-  createApp,
-  startServer,
-  seedOwnerUser,
-  seedCategory,
-  seedProduct,
-  seedTable,
-  api,
-  assert,
-  assertEqual,
-  getResults,
-  closeDatabase,
-  now,
+Nodes (13): bcrypt, count(), fs, { getJWTSecret }, {
+
+  initTestDb,
+
+  createApp,
+
+  startServer,
+
+  seedOwnerUser,
+
+  seedCategory,
+
+  seedProduct,
+
+  seedTable,
+
+  api,
+
+  assert,
+
+  assertEqual,
+
+  getResults,
+
+  closeDatabase,
+
+  now,
+
 }, jwt, main(), Module (+5 more)
 
 ### Community 126 - "Test fondamenta RTL"
@@ -1068,5 +1155,5 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.065) - this node is a cross-community bridge._
 - **Why does `getCountryByCode()` connect `Paesi, valuta e formati` to `Profili stampante`, `Store e componenti della cassa`, `Tavoli, prenotazioni e giornata`, `Stampa web del preconto`, `Staff, clienti e impostazioni`, `Helper di test condivisi`, `Demo storico ordini`, `Encoder preconto frontend`, `Pagina WhatsApp e tabelle UI`, `Pagina prova stampa e dati di test`, `Messaggio WhatsApp e test locale UI`, `Normalizzazione username`, `Rotte delle impostazioni`, `Idempotenza invio ordine`, `Pagina di primo avvio`, `Test impostazioni locali e coperto`, `Rilevamento stampanti`?**
   _High betweenness centrality (0.052) - this node is a cross-community bridge._
-- **Why does `getDatabase()` connect `Staff, clienti e impostazioni` to `Test percorso di aggiornamento`, `Test larghezza carta`, `Test autorizzazioni ordini`, `Tavoli, prenotazioni e giornata`, `Helper di test condivisi`, `Test stampa scontrino`, `Server KDS e WebSocket`, `Server, sicurezza e CSP`, `Servizio WhatsApp (Baileys)`, `Inizializzazione e riparazioni DB`, `Config Next e storico ordini`, `Database, backup e ripristino`, `Test crash codice paese Windows`, `PIN master`, `Normalizzazione username`, `Backup, ripristino e import DB`, `Impostazioni, ordini e sconti`, `Servizio menu fisso`, `Test menu fisso, PIN e autorizzazioni`, `Rilevamento stampanti`, `Giri di comanda (KOT batch)`, `Salute dello schema DB`, `Rotte delle impostazioni`, `Allowlist URL e stampa`, `Rotte categorie`, `Servizio Google Drive`, `Test backup su Windows`, `API strumenti database`, `Test spegnimento e Google Drive`, `Rotte gruppi addon`, `Test varianti in cucina`, `Processo principale Electron`, `Test DB legacy e stampa scontrino`, `Test integrità prezzi addon`, `Test annulli con override`, `Test sistema sconti`, `Test addon su righe ordine`, `Backup su Google Drive`, `Test quantità addon`, `Rotte dei gruppi di varianti`, `Test impostazioni sconti`, `Test API stampanti`, `Test stampa conti`?**
+- **Why does `getDatabase()` connect `Staff, clienti e impostazioni` to `Test percorso di aggiornamento`, `Test larghezza carta`, `Test autorizzazioni ordini`, `Tavoli, prenotazioni e giornata`, `Helper di test condivisi`, `Test stampa scontrino`, `Server KDS e WebSocket`, `Server, sicurezza e CSP`, `Servizio WhatsApp (Baileys)`, `Inizializzazione e riparazioni DB`, `Config Next e storico ordini`, `Database, backup e ripristino`, `Test crash codice paese Windows`, `PIN master`, `Normalizzazione username`, `Backup, ripristino e import DB`, `Impostazioni, ordini e sconti`, `Servizio menu fisso`, `Test menu fisso, PIN e autorizzazioni`, `Rilevamento stampanti`, `Giri di comanda (KOT batch)`, `Salute dello schema DB`, `Rotte delle impostazioni`, `Allowlist URL e stampa`, `Rotte categorie`, `Servizio Google Drive`, `Test backup su Windows`, `API strumenti database`, `Test spegnimento e Google Drive`, `Rotte gruppi addon`, `Test varianti in cucina`, `Processo principale Electron`, `Test DB legacy e stampa scontrino`, `Test integrità prezzi addon`, `Test annulli con override`, `Test sistema sconti`, `Test addon su righe ordine`, `Frequenza e pulizia backup Drive`, `Test quantità addon`, `Validazione e limiti gruppi addon`, `Test impostazioni sconti`, `Test API stampanti`, `Test stampa conti`?**
   _High betweenness centrality (0.035) - this node is a cross-community bridge._
