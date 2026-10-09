@@ -4,6 +4,18 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.6.1] - 2026-10-09
+
+At a table on the fixed menu the same change often goes on more than one plate:
+three lasagne out of five "senza besciamella". Each noted portion was a line of
+its own in the menu window, so the note was written three times. The line of a
+note now counts the plates that carry it, and one note is written once. Same
+window on the handheld and on the till. No database migration.
+
+### Changed
+
+- **One note counts several portions in the fixed-menu window.** The line under a dish opens on a small counter of its own, before the note: a light red *−*, how many plates carry the note, and a light green *+*. The *+* marks one more of the dish's plain plates with the same note, so the dish total does not move; when every plate already carries a note it adds one, if the course has room, and a full course lights up as it does for a tap on a dish. The *−* gives a plate back to the plain count and takes the line away at the last, in place of the ✕ that removed the note. A menu read back from the check, or from the draft after a reload, brings the plates that share a note back as one line instead of one line each. Nothing changes on the server: the order already carried equal notes as a quantity.
+
 ## [6.6.0] - 2026-10-08
 
 In service the handheld let a waiter down in two ways: a phone that dropped off
