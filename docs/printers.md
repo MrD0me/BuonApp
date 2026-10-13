@@ -58,6 +58,8 @@ Printer profiles declare a `codePage` (WPC1252) so Western European text prints 
 - Confirm BuonApp's machine can reach the printer on the trusted/local business network.
 - Verify the printer's IP address has not changed (check your router's DHCP lease table or configure a static IP / DHCP reservation).
 - Verify the configured port (default ESC/POS port is usually `9100`).
+- Tickets for the same printer go out one at a time: the next one connects only after the printer has read the previous one and closed the connection, so two tickets fired together cannot interleave on the paper.
+- If the last lines of a ticket come out at the top of the next one, run **Test Print**: the closing line and rule must stay above the cut. Every ticket ends by asking the printer to feed to its own blade before cutting (`GS V 65`/`66`), so this points at the printer's cutter settings rather than at the ticket.
 
 ### Windows USB & spooler printers
 
