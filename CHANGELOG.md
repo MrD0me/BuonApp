@@ -4,6 +4,19 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.6.2] - 2026-10-17
+
+In service the kitchen sometimes found the end of a long ticket at the top of
+the next one: the dishes were all there, but the paper had been cut before the
+last lines came out. Tickets for the same network printer now go out one at a
+time, and every ticket asks the printer to feed to its own blade before the
+cut. No database migration.
+
+### Fixed
+
+- **The end of a long ticket no longer comes out on the next one.** Two tickets fired together at the same network printer, from a handheld and the till in the same second or from two stations sharing one printer, opened two connections at once, and a ticket counted as printed as soon as its bytes left the PC. While a long ticket was still being read, the next one could get in, print and be cut, and the tail of the first came out alone on the sheet after it. Each network printer now takes one ticket at a time: the next connects only once the printer has read the previous one and closed the connection.
+- **The cut no longer guesses where the blade is.** A ticket used to end with five blank lines and a cut wherever the paper stood, so a printer whose blade sits further from the head cut through the last lines. It now ends with three blank lines and asks the printer to feed to its own blade before cutting (`GS V 65`, or `GS V 66` for printers set to a partial cut), on kitchen tickets, bills, the day report and the test page alike.
+
 ## [6.6.1] - 2026-10-09
 
 At a table on the fixed menu the same change often goes on more than one plate:
