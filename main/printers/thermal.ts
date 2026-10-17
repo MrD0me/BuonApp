@@ -2076,12 +2076,13 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     }
 
     if (line.includes('{CUT}')) {
-      buf.push(0x1B, 0x64, 0x05);
-      if (options.cutMode === 'partial') {
-        buf.push(0x1D, 0x56, 0x42, 0x00);
-      } else {
-        buf.push(0x1D, 0x56, 0x00);
-      }
+      // A short blank margin under the last line, then GS V 65/66 0: "feed
+      // to the cutting position, then cut". The printer knows how far its
+      // blade sits above the head; a bare GS V 0 cuts wherever the paper is,
+      // and when a fixed feed fell short the end of the ticket was carried
+      // onto the top of the next one.
+      buf.push(0x1B, 0x64, 0x03);
+      buf.push(0x1D, 0x56, options.cutMode === 'partial' ? 0x42 : 0x41, 0x00);
       continue;
     }
 
@@ -2224,10 +2225,36 @@ export function escPosToText(data: Buffer | Uint8Array): string {
   return decoded.replace(/\n+$/, '');
 }
 
-export async function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
+// Jobs still travelling to each network printer, keyed by ip:port.
+const networkPrintQueues = new Map<string, Promise<DispatchResult>>();
+
+// One job at a time per printer. Two tickets fired together - the handheld and
+// the till in the same second, or two stations sharing one printer - would
+// otherwise open two connections at once, and a printer that reads both lets
+// the second ticket in while the tail of a long first one is still waiting on
+// the wire: the second prints and is cut, and the tail comes out alone on the
+// sheet after it.
+export function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
+  const key = `${ip}:${port}`;
+  const previous = networkPrintQueues.get(key) ?? Promise.resolve<DispatchResult>({ ok: true });
+  // sendToNetworkPrinter never rejects, so one failed ticket cannot stall the ones behind it.
+  const job = previous.then(() => sendToNetworkPrinter(ip, port, data, signal));
+  networkPrintQueues.set(key, job);
+  void job.then(() => {
+    if (networkPrintQueues.get(key) === job) networkPrintQueues.delete(key);
+  });
+  return job;
+}
+
+function sendToNetworkPrinter(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
+  if (signal?.aborted) return Promise.resolve({ ok: false, detail: 'Print cancelled during shutdown' });
+
   return new Promise((resolve) => {
     const client = new net.Socket();
     let settled = false;
+    // Set once every byte has been handed to the socket; the job is only over
+    // when the printer closes its side, which it does after reading up to our FIN.
+    let sent = false;
     const onAbort = (): void => {
       client.destroy();
       finish({ ok: false, detail: 'Print cancelled during shutdown' });
@@ -2240,10 +2267,18 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
     };
 
     client.connect(port, ip, () => {
-      client.write(data, () => {
+      // Whatever the printer sends back goes unread; draining it is what lets
+      // the socket see the printer's FIN, instead of waiting out the timeout.
+      client.resume();
+      client.write(data, (err) => {
+        if (err) return;
+        sent = true;
         client.end();
-        finish({ ok: true });
       });
+    });
+
+    client.on('close', () => {
+      finish(sent ? { ok: true } : { ok: false, detail: `Connection to ${ip}:${port} closed before the ticket was sent` });
     });
 
     client.on('error', (err) => {
@@ -2254,10 +2289,16 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
 
     client.setTimeout(5000, () => {
       client.destroy();
-      finish({ ok: false, detail: `Timed out connecting to ${ip}:${port}` });
+      if (sent) {
+        // Everything went out but the printer never closed the connection.
+        // That is how the ticket used to be counted as printed, so keep it so.
+        console.warn(`[Printer] ${ip}:${port} did not close the connection after the ticket; assuming it was delivered`);
+        finish({ ok: true });
+      } else {
+        finish({ ok: false, detail: `Timed out connecting to ${ip}:${port}` });
+      }
     });
     signal?.addEventListener('abort', onAbort, { once: true });
-    if (signal?.aborted) onAbort();
   });
 }
 

@@ -7,6 +7,7 @@
  *   FLO_PRINT_TO="Printer Name" npm run test:printer -- --live   # send to a specific printer
  */
 
+import * as net from 'net';
 import {
   formatReceipt,
   formatKOT,
@@ -100,7 +101,7 @@ function visiblePreview(buf: Buffer, cols: number): string {
       continue;
     }
     if (b === GS && buf[i + 1] === 0x56) {
-      i += 3;
+      i += buf[i + 2] === 0x41 || buf[i + 2] === 0x42 ? 4 : 3;
       continue;
     }
     if (b === LF) {
@@ -238,7 +239,7 @@ console.log('\n✅ Test 1: buildEscPos emits correct control bytes');
   assert('emits ESC a 1 (center)', bytesContain(buf, [ESC, 0x61, 0x01]));
   assert('emits ESC a 0 (left)', bytesContain(buf, [ESC, 0x61, 0x00]));
   assert('emits ESC E 1 (bold on)', bytesContain(buf, [ESC, 0x45, 0x01]));
-  assert('emits GS V 0 (full cut)', bytesContain(buf, [GS, 0x56, 0x00]));
+  assert('emits GS V A 0 (feed to the blade, full cut) after a short margin', bytesContain(buf, [ESC, 0x64, 0x03, GS, 0x56, 0x41, 0x00]));
   assert('emits LF after text lines', bytesContain(buf, [LF]));
   assert('contains visible "HEADER" text', buf.toString('utf8').includes('HEADER'));
   assert('contains visible "plain line" text', buf.toString('utf8').includes('plain line'));
@@ -373,7 +374,7 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   assert('renders business registration number', text.includes('TAXID-0001'));
   assert('no vendor branding on the receipt', !text.includes('Powered by BuonApp') && !text.includes('github.com/MrD0me/BuonApp'));
   assert('long product name is truncated to fit', !text.includes('Truncated By Formatter'));
-  assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x00]));
+  assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x41, 0x00]));
 
   const rowLines = visiblePreview(buf, 48).split('\n');
   const cheeseLine = rowLines.find((l) => l.startsWith('Cheeseburger') && l.includes('₹540'));
@@ -455,7 +456,7 @@ console.log('\n✅ Test 4: Classic receipt template');
   assert('renders business name', text.includes('Flo Test Cafe'));
   assert('renders item and total', text.includes('Cheeseburger') && text.includes('₹950.00'));
   assert('no vendor branding on the receipt', !text.includes('Powered by BuonApp') && !text.includes('github.com/MrD0me/BuonApp'));
-  assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x00]));
+  assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x41, 0x00]));
 
   console.log('\n   — Rendered classic —');
   console.log(visiblePreview(buf, 48));
@@ -529,7 +530,7 @@ console.log('\n✅ Test 5d: Bill content toggles are optional and never block pr
       && !text.includes('Table: T3')
       && !text.includes('Tax A'));
     assert(`${template}: disabled details still print total and cut`,
-      text.includes('TOTAL') && bytesContain(hidden, [GS, 0x56, 0x00]));
+      text.includes('TOTAL') && bytesContain(hidden, [GS, 0x56, 0x41, 0x00]));
 
     const missing = formatReceipt(fixtureOrder, fixtureBill, {
       name: '', address: '', phone: '', taxRegistrationNumber: '',
@@ -538,7 +539,7 @@ console.log('\n✅ Test 5d: Bill content toggles are optional and never block pr
       show_customer_phone: true, show_table_number: true,
     }, template, 48, true);
     assert(`${template}: enabled but missing values do not stop printing`,
-      missing.toString('utf8').includes('TOTAL') && bytesContain(missing, [GS, 0x56, 0x00]));
+      missing.toString('utf8').includes('TOTAL') && bytesContain(missing, [GS, 0x56, 0x41, 0x00]));
   }
 }
 
@@ -558,7 +559,7 @@ console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
   assert('closes with a line and piece count', /\d+ lines - \d+ items/.test(text));
   assert('sets DOUBLE_HEIGHT mode for items', bytesContain(buf, [ESC, 0x21, 0x18]));
   assert('does NOT render prices (KOT has no money)', !text.includes('₹'));
-  assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x00]));
+  assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x41, 0x00]));
 
   console.log('\n   — Rendered KOT —');
   console.log(visiblePreview(buf, 48));
@@ -884,8 +885,8 @@ console.log('\n✅ Test 7: Test page builder');
   assert('80mm test page reports correct column width', buf80.toString('utf8').includes('Columns: 48'));
   assert('58mm test page reports correct column width', buf58.toString('utf8').includes('Columns: 32'));
   assert('test page includes a ruler and edge probe', buf58.toString('utf8').includes('1234567890') && buf58.toString('utf8').includes('XXXXXXXXXXXXXXXX'));
-  assert('test page has cut byte', bytesContain(buf80, [GS, 0x56, 0x00]));
-  assert('partial cut profile emits GS V B 0', bytesContain(xprinter, [GS, 0x56, 0x42, 0x00]));
+  assert('test page has cut byte', bytesContain(buf80, [GS, 0x56, 0x41, 0x00]));
+  assert('partial cut profile emits GS V B 0 after a short margin', bytesContain(xprinter, [ESC, 0x64, 0x03, GS, 0x56, 0x42, 0x00]));
 }
 
 console.log('\n✅ Test 8: Edge cases');
@@ -1359,6 +1360,72 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   assert('hasUnsupportedPrinterChars("IRR100,000.00") is false', hasUnsupportedPrinterChars('IRR100,000.00') === false);
 }
 
+// A stand-in for a printer on port 9100: it is slow to read the first ticket,
+// as a printer whose buffer is full is, answers with a status byte nobody asked
+// for, and hangs up a beat after the client's FIN. Two tickets fired together
+// must reach it one after the other, each whole.
+async function checkNetworkPrintQueue(): Promise<void> {
+  const events: string[] = [];
+  const received: Buffer[] = [];
+  let connections = 0;
+  const server = net.createServer({ allowHalfOpen: true }, (socket) => {
+    const id = ++connections;
+    events.push(`open ${id}`);
+    const chunks: Buffer[] = [];
+    if (id === 1) {
+      socket.pause();
+      setTimeout(() => socket.resume(), 150);
+    }
+    socket.on('data', (chunk) => chunks.push(chunk));
+    socket.on('end', () => {
+      received.push(Buffer.concat(chunks));
+      socket.write(Buffer.from([0x12]));
+      setTimeout(() => {
+        events.push(`close ${id}`);
+        socket.end();
+      }, 50);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as net.AddressInfo).port;
+
+  try {
+    const longTicket = Buffer.alloc(512 * 1024, 0x41);
+    const shortTicket = Buffer.from('second ticket\n');
+    const cancelled = new AbortController();
+    cancelled.abort();
+    const started = Date.now();
+    const [first, second, third] = await Promise.all([
+      printViaNetwork('127.0.0.1', port, longTicket),
+      printViaNetwork('127.0.0.1', port, shortTicket),
+      printViaNetwork('127.0.0.1', port, Buffer.from('never sent\n'), cancelled.signal),
+    ]);
+    const elapsed = Date.now() - started;
+
+    assert('both tickets are reported printed', first.ok && second.ok, `${first.detail || ''} ${second.detail || ''}`);
+    assert('the second connection opens only after the printer closed the first',
+      events.join(',') === 'open 1,close 1,open 2,close 2', events.join(','));
+    assert('each ticket arrives whole and in the order it was sent',
+      received.length === 2 && received[0].equals(longTicket) && received[1].equals(shortTicket));
+    assert('a ticket cancelled while waiting in line never connects',
+      !third.ok && /cancelled/i.test(third.detail || '') && connections === 2, third.detail);
+    assert('the printer hanging up ends the job, not the idle timeout', elapsed < 4000, `${elapsed} ms`);
+
+    const probe = net.createServer();
+    await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+    const closedPort = (probe.address() as net.AddressInfo).port;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    const [refused, behindRefused] = await Promise.all([
+      printViaNetwork('127.0.0.1', closedPort, shortTicket),
+      printViaNetwork('127.0.0.1', closedPort, shortTicket),
+    ]);
+    assert('a printer that refuses the connection fails the ticket, and the next one behind it still gets its answer',
+      !refused.ok && !behindRefused.ok, `${refused.detail} / ${behindRefused.detail}`);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
 console.log('\n✅ Test 12: Detect connected printers (hardware discovery)');
 (async () => {
   try {
@@ -1415,6 +1482,15 @@ console.log('\n✅ Test 12: Detect connected printers (hardware discovery)');
     console.log(`   ✗ printer detection threw: ${err.message}`);
     failed++;
     failures.push(`printer detection: ${err.message}`);
+  }
+
+  console.log('\n✅ Test 13: A network printer takes one ticket at a time');
+  try {
+    await checkNetworkPrintQueue();
+  } catch (err: any) {
+    console.log(`   ✗ network print queue threw: ${err.message}`);
+    failed++;
+    failures.push(`network print queue: ${err.message}`);
   }
 
   console.log('\n' + '='.repeat(60));

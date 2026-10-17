@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.6.2" date="2026-10-17">
+      <description>
+        <p>In service the kitchen sometimes found the end of a long ticket at the top of the next one: the dishes were all there, but the paper had been cut before the last lines came out. Tickets for the same network printer now go out one at a time, and every ticket asks the printer to feed to its own blade before the cut. No database migration.</p>
+      </description>
+    </release>
     <release version="6.6.1" date="2026-10-09">
       <description>
         <p>At a table on the fixed menu the same change often goes on more than one plate: three lasagne out of five "senza besciamella". Each noted portion was a line of its own in the menu window, so the note was written three times. The line of a note now counts the plates that carry it, and one note is written once. Same window on the handheld and on the till. No database migration.</p>
