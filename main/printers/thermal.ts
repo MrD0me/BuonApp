@@ -2228,17 +2228,28 @@ export function escPosToText(data: Buffer | Uint8Array): string {
 // Jobs still travelling to each network printer, keyed by ip:port.
 const networkPrintQueues = new Map<string, Promise<DispatchResult>>();
 
+// DLE EOT 1, the real-time printer status request. Sent after the ticket, it
+// reaches the printer only behind every byte of the ticket, so its answer says
+// the printer has the whole of it.
+const PRINTER_STATUS_REQUEST = Buffer.from([0x10, 0x04, 0x01]);
+const PRINTER_CONNECT_TIMEOUT_MS = 5000;
+// How long to wait for that answer before hanging up anyway.
+const PRINTER_CONFIRM_TIMEOUT_MS = 5000;
+// How long the printer has to close its side once we have hung up.
+const PRINTER_CLOSE_TIMEOUT_MS = 5000;
+
 // One job at a time per printer. Two tickets fired together - the handheld and
 // the till in the same second, or two stations sharing one printer - would
 // otherwise open two connections at once, and a printer that reads both lets
 // the second ticket in while the tail of a long first one is still waiting on
 // the wire: the second prints and is cut, and the tail comes out alone on the
 // sheet after it.
-export function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
+export function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal, options: { confirmTimeoutMs?: number } = {}): Promise<DispatchResult> {
   const key = `${ip}:${port}`;
   const previous = networkPrintQueues.get(key) ?? Promise.resolve<DispatchResult>({ ok: true });
+  const confirmTimeoutMs = options.confirmTimeoutMs ?? PRINTER_CONFIRM_TIMEOUT_MS;
   // sendToNetworkPrinter never rejects, so one failed ticket cannot stall the ones behind it.
-  const job = previous.then(() => sendToNetworkPrinter(ip, port, data, signal));
+  const job = previous.then(() => sendToNetworkPrinter(ip, port, data, signal, confirmTimeoutMs));
   networkPrintQueues.set(key, job);
   void job.then(() => {
     if (networkPrintQueues.get(key) === job) networkPrintQueues.delete(key);
@@ -2246,15 +2257,27 @@ export function printViaNetwork(ip: string, port: number, data: Buffer, signal?:
   return job;
 }
 
-function sendToNetworkPrinter(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
+// The connection is closed only once the printer has answered the status
+// request sent after the ticket. The network board of a cheap printer takes
+// the bytes in at once and passes them on to the printer itself more slowly;
+// a connection closed while it was still passing them on lost the end of the
+// ticket - most often just the feed and the cut - and the uncut tail, torn
+// off by hand, came out on top of the next ticket minutes later.
+function sendToNetworkPrinter(ip: string, port: number, data: Buffer, signal: AbortSignal | undefined, confirmTimeoutMs: number): Promise<DispatchResult> {
   if (signal?.aborted) return Promise.resolve({ ok: false, detail: 'Print cancelled during shutdown' });
 
   return new Promise((resolve) => {
     const client = new net.Socket();
+    const target = `${ip}:${port}`;
     let settled = false;
-    // Set once every byte has been handed to the socket; the job is only over
-    // when the printer closes its side, which it does after reading up to our FIN.
-    let sent = false;
+    // Every byte handed to the socket: from here on the ticket counts as sent.
+    let written = false;
+    let answered = false;
+    let hungUp = false;
+    let sentAt = 0;
+    let confirmTimer: NodeJS.Timeout | undefined;
+    let closeTimer: NodeJS.Timeout | undefined;
+
     const onAbort = (): void => {
       client.destroy();
       finish({ ok: false, detail: 'Print cancelled during shutdown' });
@@ -2262,23 +2285,60 @@ function sendToNetworkPrinter(ip: string, port: number, data: Buffer, signal?: A
     const finish = (result: DispatchResult): void => {
       if (settled) return;
       settled = true;
+      clearTimeout(confirmTimer);
+      clearTimeout(closeTimer);
       signal?.removeEventListener('abort', onAbort);
       resolve(result);
     };
+    const notSent = (): DispatchResult => ({ ok: false, detail: `${target} did not take the ticket` });
+
+    const hangUp = (confirmed: boolean): void => {
+      if (hungUp) return;
+      hungUp = true;
+      clearTimeout(confirmTimer);
+      const elapsed = Date.now() - sentAt;
+      if (confirmed) {
+        console.log(`[Printer] ${target} confirmed the ticket after ${elapsed} ms (${data.length} bytes)`);
+      } else {
+        console.warn(`[Printer] ${target} did not confirm the ticket within ${elapsed} ms (${data.length} bytes); hanging up anyway`);
+      }
+      client.end();
+      closeTimer = setTimeout(() => {
+        // The printer never closed its side. A ticket it took is counted as
+        // printed, as it always was.
+        client.destroy();
+        finish(written ? { ok: true } : notSent());
+      }, PRINTER_CLOSE_TIMEOUT_MS);
+    };
+
+    client.setTimeout(PRINTER_CONNECT_TIMEOUT_MS, () => {
+      client.destroy();
+      finish({ ok: false, detail: `Timed out connecting to ${target}` });
+    });
+
+    client.on('data', () => {
+      answered = true;
+      if (written) hangUp(true);
+    });
 
     client.connect(port, ip, () => {
-      // Whatever the printer sends back goes unread; draining it is what lets
-      // the socket see the printer's FIN, instead of waiting out the timeout.
-      client.resume();
-      client.write(data, (err) => {
+      // From here the timers below decide; an idle socket is expected while
+      // the printer takes the ticket in.
+      client.setTimeout(0);
+      // Nothing held back waiting for an acknowledgement: the last bytes of
+      // the ticket go out at once, ahead of the status request.
+      client.setNoDelay(true);
+      sentAt = Date.now();
+      client.write(Buffer.concat([data, PRINTER_STATUS_REQUEST]), (err) => {
         if (err) return;
-        sent = true;
-        client.end();
+        written = true;
+        if (answered) hangUp(true);
       });
+      confirmTimer = setTimeout(() => hangUp(false), confirmTimeoutMs);
     });
 
     client.on('close', () => {
-      finish(sent ? { ok: true } : { ok: false, detail: `Connection to ${ip}:${port} closed before the ticket was sent` });
+      finish(written ? { ok: true } : { ok: false, detail: `Connection to ${target} closed before the ticket was sent` });
     });
 
     client.on('error', (err) => {
@@ -2287,17 +2347,6 @@ function sendToNetworkPrinter(ip: string, port: number, data: Buffer, signal?: A
       finish({ ok: false, detail: `Network error: ${err.message}` });
     });
 
-    client.setTimeout(5000, () => {
-      client.destroy();
-      if (sent) {
-        // Everything went out but the printer never closed the connection.
-        // That is how the ticket used to be counted as printed, so keep it so.
-        console.warn(`[Printer] ${ip}:${port} did not close the connection after the ticket; assuming it was delivered`);
-        finish({ ok: true });
-      } else {
-        finish({ ok: false, detail: `Timed out connecting to ${ip}:${port}` });
-      }
-    });
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 }

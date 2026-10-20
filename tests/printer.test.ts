@@ -1360,11 +1360,20 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   assert('hasUnsupportedPrinterChars("IRR100,000.00") is false', hasUnsupportedPrinterChars('IRR100,000.00') === false);
 }
 
-// A stand-in for a printer on port 9100: it is slow to read the first ticket,
-// as a printer whose buffer is full is, answers with a status byte nobody asked
-// for, and hangs up a beat after the client's FIN. Two tickets fired together
-// must reach it one after the other, each whole.
-async function checkNetworkPrintQueue(): Promise<void> {
+// A stand-in for a printer on port 9100. It answers the status request that
+// closes every ticket, the way a printer does once the bytes before it have
+// reached the printer itself - late on the first ticket, as a busy printer
+// does - and hangs up a beat after the client's FIN. Two tickets fired
+// together must reach it one after the other, each whole, and neither
+// connection may be closed before its answer.
+const STATUS_REQUEST = [0x10, 0x04, 0x01];
+
+function endsWithStatusRequest(data: Buffer): boolean {
+  return data.length >= STATUS_REQUEST.length
+    && STATUS_REQUEST.every((byte, i) => data[data.length - STATUS_REQUEST.length + i] === byte);
+}
+
+function fakePrinter(options: { answer: boolean; answerDelayMs?: (id: number) => number }) {
   const events: string[] = [];
   const received: Buffer[] = [];
   let connections = 0;
@@ -1372,22 +1381,39 @@ async function checkNetworkPrintQueue(): Promise<void> {
     const id = ++connections;
     events.push(`open ${id}`);
     const chunks: Buffer[] = [];
-    if (id === 1) {
-      socket.pause();
-      setTimeout(() => socket.resume(), 150);
-    }
-    socket.on('data', (chunk) => chunks.push(chunk));
+    let answered = false;
+    socket.on('data', (chunk) => {
+      chunks.push(chunk);
+      if (options.answer && !answered && endsWithStatusRequest(Buffer.concat(chunks))) {
+        answered = true;
+        setTimeout(() => {
+          events.push(`answer ${id}`);
+          socket.write(Buffer.from([0x12]));
+        }, options.answerDelayMs?.(id) ?? 0);
+      }
+    });
     socket.on('end', () => {
+      events.push(`fin ${id}`);
       received.push(Buffer.concat(chunks));
-      socket.write(Buffer.from([0x12]));
       setTimeout(() => {
         events.push(`close ${id}`);
         socket.end();
       }, 50);
     });
   });
+  return { server, events, received, connections: () => connections };
+}
+
+async function listen(server: net.Server): Promise<number> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const port = (server.address() as net.AddressInfo).port;
+  return (server.address() as net.AddressInfo).port;
+}
+
+async function checkNetworkPrintQueue(): Promise<void> {
+  const printer = fakePrinter({ answer: true, answerDelayMs: (id) => (id === 1 ? 200 : 0) });
+  const silent = fakePrinter({ answer: false });
+  const port = await listen(printer.server);
+  const silentPort = await listen(silent.server);
 
   try {
     const longTicket = Buffer.alloc(512 * 1024, 0x41);
@@ -1403,17 +1429,25 @@ async function checkNetworkPrintQueue(): Promise<void> {
     const elapsed = Date.now() - started;
 
     assert('both tickets are reported printed', first.ok && second.ok, `${first.detail || ''} ${second.detail || ''}`);
-    assert('the second connection opens only after the printer closed the first',
-      events.join(',') === 'open 1,close 1,open 2,close 2', events.join(','));
-    assert('each ticket arrives whole and in the order it was sent',
-      received.length === 2 && received[0].equals(longTicket) && received[1].equals(shortTicket));
+    assert('each connection stays open until the printer answers, and the next opens only after it closed',
+      printer.events.join(',') === 'open 1,answer 1,fin 1,close 1,open 2,answer 2,fin 2,close 2', printer.events.join(','));
+    assert('each ticket arrives whole, in the order it was sent, followed by the status request',
+      printer.received.length === 2
+        && printer.received[0].equals(Buffer.concat([longTicket, Buffer.from(STATUS_REQUEST)]))
+        && printer.received[1].equals(Buffer.concat([shortTicket, Buffer.from(STATUS_REQUEST)])));
     assert('a ticket cancelled while waiting in line never connects',
-      !third.ok && /cancelled/i.test(third.detail || '') && connections === 2, third.detail);
-    assert('the printer hanging up ends the job, not the idle timeout', elapsed < 4000, `${elapsed} ms`);
+      !third.ok && /cancelled/i.test(third.detail || '') && printer.connections() === 2, third.detail);
+    assert('the answer ends the job, not a timeout', elapsed < 4000, `${elapsed} ms`);
+
+    const quietStarted = Date.now();
+    const quiet = await printViaNetwork('127.0.0.1', silentPort, shortTicket, undefined, { confirmTimeoutMs: 300 });
+    const quietElapsed = Date.now() - quietStarted;
+    assert('a printer that never answers still gets the ticket, and the connection is held for the wait first',
+      quiet.ok && silent.events[0] === 'open 1' && silent.events[1] === 'fin 1' && quietElapsed >= 280,
+      `${quiet.detail || ''} ${silent.events.join(',')} ${quietElapsed} ms`);
 
     const probe = net.createServer();
-    await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
-    const closedPort = (probe.address() as net.AddressInfo).port;
+    const closedPort = await listen(probe);
     await new Promise<void>((resolve) => probe.close(() => resolve()));
     const [refused, behindRefused] = await Promise.all([
       printViaNetwork('127.0.0.1', closedPort, shortTicket),
@@ -1422,7 +1456,8 @@ async function checkNetworkPrintQueue(): Promise<void> {
     assert('a printer that refuses the connection fails the ticket, and the next one behind it still gets its answer',
       !refused.ok && !behindRefused.ok, `${refused.detail} / ${behindRefused.detail}`);
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise<void>((resolve) => printer.server.close(() => resolve()));
+    await new Promise<void>((resolve) => silent.server.close(() => resolve()));
   }
 }
 

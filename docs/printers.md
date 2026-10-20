@@ -59,6 +59,7 @@ Printer profiles declare a `codePage` (WPC1252) so Western European text prints 
 - Verify the printer's IP address has not changed (check your router's DHCP lease table or configure a static IP / DHCP reservation).
 - Verify the configured port (default ESC/POS port is usually `9100`).
 - Tickets for the same printer go out one at a time: the next one connects only after the printer has read the previous one and closed the connection, so two tickets fired together cannot interleave on the paper.
+- Every ticket ends with a real-time status request (`DLE EOT 1`), and BuonApp closes the connection only once the printer answers it, which it does after the whole ticket has reached the printer. Closing straight after sending lost the end of the ticket — the feed and the cut — on printers whose network board passes the bytes on slowly. The log has one line per ticket: `[Printer] <ip>:<port> confirmed the ticket after N ms`, or, from a printer that never answers, `did not confirm the ticket … hanging up anyway` after five seconds.
 - If the last lines of a ticket come out at the top of the next one, run **Test Print**: the closing line and rule must stay above the cut. Every ticket ends by asking the printer to feed to its own blade before cutting (`GS V 65`/`66`), so this points at the printer's cutter settings rather than at the ticket.
 
 ### Windows USB & spooler printers
