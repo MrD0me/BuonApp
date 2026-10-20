@@ -4,6 +4,21 @@ All notable changes to BuonApp are documented here. Dates are release dates, not
 
 4.0.0 is the first release of this fork. Everything at 3.3.0 and below is the history of the upstream project it was forked from, [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe), which shipped under the name Flo Cafe; those entries are kept for context and describe code this fork inherited.
 
+## [6.6.3] - 2026-10-20
+
+After 6.6.2 the end of a ticket still came out, now and then, at the top of the
+next one, even when the next one was sent minutes later: the paper had not been
+cut, the ticket was torn off by hand, and its last lines stayed in the printer.
+BuonApp closed the connection the moment it had sent the ticket, and a network
+printer that was still passing the bytes from its network board to the printer
+lost the end of the ticket, most often just the feed and the cut. The
+connection now stays open until the printer confirms it has the whole ticket.
+No database migration.
+
+### Fixed
+
+- **A network printer gets the end of every ticket.** Each ticket now ends with a real-time status request (`DLE EOT 1`), and the connection is closed only once the printer answers it, which it does after every byte before it has reached the printer. A printer that never answers still gets the ticket after five seconds, as before. The log carries one line per ticket: `[Printer] <ip>:<port> confirmed the ticket after N ms`, or a warning that it did not.
+
 ## [6.6.2] - 2026-10-17
 
 In service the kitchen sometimes found the end of a long ticket at the top of

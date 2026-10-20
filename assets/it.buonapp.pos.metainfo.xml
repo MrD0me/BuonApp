@@ -46,6 +46,11 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="6.6.3" date="2026-10-20">
+      <description>
+        <p>After 6.6.2 the end of a ticket still came out, now and then, at the top of the next one, even when the next one was sent minutes later: the paper had not been cut, the ticket was torn off by hand, and its last lines stayed in the printer. BuonApp closed the connection the moment it had sent the ticket, and a network printer that was still passing the bytes from its network board to the printer lost the end of the ticket, most often just the feed and the cut. The connection now stays open until the printer confirms it has the whole ticket. No database migration.</p>
+      </description>
+    </release>
     <release version="6.6.2" date="2026-10-17">
       <description>
         <p>In service the kitchen sometimes found the end of a long ticket at the top of the next one: the dishes were all there, but the paper had been cut before the last lines came out. Tickets for the same network printer now go out one at a time, and every ticket asks the printer to feed to its own blade before the cut. No database migration.</p>
