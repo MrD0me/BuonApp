@@ -1452,10 +1452,10 @@
     "semantic_hash": "16aae07b8302770e23f6027b7f2f4ea4"
   },
   "main/printers/thermal.ts": {
-    "mtime": 1790679417.5890455,
-    "seen": 1790680606.8792143,
-    "ast_hash": "65da61cb5f568244d4151240d6565df0",
-    "semantic_hash": "65da61cb5f568244d4151240d6565df0"
+    "mtime": 1792488618.5988944,
+    "seen": 1792489170.137518,
+    "ast_hash": "6c79ac88bd555e4449ac54b592624279",
+    "semantic_hash": "6c79ac88bd555e4449ac54b592624279"
   },
   "main/routes/addon-groups.ts": {
     "mtime": 1788361662.4011936,
@@ -1776,10 +1776,10 @@
     "semantic_hash": "b2789c6ef8bdc5a51ab639b3d4a34ae2"
   },
   "package.json": {
-    "mtime": 1791578322.6520054,
-    "seen": 1791578780.6356947,
-    "ast_hash": "fdc0a4a5811cfc18e7c5ad4f45229010",
-    "semantic_hash": "fdc0a4a5811cfc18e7c5ad4f45229010"
+    "mtime": 1792488618.5988944,
+    "seen": 1792489170.1419659,
+    "ast_hash": "7a57ee156b7809843d6634f9c255edbb",
+    "semantic_hash": "7a57ee156b7809843d6634f9c255edbb"
   },
   "scripts/afterPack.js": {
     "mtime": 1788361662.4226933,
@@ -2514,10 +2514,10 @@
     "semantic_hash": "4e0c5ff5c7137326cd6b34a55de91898"
   },
   "tests/printer.test.ts": {
-    "mtime": 1790679417.5920682,
-    "seen": 1790680606.8922787,
-    "ast_hash": "7bfcd1cbb2531f18bc5e4b13bbc521b3",
-    "semantic_hash": "7bfcd1cbb2531f18bc5e4b13bbc521b3"
+    "mtime": 1792488618.5988944,
+    "seen": 1792489170.1510491,
+    "ast_hash": "88070cd662cf1bbe18ce41aed634aec7",
+    "semantic_hash": "88070cd662cf1bbe18ce41aed634aec7"
   },
   "tests/product-images.test.ts": {
     "mtime": 1788361662.494456,
@@ -2868,10 +2868,10 @@
     "semantic_hash": "fe2ef22922b581efd293494ee6d7c038"
   },
   "CHANGELOG.md": {
-    "mtime": 1791578322.648516,
-    "seen": 1791578780.6359308,
-    "ast_hash": "316e7c319eba4de23a045624a8fd38d8",
-    "semantic_hash": "316e7c319eba4de23a045624a8fd38d8"
+    "mtime": 1792488618.5729852,
+    "seen": 1792489170.154905,
+    "ast_hash": "6d1fc138e8aae1ccab76bf9ba096a850",
+    "semantic_hash": "6d1fc138e8aae1ccab76bf9ba096a850"
   },
   "CLAUDE.md": {
     "mtime": 1788361662.1811635,
@@ -2892,10 +2892,10 @@
     "semantic_hash": "73d2b749591e27c3048754fb57b5427b"
   },
   "README.md": {
-    "mtime": 1791578322.648516,
-    "seen": 1791578780.6359322,
-    "ast_hash": "dbd8da57ce23477a1d2629cd63d90107",
-    "semantic_hash": "dbd8da57ce23477a1d2629cd63d90107"
+    "mtime": 1792488618.5747237,
+    "seen": 1792489170.1549063,
+    "ast_hash": "80caca37611ca4ac1ff8f64ebd0ddbcd",
+    "semantic_hash": "80caca37611ca4ac1ff8f64ebd0ddbcd"
   },
   "SECURITY.md": {
     "mtime": 1788361662.182166,
@@ -2952,10 +2952,10 @@
     "semantic_hash": "eb3c0c1aa2f1792f9aff4441984aaca4"
   },
   "docs/printers.md": {
-    "mtime": 1790679417.5890455,
-    "seen": 1790680606.8958814,
-    "ast_hash": "57a8c3ebe982bc78557ef2b31b23be69",
-    "semantic_hash": "57a8c3ebe982bc78557ef2b31b23be69"
+    "mtime": 1792488618.5868373,
+    "seen": 1792489170.154908,
+    "ast_hash": "dd8b68467ca7edf36f4d81ea93fd81c7",
+    "semantic_hash": "dd8b68467ca7edf36f4d81ea93fd81c7"
   },
   "docs/rifacimento-grafica.md": {
     "mtime": 1790694575.0839753,
